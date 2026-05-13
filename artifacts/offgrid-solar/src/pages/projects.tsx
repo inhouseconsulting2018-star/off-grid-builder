@@ -1,9 +1,10 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useListProjects, useGetProjectsSummary, useDeleteProject, getListProjectsQueryKey, getGetProjectsSummaryQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldAlert, ZapOff, MapPin } from "lucide-react";
+import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldCheck, ZapOff, MapPin, BarChart3 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -19,6 +20,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 
+const systemTypeBadge: Record<string, string> = {
+  "off-grid": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  "grid-tied": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  "hybrid": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+};
+
 export default function ProjectsDashboard() {
   const { data: projects, isLoading: isProjectsLoading } = useListProjects();
   const { data: summary, isLoading: isSummaryLoading } = useGetProjectsSummary();
@@ -29,7 +36,7 @@ export default function ProjectsDashboard() {
   const handleDelete = (id: number) => {
     deleteProject.mutate({ id }, {
       onSuccess: () => {
-        toast({ title: "Project deleted successfully" });
+        toast({ title: "Project deleted" });
         queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetProjectsSummaryQueryKey() });
       },
@@ -44,57 +51,59 @@ export default function ProjectsDashboard() {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Solar Projects</h1>
-            <p className="text-muted-foreground mt-1">Manage and view your solar system designs.</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Solar Projects</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Manage and view your solar system designs.</p>
           </div>
           <Link href="/wizard">
-            <Button className="gap-2">
+            <Button className="gap-2 w-full sm:w-auto">
               <PlusCircle className="h-4 w-4" />
               New Project
             </Button>
           </Link>
         </div>
 
+        {/* Stats Grid — 2 cols on mobile, 4 on desktop */}
         {isSummaryLoading ? (
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[1, 2, 3, 4].map(i => (
-              <Card key={i} className="animate-pulse bg-muted h-32" />
+              <Card key={i} className="animate-pulse bg-muted h-24" />
             ))}
           </div>
         ) : summary ? (
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground">Total Projects</CardTitle>
+                <BarChart3 className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold">{summary.totalProjects}</div>
               </CardContent>
             </Card>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Capacity</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground">Total Capacity</CardTitle>
                 <Zap className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold">{summary.totalSystemKw.toFixed(1)} kW</div>
               </CardContent>
             </Card>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Off-Grid Systems</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground">Off-Grid</CardTitle>
                 <ZapOff className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold">{summary.offGridCount}</div>
               </CardContent>
             </Card>
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Grid-Tied Systems</CardTitle>
-                <ShieldAlert className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground">Grid-Tied</CardTitle>
+                <ShieldCheck className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold">{summary.gridTiedCount}</div>
               </CardContent>
             </Card>
@@ -102,88 +111,106 @@ export default function ProjectsDashboard() {
         ) : null}
 
         <Card>
-          <CardHeader>
-            <CardTitle>Recent Designs</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Recent Designs</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {isProjectsLoading ? (
-              <div className="space-y-4">
+              <div className="space-y-0 divide-y px-6 pb-6 pt-2">
                 {[1, 2, 3].map(i => (
-                  <div key={i} className="h-20 animate-pulse bg-muted rounded-md" />
+                  <div key={i} className="h-20 animate-pulse bg-muted rounded-md my-2" />
                 ))}
               </div>
             ) : projects && projects.length > 0 ? (
-              <div className="space-y-4">
-                {projects.map(project => (
-                  <div key={project.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg gap-4 bg-card/50">
-                    <div className="space-y-1 flex-1">
-                      <div className="flex items-center gap-2">
+              <div className="divide-y">
+                {projects.map(project => {
+                  const adjKw = project.calculationResult?.adjustedArraySizeKw;
+                  const grossKw = project.calculationResult?.arraySizeKw;
+                  const displayKw = adjKw ?? grossKw;
+                  return (
+                    <div key={project.id} className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-4 gap-3 hover:bg-muted/30 transition-colors">
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Link href={`/results/${project.id}`}>
+                            <h3 className="font-semibold text-base hover:text-primary hover:underline cursor-pointer truncate">{project.name}</h3>
+                          </Link>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${systemTypeBadge[project.systemType] || "bg-secondary text-secondary-foreground"}`}>
+                            {project.systemType}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          {project.city}, {project.state}
+                        </p>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          {displayKw != null && (
+                            <span className="font-medium text-foreground">{displayKw.toFixed(2)} kW</span>
+                          )}
+                          <span>{format(new Date(project.createdAt), 'MMM d, yyyy')}</span>
+                        </div>
+                      </div>
+
+                      {/* Action buttons — icon-only on mobile */}
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <Link href={`/results/${project.id}`}>
-                          <h3 className="font-semibold text-lg hover:underline cursor-pointer">{project.name}</h3>
-                        </Link>
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
-                          {project.systemType}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {project.city}, {project.state}
-                      </p>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground mt-2">
-                        <span>{project.calculationResult?.arraySizeKw?.toFixed(2) || '0'} kW System</span>
-                        <span>Created {format(new Date(project.createdAt), 'MMM d, yyyy')}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Link href={`/results/${project.id}`}>
-                        <Button variant="outline" size="sm">
-                          <Eye className="h-4 w-4 mr-2" />
-                          View
-                        </Button>
-                      </Link>
-                      <Link href={`/results/${project.id}#map`}>
-                        <Button variant="outline" size="sm">
-                          <MapPin className="h-4 w-4 mr-2" />
-                          Map
-                        </Button>
-                      </Link>
-                      <Link href={`/projects/${project.id}/edit`}>
-                        <Button variant="outline" size="sm">
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit
-                        </Button>
-                      </Link>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10">
-                            <Trash2 className="h-4 w-4" />
+                          <Button variant="outline" size="sm" className="hidden sm:flex gap-1.5">
+                            <Eye className="h-3.5 w-3.5" /> View
                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Project?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This action cannot be undone. This will permanently delete the project "{project.name}".
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleDelete(project.id)} className="bg-destructive text-destructive-foreground">
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                          <Button variant="outline" size="icon" className="sm:hidden h-8 w-8">
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                        <Link href={`/results/${project.id}#map`}>
+                          <Button variant="outline" size="icon" className="h-8 w-8" title="View on map">
+                            <MapPin className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                        <Link href={`/projects/${project.id}/edit`}>
+                          <Button variant="outline" size="sm" className="hidden sm:flex gap-1.5">
+                            <Edit className="h-3.5 w-3.5" /> Edit
+                          </Button>
+                          <Button variant="outline" size="icon" className="sm:hidden h-8 w-8">
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Project?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This action cannot be undone. "{project.name}" will be permanently deleted.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(project.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
-              <div className="text-center py-12">
-                <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                <h3 className="text-lg font-medium">No projects yet</h3>
-                <p className="text-muted-foreground mt-1 mb-6">Create your first solar design to get started.</p>
+              <div className="text-center py-16 px-4">
+                <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                  <Search className="h-7 w-7 text-muted-foreground opacity-50" />
+                </div>
+                <h3 className="text-lg font-semibold">No projects yet</h3>
+                <p className="text-muted-foreground mt-1 mb-6 text-sm">Create your first solar design to get started.</p>
                 <Link href="/wizard">
-                  <Button>Start New Design</Button>
+                  <Button><PlusCircle className="h-4 w-4 mr-2" /> Start New Design</Button>
                 </Link>
               </div>
             )}
