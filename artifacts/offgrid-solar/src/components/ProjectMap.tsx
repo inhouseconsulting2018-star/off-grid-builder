@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 
-// Fix default marker icons broken by bundlers
 const iconUrl = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png";
 const iconRetinaUrl = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png";
 const shadowUrl = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png";
@@ -23,7 +22,9 @@ interface ProjectMapProps {
   zip: string;
   projectName: string;
   systemType: string;
+  installationType?: string;
   arraySizeKw?: number;
+  numPanels?: number;
   batteryUsableKwh?: number;
 }
 
@@ -74,18 +75,13 @@ async function geocodeAddress(address: string, city: string, state: string, zip:
 }
 
 // ─── Solar Math ────────────────────────────────────────────────────────────
-// Returns sunrise azimuth in degrees from North (clockwise).
-// Sunset azimuth = 360 - sunrise azimuth.
-// declination: +23.45° summer solstice, -23.45° winter solstice
 function solsticeRiseAzimuth(latDeg: number, declDeg: number): number {
   const lat = (latDeg * Math.PI) / 180;
   const decl = (declDeg * Math.PI) / 180;
   const cosAz = Math.sin(decl) / Math.cos(lat);
-  const clamped = Math.max(-1, Math.min(1, cosAz));
-  return (Math.acos(clamped) * 180) / Math.PI;
+  return (Math.acos(Math.max(-1, Math.min(1, cosAz))) * 180) / Math.PI;
 }
 
-// Offset a lat/lng point by distance (m) in a given azimuth (deg from North, clockwise)
 function offsetLatLng(lat: number, lng: number, azimuthDeg: number, distanceM: number): [number, number] {
   const az = (azimuthDeg * Math.PI) / 180;
   const dy = distanceM * Math.cos(az);
@@ -95,104 +91,61 @@ function offsetLatLng(lat: number, lng: number, azimuthDeg: number, distanceM: n
   return [newLat, newLng];
 }
 
-// ─── Sun Path Overlay (imperative Leaflet) ─────────────────────────────────
-interface SunOverlayProps {
-  coords: GeoCoords;
-  visible: boolean;
+/** Optimal fixed tilt = latitude × 0.87 + 3.1 (NREL approximation) */
+function optimalTiltDeg(latDeg: number): number {
+  return Math.round(latDeg * 0.87 + 3.1);
 }
 
-const ARROW_DISTANCE = 300; // meters from center
+// ─── Sun Path Overlay ──────────────────────────────────────────────────────
+const ARROW_DISTANCE = 300;
 
-function SunPathOverlay({ coords, visible }: SunOverlayProps) {
+function SunPathOverlay({ coords, visible }: { coords: GeoCoords; visible: boolean }) {
   const map = useMap();
   const layerRef = useRef<L.LayerGroup | null>(null);
 
   useEffect(() => {
-    if (layerRef.current) {
-      map.removeLayer(layerRef.current);
-      layerRef.current = null;
-    }
+    if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current = null; }
     if (!visible) return;
 
     const { lat, lng } = coords;
     const group = L.layerGroup();
-
-    const summerDecl = 23.45;
-    const winterDecl = -23.45;
-
-    const summerRiseAz = solsticeRiseAzimuth(lat, summerDecl);
-    const summerSetAz = 360 - summerRiseAz;
-    const winterRiseAz = solsticeRiseAzimuth(lat, winterDecl);
-    const winterSetAz = 360 - winterRiseAz;
-
     const center: [number, number] = [lat, lng];
 
-    // Helper: draw a dashed ray with a tooltip label
+    const summerRiseAz = solsticeRiseAzimuth(lat, 23.45);
+    const summerSetAz = 360 - summerRiseAz;
+    const winterRiseAz = solsticeRiseAzimuth(lat, -23.45);
+    const winterSetAz = 360 - winterRiseAz;
+
     const addRay = (azimuth: number, color: string, label: string, dashed: boolean) => {
       const endpoint = offsetLatLng(lat, lng, azimuth, ARROW_DISTANCE);
-      L.polyline([center, endpoint], {
-        color,
-        weight: dashed ? 2 : 3,
-        dashArray: dashed ? "10 6" : undefined,
-        opacity: 0.85,
-      }).addTo(group);
-
-      // Small circle at endpoint with permanent label
-      const marker = L.circleMarker(endpoint, {
-        radius: 5,
-        color,
-        fillColor: color,
-        fillOpacity: 1,
-        weight: 2,
-      }).addTo(group);
-      marker.bindTooltip(label, {
-        permanent: true,
-        direction: "center",
-        className: "sun-path-label",
-        offset: [0, -22],
-      }).openTooltip();
+      L.polyline([center, endpoint], { color, weight: dashed ? 2 : 3, dashArray: dashed ? "10 6" : undefined, opacity: 0.85 }).addTo(group);
+      L.circleMarker(endpoint, { radius: 5, color, fillColor: color, fillOpacity: 1, weight: 2 })
+        .bindTooltip(label, { permanent: true, direction: "center", className: "sun-path-label", offset: [0, -22] })
+        .openTooltip().addTo(group);
     };
 
-    // True South line (optimal panel direction in US)
+    // True South
     const southEndpoint = offsetLatLng(lat, lng, 180, ARROW_DISTANCE);
-    L.polyline([center, southEndpoint], {
-      color: "#ef4444",
-      weight: 3,
-      opacity: 0.9,
-    }).addTo(group);
-    L.circleMarker(southEndpoint, {
-      radius: 6, color: "#ef4444", fillColor: "#ef4444", fillOpacity: 1, weight: 2,
-    }).bindTooltip("⊙ True South\n(Optimal panel\ndirection)", {
-      permanent: true, direction: "bottom",
-      className: "sun-path-label",
-      offset: [0, 4],
-    }).openTooltip().addTo(group);
+    L.polyline([center, southEndpoint], { color: "#ef4444", weight: 3, opacity: 0.9 }).addTo(group);
+    L.circleMarker(southEndpoint, { radius: 6, color: "#ef4444", fillColor: "#ef4444", fillOpacity: 1, weight: 2 })
+      .bindTooltip("⊙ True South\n(Optimal panel\ndirection)", { permanent: true, direction: "bottom", className: "sun-path-label", offset: [0, 4] })
+      .openTooltip().addTo(group);
 
-    // Summer solstice rays (orange)
-    addRay(summerRiseAz, "#f97316", `☀ Summer Rise\n${Math.round(summerRiseAz)}° NE`, true);
-    addRay(summerSetAz, "#f97316", `☀ Summer Set\n${Math.round(summerSetAz)}° NW`, true);
+    addRay(summerRiseAz, "#f97316", `☀ Summer Rise\n${Math.round(summerRiseAz)}°`, true);
+    addRay(summerSetAz, "#f97316", `☀ Summer Set\n${Math.round(summerSetAz)}°`, true);
+    addRay(winterRiseAz, "#3b82f6", `❄ Winter Rise\n${Math.round(winterRiseAz)}°`, true);
+    addRay(winterSetAz, "#3b82f6", `❄ Winter Set\n${Math.round(winterSetAz)}°`, true);
 
-    // Winter solstice rays (blue)
-    addRay(winterRiseAz, "#3b82f6", `❄ Winter Rise\n${Math.round(winterRiseAz)}° SE`, true);
-    addRay(winterSetAz, "#3b82f6", `❄ Winter Set\n${Math.round(winterSetAz)}° SW`, true);
-
-    // Central dot
-    L.circleMarker(center, {
-      radius: 7, color: "#fff", fillColor: "#374151", fillOpacity: 1, weight: 2,
-    }).addTo(group);
+    L.circleMarker(center, { radius: 7, color: "#fff", fillColor: "#374151", fillOpacity: 1, weight: 2 }).addTo(group);
 
     group.addTo(map);
     layerRef.current = group;
-
-    return () => {
-      map.removeLayer(group);
-    };
+    return () => { map.removeLayer(group); };
   }, [coords, visible, map]);
 
   return null;
 }
 
-// ─── Tile layer switcher ───────────────────────────────────────────────────
 function ActiveTileLayer({ satellite }: { satellite: boolean }) {
   if (satellite) {
     return (
@@ -221,15 +174,135 @@ function RecenterMap({ coords, zoom }: { coords: GeoCoords; zoom: number }) {
 
 type GeoStatus = "loading" | "success" | "fallback" | "error";
 
+// ─── Panel Placement Guide ─────────────────────────────────────────────────
+function PanelPlacementGuide({
+  lat, installationType, arraySizeKw, numPanels,
+}: { lat: number; installationType?: string; arraySizeKw?: number; numPanels?: number }) {
+  const tilt = optimalTiltDeg(lat);
+  const isRoof = !installationType || installationType === "roof";
+  const isGround = installationType === "ground";
+  const isPole = installationType === "pole";
+
+  const winterRiseAz = Math.round(solsticeRiseAzimuth(lat, -23.45));
+  const winterSetAz = 360 - winterRiseAz;
+
+  const sqFtPerPanel = 21.5; // ~400W panel footprint
+  const totalSqFt = numPanels ? Math.round(numPanels * sqFtPerPanel) : null;
+
+  return (
+    <div className="rounded-lg border bg-card p-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <div className="h-7 w-7 rounded-md bg-amber-100 flex items-center justify-center shrink-0">
+          <span className="text-sm">☀</span>
+        </div>
+        <h3 className="font-semibold text-sm">Panel Placement Guide</h3>
+        <span className="ml-auto text-xs text-muted-foreground">Based on lat {lat.toFixed(1)}°N</span>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Direction */}
+        <div className="rounded-md bg-red-50 border border-red-100 p-3 text-center">
+          <div className="text-2xl font-black text-red-600">South</div>
+          <div className="text-xs text-muted-foreground mt-1">Face panels True South for maximum annual output</div>
+        </div>
+        {/* Tilt */}
+        <div className="rounded-md bg-amber-50 border border-amber-100 p-3 text-center">
+          <div className="text-2xl font-black text-amber-600">{tilt}°</div>
+          <div className="text-xs text-muted-foreground mt-1">Optimal tilt angle for your latitude</div>
+        </div>
+        {/* Winter sun window */}
+        <div className="rounded-md bg-blue-50 border border-blue-100 p-3 text-center">
+          <div className="text-lg font-black text-blue-600">{winterRiseAz}°→{winterSetAz}°</div>
+          <div className="text-xs text-muted-foreground mt-1">Winter sun arc — keep clear of shade in this window</div>
+        </div>
+        {/* Area needed */}
+        {totalSqFt && (
+          <div className="rounded-md bg-green-50 border border-green-100 p-3 text-center">
+            <div className="text-2xl font-black text-green-700">~{totalSqFt} ft²</div>
+            <div className="text-xs text-muted-foreground mt-1">Roof or ground area needed for {numPanels} panels</div>
+          </div>
+        )}
+      </div>
+
+      {/* Mount-specific tips */}
+      <div className="space-y-2">
+        {isRoof && (
+          <>
+            <Tip icon="🏠" color="amber">
+              <strong>South-facing roof slope preferred.</strong> Look at the satellite view above — find the roof face that points closest to the True South (red) line. In the US that's typically the back or left side of a home on an east-west street.
+            </Tip>
+            <Tip icon="📐" color="amber">
+              <strong>Tilt = roof pitch matters.</strong> Your roof pitch determines fixed tilt. If it's near {tilt}°, perfect. Flatter roofs need tilt legs; steep roofs lose some output but are still viable.
+            </Tip>
+            <Tip icon="🌳" color="blue">
+              <strong>Check for winter shading.</strong> Anything between the two blue (winter) lines on the map — chimneys, dormers, tall trees to the south — will shade your array in winter. Move panels away from those shadow zones.
+            </Tip>
+            <Tip icon="📏" color="green">
+              <strong>Row spacing on low-slope roofs.</strong> Leave a 3 ft walkway on all sides per fire code. Rows of panels need gap spacing to avoid self-shading — rule of thumb: row gap = panel height × 2.5 at your tilt.
+            </Tip>
+          </>
+        )}
+        {isGround && (
+          <>
+            <Tip icon="🧭" color="amber">
+              <strong>Aim the front face exactly south.</strong> Use the satellite view + sun path overlay to pick a spot on your property with an unobstructed view from {winterRiseAz}° to {winterSetAz}° (the blue winter arc). This is your "solar window."
+            </Tip>
+            <Tip icon="📐" color="amber">
+              <strong>Set tilt to {tilt}°.</strong> Ground mount racking lets you dial in the ideal angle — this is the sweet spot for your latitude. Adjust ±5° toward steeper for better winter output, or shallower if wind loads are a concern.
+            </Tip>
+            <Tip icon="📏" color="green">
+              <strong>Clearance from ground.</strong> Bottom of panels should be at least 12–18 inches off the ground for airflow and to prevent snow buildup from covering lower cells. Aim for 2 ft in snow states.
+            </Tip>
+            <Tip icon="⚡" color="blue">
+              <strong>Wire run length.</strong> Every extra foot of DC cable from the array to the inverter adds resistance loss. Try to keep the inverter within 50 ft of the array; size wire accordingly (NEC Article 690).
+            </Tip>
+          </>
+        )}
+        {isPole && (
+          <>
+            <Tip icon="🧭" color="amber">
+              <strong>Choose an open, elevated spot.</strong> Pole mounts sit higher than ground mounts — great for avoiding low shrubs and snow. Pick a south-facing open area with the same clear view from {winterRiseAz}° to {winterSetAz}°.
+            </Tip>
+            <Tip icon="📐" color="amber">
+              <strong>Tracking option available.</strong> Pole mounts are the easiest to add single-axis tracking (east→west daily sweep). That can boost output 20–35% vs fixed tilt at your latitude.
+            </Tip>
+            <Tip icon="🌬️" color="blue">
+              <strong>Wind load engineering required.</strong> Pole mounts concentrate the wind load at one point in the ground. A structural engineer or licensed installer must specify the concrete footer depth and pipe diameter for your wind zone.
+            </Tip>
+          </>
+        )}
+      </div>
+
+      {arraySizeKw && (
+        <p className="text-xs text-muted-foreground border-t pt-3">
+          Your <strong>{arraySizeKw.toFixed(2)} kW array</strong> needs approximately {totalSqFt ? `${totalSqFt} ft²` : "space"} of clear, south-facing, unshaded area. Switch to <strong>Satellite</strong> view above and zoom in to evaluate your specific property.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Tip({ icon, color, children }: { icon: string; color: "amber" | "blue" | "green"; children: React.ReactNode }) {
+  const bg = color === "amber" ? "bg-amber-50 border-amber-200" : color === "blue" ? "bg-blue-50 border-blue-200" : "bg-green-50 border-green-200";
+  return (
+    <div className={`flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-xs ${bg}`}>
+      <span className="shrink-0 mt-0.5">{icon}</span>
+      <span className="text-muted-foreground leading-relaxed">{children}</span>
+    </div>
+  );
+}
+
 // ─── Main component ────────────────────────────────────────────────────────
 export function ProjectMap({
   address, city, state, zip,
-  projectName, systemType, arraySizeKw, batteryUsableKwh,
+  projectName, systemType, installationType,
+  arraySizeKw, numPanels, batteryUsableKwh,
 }: ProjectMapProps) {
   const [coords, setCoords] = useState<GeoCoords | null>(null);
   const [status, setStatus] = useState<GeoStatus>("loading");
   const [satellite, setSatellite] = useState(false);
   const [showSunPath, setShowSunPath] = useState(true);
+  const [showPlacement, setShowPlacement] = useState(true);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -238,10 +311,8 @@ export function ProjectMap({
     let cancelled = false;
     geocodeAddress(address, city, state, zip).then((result) => {
       if (cancelled) return;
-      if (result) {
-        setCoords(result);
-        setStatus("success");
-      } else {
+      if (result) { setCoords(result); setStatus("success"); }
+      else {
         const fallback = STATE_CENTERS[state?.toUpperCase()];
         if (fallback) { setCoords(fallback); setStatus("fallback"); }
         else setStatus("error");
@@ -250,20 +321,16 @@ export function ProjectMap({
     return () => { cancelled = true; };
   }, [address, city, state, zip]);
 
-  if (status === "error") {
-    return (
-      <div className="h-64 rounded-lg border bg-muted/30 flex items-center justify-center text-muted-foreground text-sm">
-        Map location unavailable for this address.
-      </div>
-    );
-  }
-  if (status === "loading") {
-    return (
-      <div className="h-64 rounded-lg border bg-muted/30 flex items-center justify-center text-muted-foreground text-sm animate-pulse">
-        Locating address on map...
-      </div>
-    );
-  }
+  if (status === "error") return (
+    <div className="h-64 rounded-lg border bg-muted/30 flex items-center justify-center text-muted-foreground text-sm">
+      Map location unavailable for this address.
+    </div>
+  );
+  if (status === "loading") return (
+    <div className="h-64 rounded-lg border bg-muted/30 flex items-center justify-center text-muted-foreground text-sm animate-pulse">
+      Locating address on map...
+    </div>
+  );
   if (!coords) return null;
 
   const defaultZoom = status === "fallback" ? 10 : 17;
@@ -277,10 +344,9 @@ export function ProjectMap({
   ].filter(Boolean).join("<br/>");
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Tile toggle */}
         <div className="flex rounded-md border overflow-hidden text-xs font-medium">
           <button
             onClick={() => setSatellite(false)}
@@ -295,8 +361,6 @@ export function ProjectMap({
             Satellite
           </button>
         </div>
-
-        {/* Sun path toggle */}
         <button
           onClick={() => setShowSunPath(v => !v)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${showSunPath ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-background text-muted-foreground hover:bg-muted"}`}
@@ -304,7 +368,13 @@ export function ProjectMap({
           <span>☀</span>
           {showSunPath ? "Hide Sun Paths" : "Show Sun Paths"}
         </button>
-
+        <button
+          onClick={() => setShowPlacement(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${showPlacement ? "bg-green-50 border-green-300 text-green-800" : "bg-background text-muted-foreground hover:bg-muted"}`}
+        >
+          <span>📐</span>
+          {showPlacement ? "Hide Placement Guide" : "Show Placement Guide"}
+        </button>
         {status === "fallback" && (
           <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
             Approximate {city}, {state} location
@@ -338,24 +408,30 @@ export function ProjectMap({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
               <span className="inline-block w-8 h-0.5 bg-red-500 rounded shrink-0" />
-              <span><strong className="text-foreground">True South</strong> — optimal panel facing direction (US)</span>
+              <span><strong className="text-foreground">True South</strong> — optimal panel facing direction</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-block w-8 h-0.5 bg-orange-400 rounded shrink-0" style={{ backgroundImage: "repeating-linear-gradient(to right, #f97316 0, #f97316 6px, transparent 6px, transparent 10px)" }} />
-              <span><strong className="text-foreground">Summer solstice</strong> — sun travels high &amp; wide (Jun 21). Longer days, more energy.</span>
+              <span className="inline-block w-8 h-px shrink-0" style={{ backgroundImage: "repeating-linear-gradient(to right, #f97316 0, #f97316 6px, transparent 6px, transparent 10px)" }} />
+              <span><strong className="text-foreground">Summer solstice</strong> — longest day arc (Jun 21)</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-block w-8 h-0.5 bg-blue-400 rounded shrink-0" style={{ backgroundImage: "repeating-linear-gradient(to right, #3b82f6 0, #3b82f6 6px, transparent 6px, transparent 10px)" }} />
-              <span><strong className="text-foreground">Winter solstice</strong> — sun stays low &amp; close to south (Dec 21). Shortest days, design for this worst case.</span>
+              <span className="inline-block w-8 h-px shrink-0" style={{ backgroundImage: "repeating-linear-gradient(to right, #3b82f6 0, #3b82f6 6px, transparent 6px, transparent 10px)" }} />
+              <span><strong className="text-foreground">Winter solstice</strong> — shortest day, worst-case (Dec 21)</span>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            Switch to <strong className="text-foreground">Satellite</strong> view and zoom in to see your roof, trees, and neighboring structures. Anything that falls between the winter sunrise/sunset lines and the True South arrow will cast shade on your array in winter — the most critical season to check.
-          </p>
         </div>
       )}
 
-      {/* Inline style for sun-path tooltip labels */}
+      {/* Panel Placement Guide */}
+      {showPlacement && (
+        <PanelPlacementGuide
+          lat={coords.lat}
+          installationType={installationType}
+          arraySizeKw={arraySizeKw}
+          numPanels={numPanels}
+        />
+      )}
+
       <style>{`
         .sun-path-label {
           background: rgba(255,255,255,0.92) !important;

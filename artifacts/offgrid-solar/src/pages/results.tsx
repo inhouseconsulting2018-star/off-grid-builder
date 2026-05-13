@@ -275,6 +275,143 @@ export default function Results() {
           </div>
         </section>
 
+        {/* ── Battery System Guide (only when battery selected) ─────── */}
+        {hasBattery && (() => {
+          const chemistry = (project as { batteryChemistry?: string | null }).batteryChemistry ?? "lifepo4";
+          const totalKwh = calc.totalBatteryBankKwh;
+          const usableKwh = calc.batteryUsableKwh;
+          const dod = chemistry === "lifepo4" ? 80 : 50;
+          const unitKwh = chemistry === "lifepo4" ? 5 : chemistry === "agm" ? 2.4 : 2.0;
+          const numUnits = Math.ceil(totalKwh / unitKwh);
+          const isRoof = !project.installationType || project.installationType === "roof";
+          const isIndoor = chemistry !== "flooded-lead-acid";
+
+          const chemLabel: Record<string, string> = {
+            lifepo4: "LiFePO4 (Lithium Iron Phosphate)",
+            agm: "AGM (Absorbed Glass Mat)",
+            "flooded-lead-acid": "Flooded Lead-Acid",
+          };
+          const chemColor: Record<string, string> = {
+            lifepo4: "text-green-700 bg-green-50 border-green-200",
+            agm: "text-blue-700 bg-blue-50 border-blue-200",
+            "flooded-lead-acid": "text-amber-700 bg-amber-50 border-amber-200",
+          };
+
+          return (
+            <section>
+              <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
+                <Battery className="h-4 w-4 text-primary" /> Battery System Guide
+              </h2>
+              <Card>
+                <CardContent className="pt-5 pb-5 space-y-5">
+
+                  {/* Key numbers row */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-center">
+                      <div className="text-2xl font-black text-primary">{usableKwh.toFixed(1)} kWh</div>
+                      <div className="text-xs text-muted-foreground mt-1">Usable storage capacity</div>
+                    </div>
+                    <div className="rounded-md bg-muted/50 border p-3 text-center">
+                      <div className="text-2xl font-black">{totalKwh.toFixed(1)} kWh</div>
+                      <div className="text-xs text-muted-foreground mt-1">Total bank size ({dod}% DoD)</div>
+                    </div>
+                    <div className="rounded-md bg-muted/50 border p-3 text-center">
+                      <div className="text-2xl font-black">{numUnits}</div>
+                      <div className="text-xs text-muted-foreground mt-1">Battery units (~{unitKwh} kWh each)</div>
+                    </div>
+                    <div className="rounded-md bg-muted/50 border p-3 text-center">
+                      <div className="text-2xl font-black">{dod}%</div>
+                      <div className="text-xs text-muted-foreground mt-1">Depth of discharge limit</div>
+                    </div>
+                  </div>
+
+                  {/* Chemistry badge */}
+                  <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold border ${chemColor[chemistry] ?? "text-muted-foreground bg-muted border-border"}`}>
+                    <span>⚡</span> Chemistry: {chemLabel[chemistry] ?? chemistry}
+                  </div>
+
+                  {/* Chemistry-specific facts */}
+                  <div className="grid sm:grid-cols-2 gap-3 text-xs">
+                    {chemistry === "lifepo4" && (
+                      <>
+                        <BatteryFact icon="✅" label="Cycle life" value="3,000–6,000 cycles (10–16 yrs)" />
+                        <BatteryFact icon="🔒" label="Safety" value="Thermally stable, no off-gassing" />
+                        <BatteryFact icon="🌡️" label="Temp range" value="-4°F to 131°F operating" />
+                        <BatteryFact icon="🔧" label="Maintenance" value="None — sealed BMS managed" />
+                      </>
+                    )}
+                    {chemistry === "agm" && (
+                      <>
+                        <BatteryFact icon="✅" label="Cycle life" value="500–1,200 cycles (3–7 yrs)" />
+                        <BatteryFact icon="🔒" label="Safety" value="Sealed, minimal off-gassing" />
+                        <BatteryFact icon="🌡️" label="Temp range" value="14°F to 104°F ideal" />
+                        <BatteryFact icon="🔧" label="Maintenance" value="Low — check terminals annually" />
+                      </>
+                    )}
+                    {chemistry === "flooded-lead-acid" && (
+                      <>
+                        <BatteryFact icon="✅" label="Cycle life" value="300–700 cycles (3–5 yrs)" />
+                        <BatteryFact icon="⚠️" label="Safety" value="Off-gasses hydrogen — ventilation required" />
+                        <BatteryFact icon="🌡️" label="Temp range" value="59°F to 77°F optimal" />
+                        <BatteryFact icon="🔧" label="Maintenance" value="Monthly — check & top electrolyte levels" />
+                      </>
+                    )}
+                  </div>
+
+                  {/* Placement section */}
+                  <div className="border-t pt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Where to Install the Battery Bank</p>
+                    <div className="space-y-2">
+                      {isIndoor ? (
+                        <>
+                          <PlacementTip icon="🏠" color="green">
+                            <strong>Indoor installation recommended</strong> — {chemistry === "lifepo4" ? "LiFePO4 batteries are safe indoors: no off-gassing, sealed cells, built-in BMS." : "AGM batteries are sealed and can be installed indoors in a utility room or garage."}
+                          </PlacementTip>
+                          <PlacementTip icon="📍" color="green">
+                            <strong>Best location: utility room, garage, or basement</strong> near the main electrical panel. Keep wire runs short — ideally within 10 ft of the inverter/charger to minimize voltage drop.
+                          </PlacementTip>
+                          <PlacementTip icon="🌡️" color="amber">
+                            <strong>Temperature matters.</strong> Keep batteries between 50–85°F for best performance and longest life. Avoid uninsulated garages in extreme climates — cold reduces capacity significantly.
+                          </PlacementTip>
+                          <PlacementTip icon="🏗️" color="amber">
+                            <strong>Floor loading.</strong> {numUnits} battery units weigh approximately {Math.round(numUnits * (chemistry === "lifepo4" ? 55 : 65))} lbs total. Install on a concrete floor or reinforced shelf rated for the weight. Do not stack on wood floors without checking load capacity.
+                          </PlacementTip>
+                        </>
+                      ) : (
+                        <>
+                          <PlacementTip icon="🏭" color="amber">
+                            <strong>Dedicated ventilated enclosure required.</strong> Flooded lead-acid batteries produce hydrogen gas during charging. Install in a vented battery box, shed, or room with forced air exchange — never in living space.
+                          </PlacementTip>
+                          <PlacementTip icon="💨" color="amber">
+                            <strong>Ventilation sizing.</strong> Minimum 1 sq ft of vent area per 100 Ah of battery capacity at 48V. Low vent at floor level for air intake, high vent near ceiling for hydrogen exhaust.
+                          </PlacementTip>
+                          <PlacementTip icon="📍" color="blue">
+                            <strong>Keep close to the inverter</strong> — short, thick cable runs (2/0 or 4/0 AWG) reduce voltage drop. Outdoor sheds work well if insulated for temperature stability.
+                          </PlacementTip>
+                          <PlacementTip icon="🔧" color="blue">
+                            <strong>Monthly maintenance access.</strong> Leave at least 18 inches of clearance on all sides for checking electrolyte levels and cleaning terminals. Label all batteries with installation date.
+                          </PlacementTip>
+                        </>
+                      )}
+                      {isRoof && (
+                        <PlacementTip icon="⚡" color="blue">
+                          <strong>Roof mount + battery pairing.</strong> Your inverter will likely be mounted on an exterior wall or in the garage. Place the battery bank on the same wall or directly adjacent — this minimizes the high-current DC cable run between them.
+                        </PlacementTip>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Wiring note */}
+                  <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                    <strong className="text-foreground">Wiring note:</strong> Battery banks at 48V nominal require heavy-gauge interconnect cable — typically 2/0–4/0 AWG copper for runs under 10 ft. All connections must be fused per NEC 690. A licensed electrician or certified solar installer must sign off on the battery wiring before commissioning.
+                  </div>
+
+                </CardContent>
+              </Card>
+            </section>
+          );
+        })()}
+
         {/* ── Section 2: Cost Estimate ───────────────────────────────── */}
         <section>
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
@@ -490,7 +627,9 @@ export default function Results() {
                 zip={project.zip}
                 projectName={project.name}
                 systemType={project.systemType}
+                installationType={project.installationType}
                 arraySizeKw={calc.arraySizeKw}
+                numPanels={calc.numPanels}
                 batteryUsableKwh={calc.batteryUsableKwh}
               />
             </CardContent>
@@ -557,5 +696,28 @@ export default function Results() {
 
       </div>
     </AppLayout>
+  );
+}
+
+// ─── Small helper components used inside the Battery System Guide ──────────
+function BatteryFact({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2">
+      <span className="shrink-0 text-sm">{icon}</span>
+      <div>
+        <div className="font-semibold text-foreground">{label}</div>
+        <div className="text-muted-foreground">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function PlacementTip({ icon, color, children }: { icon: string; color: "amber" | "blue" | "green"; children: React.ReactNode }) {
+  const bg = color === "amber" ? "bg-amber-50 border-amber-200" : color === "blue" ? "bg-blue-50 border-blue-200" : "bg-green-50 border-green-200";
+  return (
+    <div className={`flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-xs ${bg}`}>
+      <span className="shrink-0 mt-0.5">{icon}</span>
+      <span className="text-muted-foreground leading-relaxed">{children}</span>
+    </div>
   );
 }
