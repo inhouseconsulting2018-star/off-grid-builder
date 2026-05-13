@@ -4,7 +4,7 @@ import { useGetProject, useCalculateProject, getGetProjectQueryKey } from "@work
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, Download, PlusCircle, AlertTriangle, Zap, Battery, DollarSign, Settings2, Edit } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
