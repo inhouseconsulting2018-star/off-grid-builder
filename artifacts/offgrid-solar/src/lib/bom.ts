@@ -18,6 +18,10 @@ interface BomInputs {
   inverterSizeKw: number;
   totalBatteryBankKwh: number;
   batteryUsableKwh: number;
+  batteryChemistry?: string | null;
+  hasGenerator?: boolean | null;
+  generatorKw?: number | null;
+  wantsGenerator?: boolean | null;
   recommendedPanelBrand: string;
   recommendedInverterBrand: string;
   recommendedBatteryBrand: string;
@@ -63,29 +67,79 @@ export function generateBom(p: BomInputs): BomItem[] {
 
   // 3. Batteries (if selected)
   if (p.totalBatteryBankKwh > 0) {
-    const batteryModuleKwh = batterySize(p.budgetTier);
+    const chem = p.batteryChemistry ?? "lifepo4";
+    const chemLabels: Record<string, string> = {
+      "lifepo4": "LiFePO4 (Lithium Iron Phosphate)",
+      "agm": "AGM (Absorbed Glass Mat)",
+      "lead-acid": "Flooded Lead-Acid",
+    };
+    const chemDod: Record<string, number> = { "lifepo4": 80, "agm": 50, "lead-acid": 50 };
+    const dodPct = chemDod[chem] ?? 80;
+    const chemLabel = chemLabels[chem] ?? "LiFePO4";
+
+    const batteryModuleKwh = batterySize(p.budgetTier, chem);
     const numBatteries = Math.ceil(p.totalBatteryBankKwh / batteryModuleKwh);
-    const batUnitLow = batteryCostPerKwh(p.budgetTier, "low") * batteryModuleKwh;
-    const batUnitHigh = batteryCostPerKwh(p.budgetTier, "high") * batteryModuleKwh;
+    const batUnitLow = batteryCostPerKwh(p.budgetTier, chem, "low") * batteryModuleKwh;
+    const batUnitHigh = batteryCostPerKwh(p.budgetTier, chem, "high") * batteryModuleKwh;
     bom.push({
       category: "Battery Storage",
-      item: `${batteryModuleKwh} kWh LiFePO4 Battery Module`,
+      item: `${batteryModuleKwh} kWh ${chemLabel} Battery`,
       brand: p.recommendedBatteryBrand,
       qty: `${numBatteries} unit${numBatteries > 1 ? "s" : ""} (${p.totalBatteryBankKwh.toFixed(1)} kWh total)`,
       unitPrice: priceRange(batUnitLow, batUnitHigh),
       totalPrice: priceRange(batUnitLow * numBatteries, batUnitHigh * numBatteries),
-      reason: `${p.totalBatteryBankKwh.toFixed(1)} kWh total bank provides ${p.batteryUsableKwh.toFixed(1)} kWh usable at 80% DoD. LiFePO4 chemistry chosen for cycle life and safety.`,
+      reason: `${p.totalBatteryBankKwh.toFixed(1)} kWh total bank provides ${p.batteryUsableKwh.toFixed(1)} kWh usable at ${dodPct}% DoD. ${
+        chem === "lifepo4"
+          ? "LiFePO4 offers the best cycle life (3,000–6,000 cycles), built-in BMS, and requires no maintenance."
+          : chem === "agm"
+          ? "AGM is sealed, maintenance-free, and a cost-effective alternative to lithium. Limit to 50% DoD to maximize lifespan (500–1,000 cycles)."
+          : "Flooded lead-acid is the lowest upfront cost option. Requires ventilation, monthly electrolyte checks, and periodic equalization charging."
+      }`,
     });
 
-    // Battery cables & BMS
+    // Battery cables & BMS (lithium only — lead-acid uses external BMS/controller)
     bom.push({
       category: "Battery Accessories",
-      item: "Battery Interconnect Cables, BMS, Terminals",
+      item: chem === "lifepo4"
+        ? "Battery Interconnect Cables, BMS, Bus Bars & Terminals"
+        : chem === "agm"
+        ? "AGM Interconnect Cables, Bus Bars, Terminals & Hydrometer"
+        : "Flooded Cell Cables, Bus Bars, Terminals, Hydrometer & Vent Caps",
       brand: "Listed / UL Approved",
       qty: "1 set",
-      unitPrice: "$150 – $350",
-      totalPrice: "$150 – $350",
-      reason: "Required battery-side wiring, busbar connections, and battery management system integration.",
+      unitPrice: "$150 – $400",
+      totalPrice: "$150 – $400",
+      reason: chem === "lead-acid"
+        ? "Includes all battery-side wiring plus maintenance supplies: hydrometer, distilled water access, and anti-corrosion terminal spray."
+        : "Required battery-side wiring, busbar connections, and BMS integration for safe operation.",
+    });
+
+    // Generator integration interface (if existing generator)
+    if (p.hasGenerator) {
+      const genKw = p.generatorKw ? ` (${p.generatorKw} kW)` : "";
+      bom.push({
+        category: "Generator Integration",
+        item: `AC Coupling / Generator Integration for Existing Generator${genKw}`,
+        brand: "Victron MultiPlus or Sol-Ark (AC-in port)",
+        qty: "1 lot",
+        unitPrice: "$0 – $500",
+        totalPrice: "$0 – $500",
+        reason: `Your existing generator${genKw} will connect to the inverter/charger AC input. Most off-grid and hybrid inverters include a generator input port with auto-start relay output. Programming and wiring for auto-start when battery SOC drops below 30% is included.`,
+      });
+    }
+  }
+
+  // Generator purchase (if user wants to add one)
+  if (p.wantsGenerator && !p.hasGenerator) {
+    const recKw = Math.max(4, Math.ceil(p.inverterSizeKw * 0.5));
+    bom.push({
+      category: "Backup Generator",
+      item: `${recKw}–${recKw + 2} kW Propane or Diesel Generator`,
+      brand: "Kohler, Generac, or Champion",
+      qty: "1 unit",
+      unitPrice: recKw <= 6 ? "$2,000 – $4,500" : "$4,500 – $9,000",
+      totalPrice: recKw <= 6 ? "$2,000 – $4,500" : "$4,500 – $9,000",
+      reason: `Sized at ${recKw} kW minimum (≥50% of ${p.inverterSizeKw.toFixed(1)} kW inverter). Auto-start via inverter relay when battery reaches ~30% SOC. Propane is preferred for long-term storage; diesel for heavy loads. Includes transfer switch wiring to inverter AC input.`,
     });
   }
 
@@ -203,19 +257,6 @@ export function generateBom(p: BomInputs): BomItem[] {
     reason: "Real-time monitoring of production, consumption, and battery state. Most inverters include basic monitoring; this covers a gateway or data logger for cloud access.",
   });
 
-  // 13. Generator backup (off-grid)
-  if (p.systemType === "off-grid") {
-    bom.push({
-      category: "Backup Generator",
-      item: "Propane or Diesel Generator (Optional)",
-      brand: "Kohler, Generac, or Champion",
-      qty: "1 unit (optional)",
-      unitPrice: "$1,500 – $6,000",
-      totalPrice: "$1,500 – $6,000",
-      reason: "Strongly recommended for off-grid systems as backup charging source during extended cloudy periods or high loads. Size to at least 30–50% of inverter capacity.",
-    });
-  }
-
   return bom;
 }
 
@@ -239,13 +280,24 @@ function inverterCostPerKw(tier: string, systemType: string, bound: "low" | "hig
   return bound === "high" ? base * 1.25 : base;
 }
 
-function batterySize(tier: string): number {
+function batterySize(tier: string, chem = "lifepo4"): number {
+  if (chem === "agm") return tier === "premium" ? 12 : tier === "economy" ? 6 : 9.6;
+  if (chem === "lead-acid") return tier === "premium" ? 12 : tier === "economy" ? 6 : 6;
+  // lifepo4
   if (tier === "premium") return 13.5;
   if (tier === "economy") return 9.6;
   return 10;
 }
 
-function batteryCostPerKwh(tier: string, bound: "low" | "high"): number {
-  const base = tier === "premium" ? 800 : tier === "economy" ? 400 : 550;
+function batteryCostPerKwh(tier: string, chem: string, bound: "low" | "high"): number {
+  let base: number;
+  if (chem === "agm") {
+    base = tier === "premium" ? 300 : tier === "economy" ? 180 : 230;
+  } else if (chem === "lead-acid") {
+    base = tier === "premium" ? 200 : tier === "economy" ? 100 : 150;
+  } else {
+    // lifepo4
+    base = tier === "premium" ? 800 : tier === "economy" ? 400 : 550;
+  }
   return bound === "high" ? base * 1.2 : base;
 }

@@ -28,6 +28,16 @@ export const ProjectSystemType = {
   hybrid: "hybrid",
 } as const;
 
+export type ProjectBatteryChemistry =
+  (typeof ProjectBatteryChemistry)[keyof typeof ProjectBatteryChemistry];
+
+export const ProjectBatteryChemistry = {
+  lifepo4: "lifepo4",
+  agm: "agm",
+  "lead-acid": "lead-acid",
+  none: "none",
+} as const;
+
 export type ProjectShadeLevel =
   (typeof ProjectShadeLevel)[keyof typeof ProjectShadeLevel];
 
@@ -94,6 +104,11 @@ export interface Project {
   backupHours: number;
   /** @nullable */
   customBackupHours: number | null;
+  batteryChemistry?: ProjectBatteryChemistry;
+  hasGenerator?: boolean;
+  /** @nullable */
+  generatorKw?: number | null;
+  wantsGenerator?: boolean;
   shadeLevel: ProjectShadeLevel;
   roofPitch: string;
   roofDirection: string;
@@ -125,6 +140,16 @@ export const ProjectInputSystemType = {
   "off-grid": "off-grid",
   "grid-tied": "grid-tied",
   hybrid: "hybrid",
+} as const;
+
+export type ProjectInputBatteryChemistry =
+  (typeof ProjectInputBatteryChemistry)[keyof typeof ProjectInputBatteryChemistry];
+
+export const ProjectInputBatteryChemistry = {
+  lifepo4: "lifepo4",
+  agm: "agm",
+  "lead-acid": "lead-acid",
+  none: "none",
 } as const;
 
 export type ProjectInputShadeLevel =
@@ -166,6 +191,11 @@ export interface ProjectInput {
   backupHours: number;
   /** @nullable */
   customBackupHours?: number | null;
+  batteryChemistry?: ProjectInputBatteryChemistry;
+  hasGenerator?: boolean;
+  /** @nullable */
+  generatorKw?: number | null;
+  wantsGenerator?: boolean;
   shadeLevel: ProjectInputShadeLevel;
   roofPitch: string;
   roofDirection: string;
@@ -195,6 +225,16 @@ export const ProjectPatchSystemType = {
   "off-grid": "off-grid",
   "grid-tied": "grid-tied",
   hybrid: "hybrid",
+} as const;
+
+export type ProjectPatchBatteryChemistry =
+  (typeof ProjectPatchBatteryChemistry)[keyof typeof ProjectPatchBatteryChemistry];
+
+export const ProjectPatchBatteryChemistry = {
+  lifepo4: "lifepo4",
+  agm: "agm",
+  "lead-acid": "lead-acid",
+  none: "none",
 } as const;
 
 export type ProjectPatchShadeLevel =
@@ -236,6 +276,11 @@ export interface ProjectPatch {
   backupHours?: number;
   /** @nullable */
   customBackupHours?: number | null;
+  batteryChemistry?: ProjectPatchBatteryChemistry;
+  hasGenerator?: boolean;
+  /** @nullable */
+  generatorKw?: number | null;
+  wantsGenerator?: boolean;
   shadeLevel?: ProjectPatchShadeLevel;
   roofPitch?: string;
   roofDirection?: string;

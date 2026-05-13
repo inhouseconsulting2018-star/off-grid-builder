@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CalculationResult } from "./calculationResult";
+import type { ProjectBatteryChemistry } from "./projectBatteryChemistry";
 import type { ProjectBudgetTier } from "./projectBudgetTier";
 import type { ProjectInstallationType } from "./projectInstallationType";
 import type { ProjectShadeLevel } from "./projectShadeLevel";
@@ -26,6 +27,11 @@ export interface Project {
   backupHours: number;
   /** @nullable */
   customBackupHours: number | null;
+  batteryChemistry?: ProjectBatteryChemistry;
+  hasGenerator?: boolean;
+  /** @nullable */
+  generatorKw?: number | null;
+  wantsGenerator?: boolean;
   shadeLevel: ProjectShadeLevel;
   roofPitch: string;
   roofDirection: string;

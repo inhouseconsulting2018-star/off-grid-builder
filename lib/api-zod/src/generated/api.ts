@@ -32,6 +32,12 @@ export const ListProjectsResponseItem = zod.object({
   utilityRatePerKwh: zod.number(),
   backupHours: zod.number(),
   customBackupHours: zod.number().nullable(),
+  batteryChemistry: zod
+    .enum(["lifepo4", "agm", "lead-acid", "none"])
+    .optional(),
+  hasGenerator: zod.boolean().optional(),
+  generatorKw: zod.number().nullish(),
+  wantsGenerator: zod.boolean().optional(),
   shadeLevel: zod.enum(["none", "light", "medium", "heavy"]),
   roofPitch: zod.string(),
   roofDirection: zod.string(),
@@ -103,6 +109,12 @@ export const CreateProjectBody = zod.object({
   utilityRatePerKwh: zod.number().min(createProjectBodyUtilityRatePerKwhMin),
   backupHours: zod.number().min(createProjectBodyBackupHoursMin),
   customBackupHours: zod.number().nullish(),
+  batteryChemistry: zod
+    .enum(["lifepo4", "agm", "lead-acid", "none"])
+    .optional(),
+  hasGenerator: zod.boolean().optional(),
+  generatorKw: zod.number().nullish(),
+  wantsGenerator: zod.boolean().optional(),
   shadeLevel: zod.enum(["none", "light", "medium", "heavy"]),
   roofPitch: zod.string(),
   roofDirection: zod.string(),
@@ -134,6 +146,12 @@ export const GetProjectResponse = zod.object({
   utilityRatePerKwh: zod.number(),
   backupHours: zod.number(),
   customBackupHours: zod.number().nullable(),
+  batteryChemistry: zod
+    .enum(["lifepo4", "agm", "lead-acid", "none"])
+    .optional(),
+  hasGenerator: zod.boolean().optional(),
+  generatorKw: zod.number().nullish(),
+  wantsGenerator: zod.boolean().optional(),
   shadeLevel: zod.enum(["none", "light", "medium", "heavy"]),
   roofPitch: zod.string(),
   roofDirection: zod.string(),
@@ -210,6 +228,12 @@ export const UpdateProjectBody = zod.object({
     .optional(),
   backupHours: zod.number().min(updateProjectBodyBackupHoursMin).optional(),
   customBackupHours: zod.number().nullish(),
+  batteryChemistry: zod
+    .enum(["lifepo4", "agm", "lead-acid", "none"])
+    .optional(),
+  hasGenerator: zod.boolean().optional(),
+  generatorKw: zod.number().nullish(),
+  wantsGenerator: zod.boolean().optional(),
   shadeLevel: zod.enum(["none", "light", "medium", "heavy"]).optional(),
   roofPitch: zod.string().optional(),
   roofDirection: zod.string().optional(),
@@ -236,6 +260,12 @@ export const UpdateProjectResponse = zod.object({
   utilityRatePerKwh: zod.number(),
   backupHours: zod.number(),
   customBackupHours: zod.number().nullable(),
+  batteryChemistry: zod
+    .enum(["lifepo4", "agm", "lead-acid", "none"])
+    .optional(),
+  hasGenerator: zod.boolean().optional(),
+  generatorKw: zod.number().nullish(),
+  wantsGenerator: zod.boolean().optional(),
   shadeLevel: zod.enum(["none", "light", "medium", "heavy"]),
   roofPitch: zod.string(),
   roofDirection: zod.string(),
@@ -348,6 +378,12 @@ export const GetProjectsSummaryResponse = zod.object({
       utilityRatePerKwh: zod.number(),
       backupHours: zod.number(),
       customBackupHours: zod.number().nullable(),
+      batteryChemistry: zod
+        .enum(["lifepo4", "agm", "lead-acid", "none"])
+        .optional(),
+      hasGenerator: zod.boolean().optional(),
+      generatorKw: zod.number().nullish(),
+      wantsGenerator: zod.boolean().optional(),
       shadeLevel: zod.enum(["none", "light", "medium", "heavy"]),
       roofPitch: zod.string(),
       roofDirection: zod.string(),

@@ -5,6 +5,7 @@
  * OffGrid Solar Builder API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProjectPatchBatteryChemistry } from "./projectPatchBatteryChemistry";
 import type { ProjectPatchBudgetTier } from "./projectPatchBudgetTier";
 import type { ProjectPatchInstallationType } from "./projectPatchInstallationType";
 import type { ProjectPatchShadeLevel } from "./projectPatchShadeLevel";
@@ -29,6 +30,11 @@ export interface ProjectPatch {
   backupHours?: number;
   /** @nullable */
   customBackupHours?: number | null;
+  batteryChemistry?: ProjectPatchBatteryChemistry;
+  hasGenerator?: boolean;
+  /** @nullable */
+  generatorKw?: number | null;
+  wantsGenerator?: boolean;
   shadeLevel?: ProjectPatchShadeLevel;
   roofPitch?: string;
   roofDirection?: string;

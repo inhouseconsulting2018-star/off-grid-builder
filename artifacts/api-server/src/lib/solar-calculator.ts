@@ -19,6 +19,11 @@ export interface ProjectData {
   shadeLevel: string;
   backupHours: number;
   customBackupHours?: number | null;
+  batteryChemistry?: string | null;
+  hasGenerator?: boolean | null;
+  generatorKw?: number | null;
+  wantsGenerator?: boolean | null;
+  highWindArea?: boolean | null;
   budgetTier: string;
   utilityRatePerKwh: number;
   state: string;
@@ -37,6 +42,17 @@ export function runCalculations(project: ProjectData, settings: Settings) {
 
   const hasBattery = project.backupHours > 0;
   const batteryLossPct = hasBattery ? settings.batteryRoundTripLossPct : 0;
+
+  // Chemistry-specific depth of discharge
+  const chemistryDodMap: Record<string, number> = {
+    "lifepo4": 80,
+    "agm": 50,
+    "lead-acid": 50,
+    "none": 80,
+  };
+  const effectiveDod = hasBattery
+    ? (chemistryDodMap[project.batteryChemistry ?? "lifepo4"] ?? settings.batteryDod)
+    : settings.batteryDod;
 
   const totalSystemLossPct =
     settings.inverterLossPct +
@@ -60,7 +76,7 @@ export function runCalculations(project: ProjectData, settings: Settings) {
 
   const backupHrs = project.customBackupHours ?? project.backupHours;
   const batteryUsableKwh = hasBattery ? dailyKwh * (backupHrs / 24) : 0;
-  const totalBatteryBankKwh = hasBattery ? batteryUsableKwh / (settings.batteryDod / 100) : 0;
+  const totalBatteryBankKwh = hasBattery ? batteryUsableKwh / (effectiveDod / 100) : 0;
 
   const yearlyProductionKwh = adjustedArraySizeKw * peakSunHours * 365 * lossMultiplier;
 
@@ -119,12 +135,28 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     "grid-tied": "Enphase, SMA, or SolarEdge",
   };
 
-  const batteryBrands: Record<string, string> = {
-    economy: "EG4 LiFePower4",
-    "mid-range": "EG4 PowerPro or Fortress",
-    premium: "Tesla Powerwall or Simpliphi",
-    custom: "EG4 PowerPro or Fortress",
+  const batteryBrandsByChemistry: Record<string, Record<string, string>> = {
+    "lifepo4": {
+      economy: "EG4 LiFePower4 or Ampere Time",
+      "mid-range": "EG4 PowerPro or Fortress Power",
+      premium: "Tesla Powerwall or SimpliPhi",
+      custom: "EG4 PowerPro or Fortress Power",
+    },
+    "agm": {
+      economy: "Battle Born or Renogy AGM",
+      "mid-range": "Trojan or Crown AGM",
+      premium: "Discover or Lifeline AGM",
+      custom: "Trojan or Crown AGM",
+    },
+    "lead-acid": {
+      economy: "Trojan T-105 or US Battery",
+      "mid-range": "Trojan L16 or Crown",
+      premium: "Rolls Surrette or Trojan IND",
+      custom: "Trojan L16 or Crown",
+    },
   };
+  const chemKey = project.batteryChemistry ?? "lifepo4";
+  const batteryBrands = batteryBrandsByChemistry[chemKey] ?? batteryBrandsByChemistry["lifepo4"];
 
   const mountingBrands: Record<string, string> = {
     roof: "IronRidge or Unirac",
@@ -141,9 +173,22 @@ export function runCalculations(project: ProjectData, settings: Settings) {
   if (project.highWindArea) {
     notes.push("High wind area: ensure mounting hardware meets local wind load requirements.");
   }
-  if (project.systemType === "off-grid") {
-    notes.push("Off-grid systems may benefit from a backup generator for extended low-production periods.");
-    notes.push("Consider a fuel-based generator (propane or diesel) as emergency backup.");
+  if (project.systemType === "off-grid" && !project.hasGenerator && !project.wantsGenerator) {
+    notes.push("Off-grid systems benefit from a backup generator during extended low-production periods. Consider adding one to your design.");
+  }
+  if (project.hasGenerator) {
+    const genKw = project.generatorKw ? ` (${project.generatorKw} kW)` : "";
+    notes.push(`Existing generator${genKw} detected — configure your inverter/charger's AC input to auto-start charging when battery SOC drops below 30%.`);
+  }
+  if (project.wantsGenerator && !project.hasGenerator) {
+    const recSize = Math.max(4, Math.ceil(inverterSizeKw * 0.5));
+    notes.push(`Generator added to design. Recommended size: ${recSize}–${recSize + 2} kW. Propane or diesel preferred for off-grid reliability. Size to at least 50% of inverter capacity.`);
+  }
+  if (project.batteryChemistry === "agm" || project.batteryChemistry === "lead-acid") {
+    notes.push(`${project.batteryChemistry === "agm" ? "AGM" : "Flooded lead-acid"} batteries have 50% DoD — bank sized accordingly. Keep batteries in a ventilated enclosure and check electrolyte levels regularly.`);
+  }
+  if (project.batteryChemistry === "lead-acid") {
+    notes.push("Flooded lead-acid batteries require monthly equalization charges and annual electrolyte checks. Consider LiFePO4 for lower maintenance.");
   }
   if (adjustedArraySizeKw > 50) {
     notes.push("Large system — utility interconnection study and permitting may be required.");

@@ -256,6 +256,15 @@ components:
           type: number
         customBackupHours:
           type: ["number", "null"]
+        batteryChemistry:
+          type: string
+          enum: [lifepo4, agm, lead-acid, none]
+        hasGenerator:
+          type: boolean
+        generatorKw:
+          type: ["number", "null"]
+        wantsGenerator:
+          type: boolean
         shadeLevel:
           type: string
           enum: [none, light, medium, heavy]
@@ -336,6 +345,15 @@ components:
           minimum: 0
         customBackupHours:
           type: ["number", "null"]
+        batteryChemistry:
+          type: string
+          enum: [lifepo4, agm, lead-acid, none]
+        hasGenerator:
+          type: boolean
+        generatorKw:
+          type: ["number", "null"]
+        wantsGenerator:
+          type: boolean
         shadeLevel:
           type: string
           enum: [none, light, medium, heavy]
@@ -390,6 +408,15 @@ components:
           minimum: 0
         customBackupHours:
           type: ["number", "null"]
+        batteryChemistry:
+          type: string
+          enum: [lifepo4, agm, lead-acid, none]
+        hasGenerator:
+          type: boolean
+        generatorKw:
+          type: ["number", "null"]
+        wantsGenerator:
+          type: boolean
         shadeLevel:
           type: string
           enum: [none, light, medium, heavy]

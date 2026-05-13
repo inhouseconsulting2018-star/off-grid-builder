@@ -28,6 +28,10 @@ const wizardSchema = z.object({
   systemType: z.enum(["off-grid", "grid-tied", "hybrid"]),
   backupHours: z.coerce.number().min(0),
   customBackupHours: z.coerce.number().nullable().optional(),
+  batteryChemistry: z.enum(["lifepo4", "agm", "lead-acid", "none"]).default("lifepo4"),
+  hasGenerator: z.boolean().default(false),
+  generatorKw: z.coerce.number().nullable().optional(),
+  wantsGenerator: z.boolean().default(false),
   shadeLevel: z.enum(["none", "light", "medium", "heavy"]),
   roofPitch: z.string(),
   roofDirection: z.string(),
@@ -78,6 +82,10 @@ export default function Wizard() {
       systemType: "grid-tied",
       backupHours: 0,
       customBackupHours: null,
+      batteryChemistry: "lifepo4",
+      hasGenerator: false,
+      generatorKw: null,
+      wantsGenerator: false,
       shadeLevel: "none",
       roofPitch: "20",
       roofDirection: "South",
@@ -244,43 +252,129 @@ export default function Wizard() {
                 )}
 
                 {/* Step 3: Backup */}
-                {step === 3 && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    <FormField control={form.control} name="backupHours" render={({ field }) => (
-                      <FormItem className="space-y-2">
-                        <FormLabel>Desired Battery Backup</FormLabel>
-                        <FormDescription className="text-xs">How long should your battery keep you powered without solar?</FormDescription>
-                        <FormControl>
-                          <RadioGroup
-                            onValueChange={(v) => field.onChange(parseInt(v))}
-                            value={field.value.toString()}
-                            className="grid grid-cols-2 sm:grid-cols-3 gap-3"
-                          >
-                            {[
-                              { value: "0", label: "No Battery" },
-                              { value: "12", label: "12 Hours" },
-                              { value: "24", label: "24 Hours" },
-                              { value: "48", label: "48 Hours" },
-                              { value: "72", label: "72 Hours" },
-                              { value: "-1", label: "Custom" },
-                            ].map(opt => (
-                              <FormItem key={opt.value} className="flex items-center space-x-3 space-y-0 border p-3 rounded-lg cursor-pointer hover:bg-accent [&:has([data-state=checked])]:border-primary [&:has([data-state=checked])]:bg-primary/5">
-                                <FormControl><RadioGroupItem value={opt.value} /></FormControl>
-                                <FormLabel className="font-normal cursor-pointer text-sm">{opt.label}</FormLabel>
-                              </FormItem>
-                            ))}
-                          </RadioGroup>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    {form.watch("backupHours") === -1 && (
-                      <FormField control={form.control} name="customBackupHours" render={({ field }) => (
-                        <FormItem><FormLabel>Custom Backup Hours</FormLabel><FormControl><Input type="number" value={field.value || ""} onChange={e => field.onChange(parseFloat(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                {step === 3 && (() => {
+                  const backupHrs = form.watch("backupHours");
+                  const hasBattery = backupHrs > 0;
+                  const chemistry = form.watch("batteryChemistry");
+                  const hasGen = form.watch("hasGenerator");
+                  const wantsGen = form.watch("wantsGenerator");
+                  return (
+                    <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+
+                      {/* Battery backup duration */}
+                      <FormField control={form.control} name="backupHours" render={({ field }) => (
+                        <FormItem className="space-y-2">
+                          <FormLabel>Battery Backup Duration</FormLabel>
+                          <FormDescription className="text-xs">How many hours should your battery keep you powered without sun?</FormDescription>
+                          <FormControl>
+                            <RadioGroup
+                              onValueChange={(v) => field.onChange(parseInt(v))}
+                              value={field.value.toString()}
+                              className="grid grid-cols-2 sm:grid-cols-3 gap-3"
+                            >
+                              {[
+                                { value: "0", label: "No Battery" },
+                                { value: "12", label: "12 Hours" },
+                                { value: "24", label: "24 Hours" },
+                                { value: "48", label: "48 Hours" },
+                                { value: "72", label: "72 Hours" },
+                                { value: "-1", label: "Custom" },
+                              ].map(opt => (
+                                <FormItem key={opt.value} className="flex items-center space-x-3 space-y-0 border p-3 rounded-lg cursor-pointer hover:bg-accent [&:has([data-state=checked])]:border-primary [&:has([data-state=checked])]:bg-primary/5">
+                                  <FormControl><RadioGroupItem value={opt.value} /></FormControl>
+                                  <FormLabel className="font-normal cursor-pointer text-sm">{opt.label}</FormLabel>
+                                </FormItem>
+                              ))}
+                            </RadioGroup>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
                       )} />
-                    )}
-                  </div>
-                )}
+
+                      {backupHrs === -1 && (
+                        <FormField control={form.control} name="customBackupHours" render={({ field }) => (
+                          <FormItem><FormLabel>Custom Backup Hours</FormLabel><FormControl><Input type="number" value={field.value || ""} onChange={e => field.onChange(parseFloat(e.target.value))} /></FormControl><FormMessage /></FormItem>
+                        )} />
+                      )}
+
+                      {/* Battery chemistry — shown when battery selected */}
+                      {hasBattery && (
+                        <FormField control={form.control} name="batteryChemistry" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Battery Chemistry</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                              <SelectContent>
+                                <SelectItem value="lifepo4">LiFePO4 — Best safety, 3,000–6,000 cycles, no maintenance</SelectItem>
+                                <SelectItem value="agm">AGM — Sealed, no maintenance, lower cost, 500–1,000 cycles</SelectItem>
+                                <SelectItem value="lead-acid">Flooded Lead-Acid — Lowest cost, requires regular maintenance</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription className="text-xs">
+                              {chemistry === "lifepo4"
+                                ? "Recommended. LiFePO4 uses 80% of its capacity (DoD), is safe for indoor use, and lasts 10–20 years."
+                                : chemistry === "agm"
+                                ? "Only use 50% of capacity to protect lifespan. Safe for enclosed spaces. Good budget option."
+                                : "Only use 50% of capacity. Requires a ventilated, temperature-controlled enclosure. Monthly electrolyte checks required."}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      )}
+
+                      {/* Separator */}
+                      <div className="border-t pt-4">
+                        <p className="text-sm font-medium mb-3">Generator / Backup Power</p>
+
+                        {/* Existing generator */}
+                        <FormField control={form.control} name="hasGenerator" render={({ field }) => (
+                          <FormItem className="flex items-start space-x-3 space-y-0 border p-3 rounded-lg mb-3">
+                            <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                            <div>
+                              <FormLabel className="font-normal cursor-pointer text-sm">I already have a generator on this property</FormLabel>
+                              <FormDescription className="text-xs mt-0.5">We'll include generator integration in your design.</FormDescription>
+                            </div>
+                          </FormItem>
+                        )} />
+
+                        {hasGen && (
+                          <FormField control={form.control} name="generatorKw" render={({ field }) => (
+                            <FormItem className="mb-3">
+                              <FormLabel>Existing Generator Size (kW)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  placeholder="e.g. 8"
+                                  value={field.value ?? ""}
+                                  onChange={e => field.onChange(parseFloat(e.target.value) || null)}
+                                />
+                              </FormControl>
+                              <FormDescription className="text-xs">Enter the rated output in kW (usually on the nameplate). Used to size the inverter's AC input.</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        )}
+
+                        {/* Add a generator */}
+                        {!hasGen && (
+                          <FormField control={form.control} name="wantsGenerator" render={({ field }) => (
+                            <FormItem className="flex items-start space-x-3 space-y-0 border p-3 rounded-lg">
+                              <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                              <div>
+                                <FormLabel className="font-normal cursor-pointer text-sm">Add a generator to my design</FormLabel>
+                                <FormDescription className="text-xs mt-0.5">
+                                  {wantsGen
+                                    ? "A propane or diesel generator will be sized and included in your BOM as a backup charging source."
+                                    : "Strongly recommended for off-grid systems. Provides backup charging during extended cloudy periods."}
+                                </FormDescription>
+                              </div>
+                            </FormItem>
+                          )} />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Step 4: Site */}
                 {step === 4 && (() => {
