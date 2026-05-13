@@ -1,11 +1,11 @@
 /**
  * Proposals router — stateless Quick Proposal estimate endpoint.
  *
- * POST /api/proposals/estimate
- *   No DB write. Accepts address + annual usage, returns a customer-facing
- *   solar sizing estimate with optional PVWatts irradiance enrichment.
+ * POST /api/proposals/estimate  (no DB write)
+ * GET  /api/proposals/equipment  — returns panel and battery catalogs for the UI
  *
- * Future API integration points are marked with TODO comments.
+ * All calculation logic lives in lib/proposal-calculator.ts.
+ * All external geocoding/irradiance calls stay server-side.
  */
 
 import { Router, type IRouter } from "express";
@@ -15,14 +15,54 @@ import {
   verifyTestScenario,
   STATE_PSH,
   DEFAULT_PEAK_SUN_HOURS,
-  DEFAULT_PANEL_W,
+  DEFAULT_PANEL_TYPE,
+  DEFAULT_BATTERY_TYPE,
   EFFICIENCY_FACTOR,
+  PANEL_CATALOG,
+  BATTERY_CATALOG,
 } from "../lib/proposal-calculator";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-// ─── Input parsing ────────────────────────────────────────────────────────────
+// ─── GET /api/proposals/equipment ────────────────────────────────────────────
+// Returns the panel and battery catalogs so the frontend can render selectors
+// without embedding any business data client-side.
+
+router.get("/proposals/equipment", (_req, res) => {
+  res.json({
+    panels: Object.entries(PANEL_CATALOG).map(([key, spec]) => ({
+      key,
+      label: spec.label,
+      wattage: spec.wattage,
+      efficiencyPct: spec.efficiencyPct,
+      tempCoeffPct: spec.tempCoeffPct,
+      bifacial: spec.bifacial,
+      bifacialGainPct: spec.bifacialGainPct,
+      costTier: spec.costTier,
+      description: spec.description,
+    })),
+    batteries: Object.entries(BATTERY_CATALOG).map(([key, spec]) => ({
+      key,
+      label: spec.label,
+      chemistry: spec.chemistry,
+      dodPct: spec.dodPct,
+      roundTripEffPct: spec.roundTripEffPct,
+      estimatedCycleLife: spec.estimatedCycleLife,
+      maintenanceRequired: spec.maintenanceRequired,
+      requiresVentilation: spec.requiresVentilation,
+      hasSafetyNotes: spec.safetyNotes !== null,
+      costTier: spec.costTier,
+      description: spec.description,
+    })),
+    defaults: {
+      panelType: DEFAULT_PANEL_TYPE,
+      batteryType: DEFAULT_BATTERY_TYPE,
+    },
+  });
+});
+
+// ─── Input validation ─────────────────────────────────────────────────────────
 
 interface EstimateInput {
   address: string;
@@ -31,9 +71,10 @@ interface EstimateInput {
   zip: string;
   annualKwh?: number | null;
   monthlyKwh?: number | null;
-  panelWattage?: number;
+  panelType?: string;
+  batteryType?: string;
   efficiencyFactor?: number;
-  // TODO: future inputs — roofAzimuth, roofPitch, shading, utilityRate, financeType
+  // TODO: future — roofAzimuth, roofTiltDeg, shadingPct, utilityRate, financeType
 }
 
 function parseInput(body: unknown): { ok: true; data: EstimateInput } | { ok: false; error: string } {
@@ -54,6 +95,12 @@ function parseInput(body: unknown): { ok: true; data: EstimateInput } | { ok: fa
   if (!hasAnnual && !hasMonthly)
     return { ok: false, error: "Provide annualKwh or monthlyKwh (must be positive)" };
 
+  // Validate panel/battery type keys if provided
+  if (b["panelType"] !== undefined && !PANEL_CATALOG[b["panelType"] as string])
+    return { ok: false, error: `Unknown panelType. Valid options: ${Object.keys(PANEL_CATALOG).join(", ")}` };
+  if (b["batteryType"] !== undefined && !BATTERY_CATALOG[b["batteryType"] as string])
+    return { ok: false, error: `Unknown batteryType. Valid options: ${Object.keys(BATTERY_CATALOG).join(", ")}` };
+
   return {
     ok: true,
     data: {
@@ -63,13 +110,15 @@ function parseInput(body: unknown): { ok: true; data: EstimateInput } | { ok: fa
       zip: b["zip"] as string,
       annualKwh: typeof b["annualKwh"] === "number" ? b["annualKwh"] : null,
       monthlyKwh: typeof b["monthlyKwh"] === "number" ? b["monthlyKwh"] : null,
-      panelWattage: typeof b["panelWattage"] === "number" ? b["panelWattage"] : DEFAULT_PANEL_W,
-      efficiencyFactor: typeof b["efficiencyFactor"] === "number" ? b["efficiencyFactor"] : EFFICIENCY_FACTOR,
+      panelType: typeof b["panelType"] === "string" ? b["panelType"] : DEFAULT_PANEL_TYPE,
+      batteryType: typeof b["batteryType"] === "string" ? b["batteryType"] : DEFAULT_BATTERY_TYPE,
+      efficiencyFactor:
+        typeof b["efficiencyFactor"] === "number" ? b["efficiencyFactor"] : EFFICIENCY_FACTOR,
     },
   };
 }
 
-// ─── Route ────────────────────────────────────────────────────────────────────
+// ─── POST /api/proposals/estimate ─────────────────────────────────────────────
 
 router.post("/proposals/estimate", async (req, res): Promise<void> => {
   const parsed = parseInput(req.body);
@@ -79,8 +128,9 @@ router.post("/proposals/estimate", async (req, res): Promise<void> => {
   }
 
   const input = parsed.data;
-  const panelW = input.panelWattage ?? DEFAULT_PANEL_W;
   const eff = input.efficiencyFactor ?? EFFICIENCY_FACTOR;
+  const panelType = input.panelType ?? DEFAULT_PANEL_TYPE;
+  const batteryType = input.batteryType ?? DEFAULT_BATTERY_TYPE;
 
   // ── Resolve annual kWh ──────────────────────────────────────────────────
   const annualKwh =
@@ -97,7 +147,7 @@ router.post("/proposals/estimate", async (req, res): Promise<void> => {
   let pvwattsAnnualAt5kw: number | null = null;
 
   try {
-    // TODO: swap fetchPVWatts for Aurora Solar or OpenSolar irradiance API here
+    // TODO: swap for Aurora Solar / OpenSolar irradiance API when available
     const pv = await fetchPVWatts({
       systemCapacityKw: 5,
       losses: 14,
@@ -120,30 +170,29 @@ router.post("/proposals/estimate", async (req, res): Promise<void> => {
     logger.warn({ state: input.state }, "Proposal: PVWatts unavailable, using state fallback");
   }
 
-  // ── Run core calculation using extracted utility functions ──────────────
-  const calc = runProposalCalc(annualKwh, psh, eff, panelW);
+  // ── Run core calculation ────────────────────────────────────────────────
+  const calc = runProposalCalc(annualKwh, psh, eff, panelType, batteryType);
 
   // ── Scale PVWatts monthly output to actual final system size ────────────
   // PVWatts was called at 5 kW reference; scale linearly to actual system kW.
+  // Bifacial gain is also applied to the monthly values.
   let scaledMonthlyKwh: number[] | null = null;
   if (pvwattsMonthlyKwh && pvwattsAnnualAt5kw && pvwattsAnnualAt5kw > 0) {
-    const scale = calc.finalSystemKw / 5;
+    const scale = (calc.finalSystemKw / 5) * (1 + calc.panel.bifacialGainPct / 100);
     scaledMonthlyKwh = pvwattsMonthlyKwh.map((v) => Math.round(v * scale));
   }
 
-  // ── Spec verification (for test/demo panel) ─────────────────────────────
-  // Runs the same formulas with spec-assumed PSH (5.5) so the UI can show
-  // expected numbers from the spec alongside the real PVWatts results.
+  // ── Spec verification (5.5 PSH, 440W) for the formula-check panel ──────
   const specVerification = verifyTestScenario();
 
-  // TODO: Future enrichment hooks:
-  //   - Utility rate lookup → estimatedSavingsPerYear
-  //   - Financing API → monthly payment estimate
-  //   - Permit/AHJ lookup → permitFee, setbackRequirements
-  //   - CRM auto-create lead → leadId
+  // TODO future enrichment:
+  //   utilityRate → estimatedAnnualSavings
+  //   financeType → monthlyPaymentEstimate
+  //   permitAhj → permitFee, setbackRequirements
+  //   crm → leadId
 
   res.json({
-    // ── Input echo ────────────────────────────────────────────────────────
+    // Input echo
     address: input.address,
     city: input.city,
     state: input.state,
@@ -151,55 +200,71 @@ router.post("/proposals/estimate", async (req, res): Promise<void> => {
     annualKwhUsage: Math.round(annualKwh),
     monthlyKwhUsage: Math.round(annualKwh / 12),
 
-    // ── Irradiance ────────────────────────────────────────────────────────
+    // Irradiance
     peakSunHours: Math.round(psh * 100) / 100,
-    peakSunHoursSource: pshSource,   // "pvwatts" | "state" | "default"
+    peakSunHoursSource: pshSource,
 
-    // ── System sizing (from proposal-calculator.ts) ───────────────────────
-    panelWattage: panelW,
+    // Panel details (from catalog)
+    panel: {
+      type: panelType,
+      label: calc.panel.label,
+      wattage: calc.panel.wattage,
+      efficiencyPct: calc.panel.efficiencyPct,
+      tempCoeffPct: calc.panel.tempCoeffPct,
+      bifacial: calc.panel.bifacial,
+      bifacialGainPct: calc.panel.bifacialGainPct,
+      costTier: calc.panel.costTier,
+      description: calc.panel.description,
+    },
+
+    // System sizing
     efficiencyFactor: eff,
-    requiredSystemKw: calc.requiredSystemKw,   // before rounding to whole panels
+    requiredSystemKw: calc.requiredSystemKw,
     panelCount: calc.panelCount,
-    finalSystemKw: calc.finalSystemKw,         // after rounding
+    finalSystemKw: calc.finalSystemKw,
 
-    // ── Production ────────────────────────────────────────────────────────
+    // Production
     estimatedAnnualKwh: calc.estimatedAnnualKwh,
     estimatedMonthlyKwh: calc.estimatedMonthlyKwh,
     offsetPct: calc.offsetPct,
 
-    // ── Monthly breakdown (PVWatts-scaled to actual system size) ──────────
+    // Monthly breakdown (PVWatts-scaled)
     monthlyProductionKwh: scaledMonthlyKwh,
 
-    // ── Battery recommendation (v2 spec rule: >12k → 20 kWh, else → 10 kWh)
+    // Battery details (from catalog + sizing rule)
     battery: {
-      recommendedKwh: calc.battery.kwh,
+      type: batteryType,
+      label: calc.battery.label,
+      chemistry: calc.battery.chemistry,
+      usableKwh: calc.battery.usableKwh,         // What you can actually use
+      totalKwh: calc.battery.totalKwh,            // Rated capacity needed at this DoD
+      dodPct: calc.battery.dodPct,
+      roundTripEffPct: calc.battery.roundTripEffPct,
+      estimatedCycleLife: calc.battery.estimatedCycleLife,
+      maintenanceRequired: calc.battery.maintenanceRequired,
+      requiresVentilation: calc.battery.requiresVentilation,
+      safetyNotes: calc.battery.safetyNotes,
       rule: calc.battery.rule,
-      reason: calc.battery.reason,
-      chemistry: "LiFePO4",
-      depthOfDischarge: 0.8,
+      description: calc.battery.description,
     },
 
-    // ── Test/spec verification numbers (spec §9 with 5.5 PSH) ────────────
-    specVerification: {
-      psh: 5.5,
-      pass: specVerification.pass,
-      requiredSystemKw: specVerification.requiredSystemKw,
-      panelCount: specVerification.panelCount,
-      finalSystemKw: specVerification.finalSystemKw,
-      estimatedAnnualKwh: specVerification.estimatedAnnualKwh,
-      estimatedMonthlyKwh: specVerification.estimatedMonthlyKwh,
-      offsetPct: specVerification.offsetPct,
-      batteryKwh: specVerification.battery.kwh,
-    },
+    // Spec formula verification (§9 test scenario with 5.5 PSH, 440W)
+    specVerification,
 
-    // ── Disclaimer ────────────────────────────────────────────────────────
+    // Disclaimer
     notes: [
-      "This estimate is for preliminary planning only and should not be used for contract or permit purposes.",
+      "This estimate is for preliminary planning only and should not be used for contracts or permits.",
       "Final design requires on-site roof measurements, shading analysis, utility bill review, and electrical panel inspection.",
       "System size may change after engineering review, local code compliance, and utility interconnection requirements.",
-      "Battery recommendation is based on annual usage; actual backup time depends on which loads are connected.",
-      "Production estimates assume a south-facing roof at 20° tilt with standard losses. Results vary with roof orientation and shading.",
-    ],
+      "Battery sizing is based on annual usage rules. Actual backup time depends on which loads are connected.",
+      "Production assumes a south-facing roof at 20° tilt with standard losses. Results vary with roof orientation and shading.",
+      calc.panel.bifacial
+        ? `Bifacial gain of ${calc.panel.bifacialGainPct}% is applied. Actual gain depends on mounting height, albedo (ground reflectivity), and local conditions.`
+        : null,
+      calc.battery.maintenanceRequired
+        ? "Selected battery requires ongoing maintenance. Review safety notes with your installer before purchase."
+        : null,
+    ].filter((n): n is string => n !== null),
   });
 });
 

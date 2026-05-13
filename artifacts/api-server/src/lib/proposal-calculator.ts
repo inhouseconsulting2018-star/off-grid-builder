@@ -1,24 +1,27 @@
 /**
- * Proposal Calculator — pure calculation utilities for Quick Proposal estimates.
+ * Proposal Calculator — equipment catalogs and sizing calculation utilities.
  *
- * All functions are stateless and can be unit-tested independently.
- * Import and call these from route handlers — never add side effects here.
+ * Covers the major solar panel and battery chemistry types available in 2024/2025.
+ * All chemistry-specific parameters (DoD, RTE, cycle life) use conservative
+ * industry-standard values. Real product specs vary — these are reliable defaults
+ * for preliminary estimates and should be refined during final system design.
  *
- * Formulas match the v2 spec exactly:
- *   Annual Production  = System Size kW × PSH × 365 × 0.78
- *   Required Size      = Annual Usage ÷ (PSH × 365 × 0.78)
- *   Panel Count        = ceil(Required kW × 1000 ÷ panelW)
- *   Final System Size  = Panel Count × panelW ÷ 1000
+ * Formulas:
+ *   Required Size (kW) = Annual kWh ÷ (PSH × 365 × efficiency)
+ *   Panel Count        = ceil(Required kW × 1000 ÷ panel wattage)
+ *   Final Size (kW)    = Panel Count × panel wattage ÷ 1000
+ *   Annual Production  = Final Size × PSH × 365 × efficiency
+ *   Battery Total (kWh) = Target usable kWh ÷ (DoD% ÷ 100)
  */
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Core constants ───────────────────────────────────────────────────────────
 
-export const DEFAULT_PANEL_W = 440;       // watts per panel (spec default)
-export const EFFICIENCY_FACTOR = 0.78;   // system efficiency including inverter, wire, temp losses
+export const EFFICIENCY_FACTOR = 0.78;     // system derate: inverter + wiring + temp losses
 export const DAYS_PER_YEAR = 365;
-export const DEFAULT_PEAK_SUN_HOURS = 5.5; // California/national default fallback
+export const DEFAULT_PEAK_SUN_HOURS = 5.5; // California / national fallback
 
-// State-level peak sun hour estimates (used when PVWatts API unavailable)
+// State-level peak sun hour estimates (annual average, optimally-tilted surface)
+// Source: NREL PVWatts state averages. Overridden at runtime by live PVWatts data.
 export const STATE_PSH: Record<string, number> = {
   AK: 3.5, AL: 5.0, AR: 5.0, AZ: 6.5, CA: 5.8, CO: 5.7,
   CT: 4.5, DE: 4.6, FL: 5.3, GA: 5.2, HI: 5.8, IA: 4.6,
@@ -31,11 +34,219 @@ export const STATE_PSH: Record<string, number> = {
   WV: 4.5, WY: 5.5,
 };
 
-// ─── Individual formula functions ─────────────────────────────────────────────
+// ─── Panel Catalog ────────────────────────────────────────────────────────────
+
+export type CostTier = "budget" | "standard" | "premium" | "ultra_premium";
+
+export interface PanelSpec {
+  label: string;
+  wattage: number;           // STC rated power, watts
+  efficiencyPct: number;     // STC module efficiency, %
+  tempCoeffPct: number;      // Power loss per °C above STC 25°C (negative, e.g. -0.35)
+  bifacial: boolean;         // Captures reflected light from rear surface
+  bifacialGainPct: number;   // Typical rear-side gain % (0 for monofacial panels)
+  costTier: CostTier;
+  description: string;
+}
+
+/**
+ * Solar panel type catalog.
+ *
+ * Wattages reflect common residential-grade modules (2024/2025 market):
+ *   - Standard rooftop modules: 340–490 W
+ *   - High-power / commercial modules: 500–600 W
+ *   - Bifacial gain applied to effective production, not STC nameplate rating
+ *
+ * Future: pull live specs from Aurora Solar or manufacturer APIs.
+ */
+export const PANEL_CATALOG: Record<string, PanelSpec> = {
+  poly: {
+    label: "Polycrystalline (Standard)",
+    wattage: 340,
+    efficiencyPct: 17.0,
+    tempCoeffPct: -0.40,
+    bifacial: false,
+    bifacialGainPct: 0,
+    costTier: "budget",
+    description:
+      "Older multi-crystal technology. Lower cost per watt, good for large unshaded roofs where space is not a concern. Best for budget-conscious projects.",
+  },
+  mono_perc: {
+    label: "Monocrystalline PERC",
+    wattage: 415,
+    efficiencyPct: 21.0,
+    tempCoeffPct: -0.35,
+    bifacial: false,
+    bifacialGainPct: 0,
+    costTier: "standard",
+    description:
+      "The most popular residential panel today. Single-crystal silicon with PERC cell technology delivers excellent efficiency and value for most homes.",
+  },
+  bifacial: {
+    label: "Bifacial Mono PERC",
+    wattage: 450,
+    efficiencyPct: 22.0,
+    tempCoeffPct: -0.35,
+    bifacial: true,
+    bifacialGainPct: 10,
+    costTier: "premium",
+    description:
+      "Front and rear surfaces both generate power. Best on light-colored roofs, carports, and ground mounts where reflected light reaches the back of the panel. ~10% bonus production.",
+  },
+  topcon: {
+    label: "TOPCon N-Type",
+    wattage: 480,
+    efficiencyPct: 22.5,
+    tempCoeffPct: -0.30,
+    bifacial: true,
+    bifacialGainPct: 12,
+    costTier: "premium",
+    description:
+      "Latest N-type silicon technology. Lower temperature coefficient means less output drop on hot days. Better morning, evening, and overcast performance than PERC.",
+  },
+  hjt: {
+    label: "HJT Heterojunction",
+    wattage: 490,
+    efficiencyPct: 23.5,
+    tempCoeffPct: -0.24,
+    bifacial: true,
+    bifacialGainPct: 15,
+    costTier: "ultra_premium",
+    description:
+      "Highest residential efficiency available. Exceptional low-temperature-coefficient makes it ideal for hot climates. Best choice when roof space is very limited.",
+  },
+  high_power: {
+    label: "High-Power Commercial (500–600 W)",
+    wattage: 555,
+    efficiencyPct: 21.5,
+    tempCoeffPct: -0.35,
+    bifacial: true,
+    bifacialGainPct: 8,
+    costTier: "standard",
+    description:
+      "Large-format panels (72-cell or 144 half-cell). Fewer panels needed for the same kW. Common in commercial rooftops, large residential, and ground-mount arrays.",
+  },
+};
+
+export const DEFAULT_PANEL_TYPE = "mono_perc";
+export const DEFAULT_PANEL_W = PANEL_CATALOG[DEFAULT_PANEL_TYPE]!.wattage; // 415W
+
+// ─── Battery Catalog ──────────────────────────────────────────────────────────
+
+export interface BatterySpec {
+  label: string;
+  chemistry: string;
+  dodPct: number;                  // Maximum recommended depth of discharge (%)
+  roundTripEffPct: number;         // AC-to-AC round-trip efficiency (%)
+  selfDischargePerMonthPct: number; // Capacity lost per month while idle (%)
+  estimatedCycleLife: number;      // Discharge cycles at rated DoD before 80% capacity remains
+  maintenanceRequired: boolean;    // Requires periodic water topping / equalization
+  requiresVentilation: boolean;    // Must NOT be installed in sealed enclosures
+  safetyNotes: string | null;      // null = no special warning
+  costTier: "budget" | "standard" | "premium";
+  description: string;
+}
+
+/**
+ * Battery chemistry catalog.
+ *
+ * Lead-acid types (AGM, Gel, Flooded) have significantly lower DoD than lithium —
+ * a 200 Ah 12V (2.4 kWh) AGM bank only delivers 1.2 kWh usably.
+ * This is why total capacity calculations must always account for DoD.
+ *
+ * DoD reference (conservative industry recommendations):
+ *   LiFePO4 / NMC  → 80% DoD (20% reserve)
+ *   Gel             → 60% DoD (40% reserve)
+ *   AGM / Flooded   → 50% DoD (50% reserve)
+ *
+ * Temperature note: Lead-acid batteries lose 1% capacity per °C below 25°C.
+ *   At 0°C → ~25% capacity loss. At -20°C → ~50% capacity loss.
+ *   Cold-climate installs should derate or heat the battery bank.
+ */
+export const BATTERY_CATALOG: Record<string, BatterySpec> = {
+  lifepo4: {
+    label: "LiFePO4 (Lithium Iron Phosphate)",
+    chemistry: "Lithium Iron Phosphate",
+    dodPct: 80,
+    roundTripEffPct: 95,
+    selfDischargePerMonthPct: 2,
+    estimatedCycleLife: 4000,
+    maintenanceRequired: false,
+    requiresVentilation: false,
+    safetyNotes: null,
+    costTier: "premium",
+    description:
+      "The safest lithium chemistry — no thermal runaway risk. Long cycle life, zero maintenance, no ventilation required. Best long-term value for most residential systems.",
+  },
+  nmc: {
+    label: "NMC Lithium (Powerwall-style)",
+    chemistry: "Lithium Nickel Manganese Cobalt",
+    dodPct: 80,
+    roundTripEffPct: 97,
+    selfDischargePerMonthPct: 1,
+    estimatedCycleLife: 4000,
+    maintenanceRequired: false,
+    requiresVentilation: false,
+    safetyNotes:
+      "Requires active thermal management (BMS). Install per manufacturer's temperature and clearance specifications. Avoid installation in high-heat locations.",
+    costTier: "premium",
+    description:
+      "Higher energy density than LiFePO4 — more kWh per cubic foot. Used in Tesla Powerwall and similar products. Excellent round-trip efficiency. Best for space-constrained installs.",
+  },
+  agm: {
+    label: "AGM Lead-Acid",
+    chemistry: "Absorbent Glass Mat (Lead-Acid)",
+    dodPct: 50,
+    roundTripEffPct: 82,
+    selfDischargePerMonthPct: 3,
+    estimatedCycleLife: 600,
+    maintenanceRequired: false,
+    requiresVentilation: true,
+    safetyNotes:
+      "Must be installed in a vented location. Do not discharge below 50% DoD. Use AGM-compatible charge controller (do not use flooded or gel charge profiles).",
+    costTier: "budget",
+    description:
+      "Sealed, valve-regulated lead-acid. No water topping required. Good entry-level option for smaller off-grid systems with tighter budgets. Note the 50% DoD limit — the battery bank must be twice the usable capacity.",
+  },
+  gel: {
+    label: "Gel Lead-Acid",
+    chemistry: "Gel Electrolyte (Lead-Acid)",
+    dodPct: 60,
+    roundTripEffPct: 85,
+    selfDischargePerMonthPct: 2,
+    estimatedCycleLife: 800,
+    maintenanceRequired: false,
+    requiresVentilation: true,
+    safetyNotes:
+      "⚠ Overcharging permanently destroys gel cells. You MUST use a gel-compatible charge controller with the correct voltage profile (max 14.1V for 12V bank). Incompatible chargers will ruin the battery.",
+    costTier: "budget",
+    description:
+      "Better high-temperature performance than AGM — good for hot climates like desert Southwest. Sealed. Requires a dedicated gel-compatible charge controller.",
+  },
+  flooded: {
+    label: "Flooded Lead-Acid (FLA)",
+    chemistry: "Flooded Lead-Acid",
+    dodPct: 50,
+    roundTripEffPct: 80,
+    selfDischargePerMonthPct: 5,
+    estimatedCycleLife: 500,
+    maintenanceRequired: true,
+    requiresVentilation: true,
+    safetyNotes:
+      "⚠ Produces hydrogen gas during charging — MUST be installed in a well-vented, non-enclosed space away from all ignition sources. Requires monthly distilled water topping and regular equalization charging (high-voltage charge cycle).",
+    costTier: "budget",
+    description:
+      "Lowest upfront cost per kWh. Proven, robust technology. Requires significant maintenance. Not suitable for enclosed spaces, homes, or RVs without proper ventilation. Best for remote off-grid cabins or outbuildings where maintenance is acceptable.",
+  },
+};
+
+export const DEFAULT_BATTERY_TYPE = "lifepo4";
+
+// ─── Core formula functions ────────────────────────────────────────────────────
 
 /**
  * Required system size (kW) before rounding to whole panels.
- * Formula: annualKwh ÷ (PSH × DAYS × efficiency)
+ * Formula: annualKwh ÷ (PSH × 365 × efficiency)
  */
 export function calcRequiredSystemKw(
   annualKwh: number,
@@ -46,10 +257,10 @@ export function calcRequiredSystemKw(
 }
 
 /**
- * Panel count — always rounds UP so production meets or exceeds usage.
+ * Panel count — rounds UP so production meets or exceeds load.
  * Formula: ceil(requiredKw × 1000 ÷ panelW)
  */
-export function calcPanelCount(requiredKw: number, panelW: number = DEFAULT_PANEL_W): number {
+export function calcPanelCount(requiredKw: number, panelW: number): number {
   return Math.ceil((requiredKw * 1000) / panelW);
 }
 
@@ -57,89 +268,117 @@ export function calcPanelCount(requiredKw: number, panelW: number = DEFAULT_PANE
  * Final system size (kW) after rounding to whole panels.
  * Formula: panelCount × panelW ÷ 1000
  */
-export function calcFinalSystemKw(panelCount: number, panelW: number = DEFAULT_PANEL_W): number {
+export function calcFinalSystemKw(panelCount: number, panelW: number): number {
   return (panelCount * panelW) / 1000;
 }
 
 /**
  * Estimated annual AC production (kWh/yr).
- * Formula: finalKw × PSH × DAYS × efficiency
+ * For bifacial panels, bifacial gain increases effective production.
+ * Formula: finalKw × PSH × 365 × efficiency × (1 + bifacialGainPct/100)
  */
 export function calcAnnualProduction(
   finalKw: number,
   psh: number,
   efficiency: number = EFFICIENCY_FACTOR,
+  bifacialGainPct: number = 0,
 ): number {
-  return Math.round(finalKw * psh * DAYS_PER_YEAR * efficiency);
+  const bifacialMultiplier = 1 + bifacialGainPct / 100;
+  return Math.round(finalKw * psh * DAYS_PER_YEAR * efficiency * bifacialMultiplier);
+}
+
+// ─── Battery sizing ────────────────────────────────────────────────────────────
+
+export interface BatteryResult extends BatterySpec {
+  batteryType: string;
+  usableKwh: number;    // Recommended usable energy (kWh)
+  totalKwh: number;     // Total rated capacity to achieve usable target at rated DoD
+  rule: string;         // Human-readable rule that drove the usable target
 }
 
 /**
- * Battery storage recommendation — v2 spec rule:
- *   ≥ 12,000 kWh/yr  →  20 kWh battery
- *   < 12,000 kWh/yr  →  10 kWh battery
+ * Battery recommendation.
+ *
+ * Usable capacity target is determined by annual usage:
+ *   ≥ 12,000 kWh/yr  →  20 kWh usable
+ *   < 12,000 kWh/yr  →  10 kWh usable
+ *
+ * Total rated capacity = usable ÷ (DoD% ÷ 100)
+ *   → LiFePO4 (80% DoD): 20 kWh usable → 25.0 kWh total
+ *   → AGM (50% DoD):     20 kWh usable → 40.0 kWh total
+ *   → Gel (60% DoD):     20 kWh usable → 33.3 kWh total
+ *
+ * This ensures all battery types deliver the same usable energy,
+ * even though their total capacity differs significantly.
  */
-export function calcBatteryRecommendation(annualKwh: number): {
-  kwh: 10 | 20;
-  rule: string;
-  reason: string;
-} {
-  if (annualKwh >= 12000) {
-    return {
-      kwh: 20,
-      rule: "Annual usage ≥ 12,000 kWh → 20 kWh recommended",
-      reason:
-        "High-usage home. A 20 kWh LiFePO4 battery provides meaningful backup for essential loads during an outage.",
-    };
-  }
+export function calcBatteryRecommendation(
+  annualKwh: number,
+  batteryTypeKey: string = DEFAULT_BATTERY_TYPE,
+): BatteryResult {
+  const spec = BATTERY_CATALOG[batteryTypeKey] ?? BATTERY_CATALOG[DEFAULT_BATTERY_TYPE]!;
+  const usableKwh = annualKwh >= 12000 ? 20 : 10;
+  const rule =
+    annualKwh >= 12000
+      ? "Annual usage ≥ 12,000 kWh → 20 kWh usable target"
+      : "Annual usage < 12,000 kWh → 10 kWh usable target";
+
+  // Total rated capacity needed to provide usableKwh at this battery's DoD
+  const totalKwh = Math.round((usableKwh / (spec.dodPct / 100)) * 10) / 10;
+
   return {
-    kwh: 10,
-    rule: "Annual usage ≤ 12,000 kWh → 10 kWh recommended",
-    reason:
-      "Standard home usage. A 10 kWh LiFePO4 battery handles essential loads overnight and during short outages.",
+    batteryType: batteryTypeKey,
+    ...spec,
+    usableKwh,
+    totalKwh,
+    rule,
   };
 }
 
-// ─── Full proposal calculation ────────────────────────────────────────────────
+// ─── Full proposal calculation ─────────────────────────────────────────────────
 
 export interface ProposalCalc {
   annualKwh: number;
   psh: number;
   efficiency: number;
-  panelW: number;
-  requiredSystemKw: number;   // raw, before rounding
+  panel: PanelSpec & { panelType: string };
   panelCount: number;
-  finalSystemKw: number;      // after rounding to whole panels
+  requiredSystemKw: number;   // Before rounding to whole panels
+  finalSystemKw: number;      // After rounding
   estimatedAnnualKwh: number;
   estimatedMonthlyKwh: number;
   offsetPct: number;
-  battery: ReturnType<typeof calcBatteryRecommendation>;
+  battery: BatteryResult;
 }
 
 /**
  * Run all proposal formulas in one call.
- * Returns rounded display values suitable for the proposal output.
+ * Returns rounded display values suitable for the proposal output card.
  */
 export function runProposalCalc(
   annualKwh: number,
   psh: number,
   efficiency: number = EFFICIENCY_FACTOR,
-  panelW: number = DEFAULT_PANEL_W,
+  panelTypeKey: string = DEFAULT_PANEL_TYPE,
+  batteryTypeKey: string = DEFAULT_BATTERY_TYPE,
 ): ProposalCalc {
-  const requiredSystemKwRaw = calcRequiredSystemKw(annualKwh, psh, efficiency);
-  const panelCount = calcPanelCount(requiredSystemKwRaw, panelW);
-  const finalSystemKw = calcFinalSystemKw(panelCount, panelW);
-  const estimatedAnnualKwh = calcAnnualProduction(finalSystemKw, psh, efficiency);
+  const panelSpec = PANEL_CATALOG[panelTypeKey] ?? PANEL_CATALOG[DEFAULT_PANEL_TYPE]!;
+  const panel = { ...panelSpec, panelType: panelTypeKey };
+
+  const requiredKwRaw = calcRequiredSystemKw(annualKwh, psh, efficiency);
+  const panelCount = calcPanelCount(requiredKwRaw, panel.wattage);
+  const finalSystemKw = calcFinalSystemKw(panelCount, panel.wattage);
+  const estimatedAnnualKwh = calcAnnualProduction(finalSystemKw, psh, efficiency, panel.bifacialGainPct);
   const estimatedMonthlyKwh = Math.round(estimatedAnnualKwh / 12);
   const offsetPct = Math.round((estimatedAnnualKwh / annualKwh) * 100);
-  const battery = calcBatteryRecommendation(annualKwh);
+  const battery = calcBatteryRecommendation(annualKwh, batteryTypeKey);
 
   return {
     annualKwh,
     psh,
     efficiency,
-    panelW,
-    requiredSystemKw: Math.round(requiredSystemKwRaw * 100) / 100,
+    panel,
     panelCount,
+    requiredSystemKw: Math.round(requiredKwRaw * 100) / 100,
     finalSystemKw: Math.round(finalSystemKw * 100) / 100,
     estimatedAnnualKwh,
     estimatedMonthlyKwh,
@@ -148,24 +387,18 @@ export function runProposalCalc(
   };
 }
 
-// ─── Test / Spec verification ─────────────────────────────────────────────────
+// ─── Spec test scenario ────────────────────────────────────────────────────────
 
 /**
- * TEST SCENARIO (v2 spec §9):
- *   Address:   7408 Mamba Ct, Rancho Murieta, CA 95683
- *   Usage:     12,000 kWh/yr
- *   PSH:       5.5 (spec assumed value — PVWatts may differ)
- *   Efficiency: 0.78
- *   Panel W:   440W
+ * TEST SCENARIO (spec §9) — run with explicit 440W/5.5PSH for spec compliance.
+ * Note: spec was written assuming 440W panels. None of our catalog types is 440W,
+ * so verification uses the raw formula functions directly.
  *
- * Expected results:
- *   Required  ≈ 7.66 kW
- *   Panels    = 18
- *   Final     ≈ 7.92 kW
- *   Annual    ≈ 12,407 kWh
- *   Monthly   ≈ 1,034 kWh
- *   Offset    ≈ 103%
- *   Battery   = 20 kWh (usage > 12,000)
+ * Expected:
+ *   Required  ≈ 7.66 kW    Panels  = 18
+ *   Final     ≈ 7.92 kW    Annual  ≈ 12,407 kWh
+ *   Monthly   ≈ 1,034 kWh  Offset  ≈ 103%
+ *   Battery   = 20 kWh usable (usage ≥ 12,000)
  */
 export const TEST_SCENARIO = {
   address: "7408 Mamba Ct",
@@ -175,7 +408,7 @@ export const TEST_SCENARIO = {
   annualKwh: 12000,
   psh: 5.5,
   efficiency: EFFICIENCY_FACTOR,
-  panelW: DEFAULT_PANEL_W,
+  panelW: 440, // spec value — not in catalog
   expected: {
     requiredSystemKw: 7.66,
     panelCount: 18,
@@ -183,27 +416,54 @@ export const TEST_SCENARIO = {
     estimatedAnnualKwh: 12407,
     estimatedMonthlyKwh: 1034,
     offsetPct: 103,
-    batteryKwh: 20,
+    batteryUsableKwh: 20,
   },
 } as const;
 
-/**
- * Run the spec test scenario and return whether results match expected values.
- * Used in the proposal output "Formula Verification" panel.
- */
-export function verifyTestScenario(): ProposalCalc & { pass: boolean } {
-  const calc = runProposalCalc(
-    TEST_SCENARIO.annualKwh,
-    TEST_SCENARIO.psh,
-    TEST_SCENARIO.efficiency,
-    TEST_SCENARIO.panelW,
-  );
-  const exp = TEST_SCENARIO.expected;
+export interface SpecVerification {
+  pass: boolean;
+  psh: number;
+  panelW: number;
+  requiredSystemKw: number;
+  panelCount: number;
+  finalSystemKw: number;
+  estimatedAnnualKwh: number;
+  estimatedMonthlyKwh: number;
+  offsetPct: number;
+  batteryUsableKwh: number;
+  batteryTotalKwh: number;
+}
+
+export function verifyTestScenario(): SpecVerification {
+  const { annualKwh, psh, efficiency, panelW, expected } = TEST_SCENARIO;
+  const requiredKwRaw = calcRequiredSystemKw(annualKwh, psh, efficiency);
+  const panelCount = calcPanelCount(requiredKwRaw, panelW);
+  const finalSystemKw = calcFinalSystemKw(panelCount, panelW);
+  const estimatedAnnualKwh = calcAnnualProduction(finalSystemKw, psh, efficiency, 0);
+  const estimatedMonthlyKwh = Math.round(estimatedAnnualKwh / 12);
+  const offsetPct = Math.round((estimatedAnnualKwh / annualKwh) * 100);
+  const battery = calcBatteryRecommendation(annualKwh, DEFAULT_BATTERY_TYPE);
+
+  const requiredSystemKw = Math.round(requiredKwRaw * 100) / 100;
+
   const pass =
-    Math.abs(calc.requiredSystemKw - exp.requiredSystemKw) < 0.1 &&
-    calc.panelCount === exp.panelCount &&
-    Math.abs(calc.finalSystemKw - exp.finalSystemKw) < 0.05 &&
-    Math.abs(calc.estimatedAnnualKwh - exp.estimatedAnnualKwh) < 50 &&
-    calc.battery.kwh === exp.batteryKwh;
-  return { ...calc, pass };
+    Math.abs(requiredSystemKw - expected.requiredSystemKw) < 0.1 &&
+    panelCount === expected.panelCount &&
+    Math.abs(finalSystemKw - expected.finalSystemKw) < 0.05 &&
+    Math.abs(estimatedAnnualKwh - expected.estimatedAnnualKwh) < 50 &&
+    battery.usableKwh === expected.batteryUsableKwh;
+
+  return {
+    pass,
+    psh,
+    panelW,
+    requiredSystemKw,
+    panelCount,
+    finalSystemKw: Math.round(finalSystemKw * 100) / 100,
+    estimatedAnnualKwh,
+    estimatedMonthlyKwh,
+    offsetPct,
+    batteryUsableKwh: battery.usableKwh,
+    batteryTotalKwh: battery.totalKwh,
+  };
 }
