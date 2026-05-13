@@ -16,7 +16,8 @@ import { ProjectMap } from "@/components/ProjectMap";
 import { generateBom } from "@/lib/bom";
 import { generateDesignNotes } from "@/lib/design-notes";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  ReferenceLine,
 } from "recharts";
 
 export default function Results() {
@@ -106,6 +107,28 @@ export default function Results() {
     utilityRatePerKwh: project.utilityRatePerKwh,
   });
 
+  // PVWatts enrichment data — typed loosely since JSONB field may have extra keys
+  const pvCalc = calc as typeof calc & {
+    pvwattsMonthlyKwh?: number[] | null;
+    pvwattsSolradMonthly?: number[] | null;
+    pvwattsAnnualKwh?: number | null;
+    pvwattsSolradAnnual?: number | null;
+    pvwattsCapacityFactor?: number | null;
+    pvwattsSource?: string | null;
+  };
+
+  const hasPVWatts = pvCalc.pvwattsSource === "pvwatts" && Array.isArray(pvCalc.pvwattsMonthlyKwh);
+
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  const monthlyChartData = hasPVWatts
+    ? (pvCalc.pvwattsMonthlyKwh as number[]).map((kwh, i) => ({
+        month: MONTH_NAMES[i],
+        kwh,
+        solrad: pvCalc.pvwattsSolradMonthly ? Math.round((pvCalc.pvwattsSolradMonthly as number[])[i] * 10) / 10 : null,
+      }))
+    : null;
+
   const lossData = [
     { name: "Inverter", value: calc.inverterLossPct, color: "#f59e0b" },
     { name: "Wire", value: calc.wireLossPct, color: "#fb923c" },
@@ -150,6 +173,19 @@ export default function Results() {
               <span className="truncate">{project.address}, {project.city}, {project.state} {project.zip}</span>
             </p>
           </div>
+          {/* PVWatts badge */}
+          {hasPVWatts && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border border-green-300 bg-green-50 text-green-700 mt-1 w-fit">
+              <Sun className="h-3 w-3" />
+              Real NREL PVWatts Data
+            </div>
+          )}
+          {pvCalc.pvwattsSource === "fallback" && (
+            <div className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-700 mt-1 w-fit">
+              <Info className="h-3 w-3" />
+              State estimate (no PVWatts key)
+            </div>
+          )}
           {/* Action buttons — compact icon+label on mobile, full on desktop */}
           <div className="flex items-center gap-2 shrink-0">
             <Link href={`/projects/${project.id}/edit`}>
@@ -244,7 +280,7 @@ export default function Results() {
                       ["Location", `${project.city}, ${project.state}`],
                       ["Daily Usage", `${calc.dailyKwh.toFixed(1)} kWh/day`],
                       ["Annual Usage", `${project.annualKwh.toLocaleString()} kWh/yr`],
-                      ["Peak Sun Hours", `${calc.peakSunHours} hrs/day (${project.state})`],
+                      ["Peak Sun Hours", `${calc.peakSunHours} hrs/day${hasPVWatts ? " (PVWatts)" : ` (${project.state})`}`],
                       ["Installation", project.installationType === "carport" ? "Carport" : project.installationType.charAt(0).toUpperCase() + project.installationType.slice(1) + " Mount"],
                       ["Budget Tier", project.budgetTier.charAt(0).toUpperCase() + project.budgetTier.slice(1)],
                     ].map(([label, value]) => (
@@ -267,8 +303,9 @@ export default function Results() {
                       ["Array Size (adjusted)", `${calc.adjustedArraySizeKw.toFixed(2)} kW`],
                       ["Number of Panels", `${calc.numPanels} panels`],
                       ["Inverter Size", `${calc.inverterSizeKw.toFixed(1)} kW`],
-                      ["Est. Yearly Production", `${calc.yearlyProductionKwh.toLocaleString()} kWh`],
+                      ["Est. Yearly Production", `${calc.yearlyProductionKwh.toLocaleString()} kWh${hasPVWatts ? " ✓" : ""}`],
                       ["Est. Yearly Savings", `$${calc.estimatedYearlySavings.toLocaleString()}`],
+                      ...(pvCalc.pvwattsCapacityFactor != null ? [["System Efficiency", `${pvCalc.pvwattsCapacityFactor.toFixed(1)}% capacity factor`]] : []),
                       ...(calc.paybackYears ? [["Est. Payback Period", `${calc.paybackYears.toFixed(1)} years`]] : []),
                     ].map(([label, value]) => (
                       <tr key={label}>
@@ -282,6 +319,122 @@ export default function Results() {
             </Card>
           </div>
         </section>
+
+        {/* ── Monthly Production Chart (PVWatts) ────────────────────── */}
+        {monthlyChartData && (
+          <section>
+            <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
+              <Sun className="h-4 w-4 text-primary" /> Monthly Solar Production
+              <span className="ml-1 text-xs font-normal normal-case tracking-normal text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                NREL PVWatts v8
+              </span>
+            </h2>
+            <Card>
+              <CardContent className="pt-5 pb-2 space-y-4">
+                {/* Stats row */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-center">
+                    <div className="text-xl font-black text-primary">{pvCalc.pvwattsAnnualKwh?.toLocaleString()} kWh</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">Annual AC Production</div>
+                  </div>
+                  <div className="rounded-md bg-muted/50 border p-3 text-center">
+                    <div className="text-xl font-black">{pvCalc.pvwattsSolradAnnual?.toFixed(2)}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">Peak Sun Hrs/day</div>
+                  </div>
+                  <div className="rounded-md bg-muted/50 border p-3 text-center">
+                    <div className="text-xl font-black">{pvCalc.pvwattsCapacityFactor?.toFixed(1)}%</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">Capacity Factor</div>
+                  </div>
+                </div>
+
+                {/* Monthly bar chart */}
+                <div className="h-52 print:h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyChartData} margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toString()}
+                        unit=""
+                        width={42}
+                      />
+                      <Tooltip
+                        formatter={(v: number) => [`${v.toLocaleString()} kWh`, "AC Production"]}
+                        labelStyle={{ fontWeight: 600 }}
+                      />
+                      <ReferenceLine
+                        y={pvCalc.pvwattsAnnualKwh ? Math.round(pvCalc.pvwattsAnnualKwh / 12) : 0}
+                        stroke="#f59e0b"
+                        strokeDasharray="4 3"
+                        strokeWidth={1.5}
+                        label={{ value: "avg", position: "right", fontSize: 10, fill: "#f59e0b" }}
+                      />
+                      <Bar dataKey="kwh" radius={[3, 3, 0, 0]} maxBarSize={36}>
+                        {monthlyChartData.map((entry, i) => (
+                          <Cell
+                            key={i}
+                            fill={entry.kwh >= (pvCalc.pvwattsAnnualKwh ? pvCalc.pvwattsAnnualKwh / 12 : 0)
+                              ? "#f59e0b"
+                              : "#fdba74"}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Monthly table — collapsible on mobile */}
+                <details className="text-sm">
+                  <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground font-medium py-1 select-none">
+                    Show monthly breakdown table
+                  </summary>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b text-muted-foreground text-xs uppercase tracking-wide">
+                          <th className="pb-2 text-left">Month</th>
+                          <th className="pb-2 text-right">AC (kWh)</th>
+                          {monthlyChartData[0].solrad != null && <th className="pb-2 text-right">Peak Sun Hrs</th>}
+                          <th className="pb-2 text-right">% of Annual</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {monthlyChartData.map((row) => (
+                          <tr key={row.month}>
+                            <td className="py-1.5 font-medium">{row.month}</td>
+                            <td className="py-1.5 text-right font-mono">{row.kwh.toLocaleString()}</td>
+                            {row.solrad != null && <td className="py-1.5 text-right font-mono">{row.solrad}</td>}
+                            <td className="py-1.5 text-right text-muted-foreground">
+                              {pvCalc.pvwattsAnnualKwh
+                                ? `${((row.kwh / pvCalc.pvwattsAnnualKwh) * 100).toFixed(1)}%`
+                                : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="font-bold border-t-2">
+                          <td className="pt-2">Annual</td>
+                          <td className="pt-2 text-right font-mono text-primary">
+                            {pvCalc.pvwattsAnnualKwh?.toLocaleString()}
+                          </td>
+                          {monthlyChartData[0].solrad != null && (
+                            <td className="pt-2 text-right font-mono">{pvCalc.pvwattsSolradAnnual?.toFixed(2)} avg</td>
+                          )}
+                          <td className="pt-2 text-right">100%</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+
+                <p className="text-xs text-muted-foreground">
+                  Production modeled using NREL PVWatts v8 with TMY3 weather data for {project.city}, {project.state}.
+                  Actual output may vary ±10–15% based on weather, soiling, and equipment performance.
+                </p>
+              </CardContent>
+            </Card>
+          </section>
+        )}
 
         {/* ── Battery System Guide (only when battery selected) ─────── */}
         {hasBattery && (() => {

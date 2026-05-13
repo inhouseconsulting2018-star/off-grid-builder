@@ -1,6 +1,6 @@
-# [Project name]
+# OffGrid Solar Builder
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A professional mobile-friendly SaaS web app for designing solar systems (off-grid, grid-tied, hybrid).
 
 ## Run & Operate
 
@@ -14,23 +14,49 @@ _Replace the heading above with the project's name, and this line with one sente
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
+- API: Express 5 (port 8080, proxied at `/api`)
 - DB: PostgreSQL + Drizzle ORM
+- Frontend: React + Vite (proxied at `/`)
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
+- Charts: Recharts
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `lib/api-spec/openapi.yaml` — OpenAPI spec (source of truth for API contract)
+- `lib/db/src/schema/projects.ts` — Drizzle ORM schema
+- `artifacts/api-server/src/lib/solar-calculator.ts` — core solar sizing engine
+- `artifacts/api-server/src/lib/pvwatts.ts` — NREL PVWatts v8 API client
+- `artifacts/api-server/src/routes/projects.ts` — API routes
+- `artifacts/offgrid-solar/src/pages/results.tsx` — full solar design report page
+- `artifacts/offgrid-solar/src/pages/wizard.tsx` — 5-step new project wizard
+- `artifacts/offgrid-solar/src/pages/edit-project.tsx` — project edit form
+- `lib/api-client-react/` — generated React Query hooks (do not edit directly)
+- `lib/api-zod/` — generated Zod schemas (do not edit directly)
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **Contract-first API**: OpenAPI spec drives everything. Edit `openapi.yaml`, run codegen, get typed hooks and Zod schemas automatically.
+- **JSONB calc result**: `calculationResult` stored as JSONB so we can add PVWatts fields without schema migrations.
+- **PVWatts fallback**: If `PVWATTS_API_KEY` is absent or the API call fails, calculations fall back gracefully to state-based peak sun hour estimates. The `pvwattsSource` field indicates which was used (`"pvwatts"` | `"fallback"`).
+- **Single calculate endpoint**: `POST /api/projects/:id/calculate` runs both the local calculator and PVWatts enrichment, persists the merged result, returns it.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Users design solar systems by entering their location, energy usage, budget, and backup needs through a 5-step wizard. The app produces a professional solar design report including: system sizing (kW, panels, inverter, battery), real NREL PVWatts production estimates with monthly charts, cost estimates (DIY vs installed), system loss breakdown, battery system guide, equipment BOM, and design notes. Reports can be downloaded as PDF.
+
+## NREL PVWatts API Setup
+
+The app integrates with NREL PVWatts v8 for real solar production estimates (monthly kWh, irradiance, capacity factor). Without the key it falls back to state-based estimates automatically.
+
+**To enable PVWatts:**
+1. Get a free API key at: https://developer.nrel.gov/signup/
+2. In the Replit Secrets tab, add: `PVWATTS_API_KEY` = `<your key>`
+3. Recalculate any project by visiting its report page and clicking "Edit" → save (or call `POST /api/projects/:id/calculate`)
+4. The report will then show the green "Real NREL PVWatts Data" badge and a monthly production chart.
+
+**DEMO_KEY:** NREL offers a `DEMO_KEY` (limited to ~50 req/day, IP-restricted) if you want to test before getting a full key. Set `PVWATTS_API_KEY=DEMO_KEY`.
 
 ## User preferences
 
@@ -38,7 +64,10 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Do not change `info.title` in `openapi.yaml` — it controls generated filenames.
+- After editing `openapi.yaml`, always run `pnpm --filter @workspace/api-spec run codegen`.
+- The `roofPitch` field stores mixed formats: degrees ("20"), fractions ("4/12"), or named values ("fixed", "single-axis"). The PVWatts client handles all formats.
+- `backupHours === -1` is the sentinel for "custom" — only use `customBackupHours` in that case.
 
 ## Pointers
 

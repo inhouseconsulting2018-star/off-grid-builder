@@ -75,6 +75,40 @@ export const ListProjectsResponseItem = zod.object({
       recommendedBatteryBrand: zod.string(),
       recommendedMountingBrand: zod.string(),
       notes: zod.array(zod.string()),
+      pvwattsMonthlyKwh: zod
+        .array(zod.number())
+        .nullish()
+        .describe(
+          "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
+        ),
+      pvwattsSolradMonthly: zod
+        .array(zod.number())
+        .nullish()
+        .describe(
+          "12-element array of monthly average daily solar irradiance (kWh\/m²\/day) from PVWatts.",
+        ),
+      pvwattsAnnualKwh: zod
+        .number()
+        .nullish()
+        .describe(
+          "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
+        ),
+      pvwattsSolradAnnual: zod
+        .number()
+        .nullish()
+        .describe(
+          "Annual average daily solar irradiance (kWh\/m²\/day) = real peak sun hours from PVWatts.",
+        ),
+      pvwattsCapacityFactor: zod
+        .number()
+        .nullish()
+        .describe("System capacity factor (%) from PVWatts."),
+      pvwattsSource: zod
+        .string()
+        .nullish()
+        .describe(
+          "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
+        ),
     })
     .optional(),
   createdAt: zod.coerce.date(),
@@ -189,6 +223,40 @@ export const GetProjectResponse = zod.object({
       recommendedBatteryBrand: zod.string(),
       recommendedMountingBrand: zod.string(),
       notes: zod.array(zod.string()),
+      pvwattsMonthlyKwh: zod
+        .array(zod.number())
+        .nullish()
+        .describe(
+          "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
+        ),
+      pvwattsSolradMonthly: zod
+        .array(zod.number())
+        .nullish()
+        .describe(
+          "12-element array of monthly average daily solar irradiance (kWh\/m²\/day) from PVWatts.",
+        ),
+      pvwattsAnnualKwh: zod
+        .number()
+        .nullish()
+        .describe(
+          "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
+        ),
+      pvwattsSolradAnnual: zod
+        .number()
+        .nullish()
+        .describe(
+          "Annual average daily solar irradiance (kWh\/m²\/day) = real peak sun hours from PVWatts.",
+        ),
+      pvwattsCapacityFactor: zod
+        .number()
+        .nullish()
+        .describe("System capacity factor (%) from PVWatts."),
+      pvwattsSource: zod
+        .string()
+        .nullish()
+        .describe(
+          "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
+        ),
     })
     .optional(),
   createdAt: zod.coerce.date(),
@@ -303,6 +371,40 @@ export const UpdateProjectResponse = zod.object({
       recommendedBatteryBrand: zod.string(),
       recommendedMountingBrand: zod.string(),
       notes: zod.array(zod.string()),
+      pvwattsMonthlyKwh: zod
+        .array(zod.number())
+        .nullish()
+        .describe(
+          "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
+        ),
+      pvwattsSolradMonthly: zod
+        .array(zod.number())
+        .nullish()
+        .describe(
+          "12-element array of monthly average daily solar irradiance (kWh\/m²\/day) from PVWatts.",
+        ),
+      pvwattsAnnualKwh: zod
+        .number()
+        .nullish()
+        .describe(
+          "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
+        ),
+      pvwattsSolradAnnual: zod
+        .number()
+        .nullish()
+        .describe(
+          "Annual average daily solar irradiance (kWh\/m²\/day) = real peak sun hours from PVWatts.",
+        ),
+      pvwattsCapacityFactor: zod
+        .number()
+        .nullish()
+        .describe("System capacity factor (%) from PVWatts."),
+      pvwattsSource: zod
+        .string()
+        .nullish()
+        .describe(
+          "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
+        ),
     })
     .optional(),
   createdAt: zod.coerce.date(),
@@ -351,6 +453,40 @@ export const CalculateProjectResponse = zod.object({
   recommendedBatteryBrand: zod.string(),
   recommendedMountingBrand: zod.string(),
   notes: zod.array(zod.string()),
+  pvwattsMonthlyKwh: zod
+    .array(zod.number())
+    .nullish()
+    .describe(
+      "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
+    ),
+  pvwattsSolradMonthly: zod
+    .array(zod.number())
+    .nullish()
+    .describe(
+      "12-element array of monthly average daily solar irradiance (kWh\/m²\/day) from PVWatts.",
+    ),
+  pvwattsAnnualKwh: zod
+    .number()
+    .nullish()
+    .describe(
+      "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
+    ),
+  pvwattsSolradAnnual: zod
+    .number()
+    .nullish()
+    .describe(
+      "Annual average daily solar irradiance (kWh\/m²\/day) = real peak sun hours from PVWatts.",
+    ),
+  pvwattsCapacityFactor: zod
+    .number()
+    .nullish()
+    .describe("System capacity factor (%) from PVWatts."),
+  pvwattsSource: zod
+    .string()
+    .nullish()
+    .describe(
+      "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
+    ),
 });
 
 /**
@@ -421,6 +557,40 @@ export const GetProjectsSummaryResponse = zod.object({
           recommendedBatteryBrand: zod.string(),
           recommendedMountingBrand: zod.string(),
           notes: zod.array(zod.string()),
+          pvwattsMonthlyKwh: zod
+            .array(zod.number())
+            .nullish()
+            .describe(
+              "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
+            ),
+          pvwattsSolradMonthly: zod
+            .array(zod.number())
+            .nullish()
+            .describe(
+              "12-element array of monthly average daily solar irradiance (kWh\/m²\/day) from PVWatts.",
+            ),
+          pvwattsAnnualKwh: zod
+            .number()
+            .nullish()
+            .describe(
+              "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
+            ),
+          pvwattsSolradAnnual: zod
+            .number()
+            .nullish()
+            .describe(
+              "Annual average daily solar irradiance (kWh\/m²\/day) = real peak sun hours from PVWatts.",
+            ),
+          pvwattsCapacityFactor: zod
+            .number()
+            .nullish()
+            .describe("System capacity factor (%) from PVWatts."),
+          pvwattsSource: zod
+            .string()
+            .nullish()
+            .describe(
+              "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
+            ),
         })
         .optional(),
       createdAt: zod.coerce.date(),

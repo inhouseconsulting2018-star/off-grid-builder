@@ -35,4 +35,28 @@ export interface CalculationResult {
   recommendedBatteryBrand: string;
   recommendedMountingBrand: string;
   notes: string[];
+  /** 12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable. */
+  pvwattsMonthlyKwh?: number[] | null;
+  /** 12-element array of monthly average daily solar irradiance (kWh/m²/day) from PVWatts. */
+  pvwattsSolradMonthly?: number[] | null;
+  /**
+   * Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.
+   * @nullable
+   */
+  pvwattsAnnualKwh?: number | null;
+  /**
+   * Annual average daily solar irradiance (kWh/m²/day) = real peak sun hours from PVWatts.
+   * @nullable
+   */
+  pvwattsSolradAnnual?: number | null;
+  /**
+   * System capacity factor (%) from PVWatts.
+   * @nullable
+   */
+  pvwattsCapacityFactor?: number | null;
+  /**
+   * Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.
+   * @nullable
+   */
+  pvwattsSource?: string | null;
 }

@@ -524,6 +524,30 @@ components:
           type: array
           items:
             type: string
+        pvwattsMonthlyKwh:
+          type: array
+          items:
+            type: number
+          nullable: true
+          description: "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable."
+        pvwattsSolradMonthly:
+          type: array
+          items:
+            type: number
+          nullable: true
+          description: "12-element array of monthly average daily solar irradiance (kWh/m²/day) from PVWatts."
+        pvwattsAnnualKwh:
+          type: ["number", "null"]
+          description: "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable."
+        pvwattsSolradAnnual:
+          type: ["number", "null"]
+          description: "Annual average daily solar irradiance (kWh/m²/day) = real peak sun hours from PVWatts."
+        pvwattsCapacityFactor:
+          type: ["number", "null"]
+          description: "System capacity factor (%) from PVWatts."
+        pvwattsSource:
+          type: ["string", "null"]
+          description: "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records."
 
     ProjectsSummary:
       type: object
