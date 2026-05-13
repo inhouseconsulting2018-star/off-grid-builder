@@ -529,6 +529,30 @@ components:
           type: number
         installedCostHigh:
           type: number
+        solarArrayDiyCostLow:
+          type: number
+          description: "Solar array only (panels + inverter + racking), DIY equipment cost — low bound"
+        solarArrayDiyCostHigh:
+          type: number
+          description: "Solar array only (panels + inverter + racking), DIY equipment cost — high bound"
+        solarArrayInstalledCostLow:
+          type: number
+          description: "Solar array only, fully installed cost — low bound"
+        solarArrayInstalledCostHigh:
+          type: number
+          description: "Solar array only, fully installed cost — high bound"
+        batteryDiyCostLow:
+          type: number
+          description: "Battery bank equipment cost only (excludes installation labor) — low bound"
+        batteryDiyCostHigh:
+          type: number
+          description: "Battery bank equipment cost only — high bound"
+        batteryInstalledCostLow:
+          type: number
+          description: "Battery bank equipment + installation labor — low bound"
+        batteryInstalledCostHigh:
+          type: number
+          description: "Battery bank equipment + installation labor — high bound"
         estimatedYearlySavings:
           type: number
         paybackYears:

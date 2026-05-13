@@ -582,54 +582,119 @@ export default function Results() {
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-primary" /> Cost Estimate
           </h2>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Professional Installation</CardTitle>
-                <CardDescription>Turnkey, fully installed</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-black">
-                  ${calc.installedCostLow.toLocaleString()} – ${calc.installedCostHigh.toLocaleString()}
+
+          {/* Helper to format a cost breakdown row */}
+          {(() => {
+            const hasBatteryCost = (calc.batteryDiyCostLow ?? 0) > 0;
+
+            function CostBreakdownRow({ label, low, high, bold }: { label: string; low: number; high: number; bold?: boolean }) {
+              return (
+                <div className={`flex justify-between text-sm py-1.5 ${bold ? "border-t mt-1 pt-2.5 font-bold text-foreground" : "text-muted-foreground"}`}>
+                  <span>{label}</span>
+                  <span className={bold ? "text-foreground" : ""}>${Math.round(low).toLocaleString()} – ${Math.round(high).toLocaleString()}</span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  ${(calc.installedCostLow / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} – ${(calc.installedCostHigh / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} per watt installed
-                </p>
-                {calc.paybackYears && (
-                  <div className="mt-3 pt-3 border-t flex justify-between text-sm">
-                    <span className="text-muted-foreground">Est. payback period</span>
-                    <span className="font-semibold">{calc.paybackYears.toFixed(1)} yrs</span>
-                  </div>
-                )}
-                <div className="mt-2 flex justify-between text-sm">
-                  <span className="text-muted-foreground">Est. yearly savings</span>
-                  <span className="font-semibold text-green-600">${calc.estimatedYearlySavings.toLocaleString()}/yr</span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">DIY Equipment Only</CardTitle>
-                <CardDescription>Self-installed, equipment cost only</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-black text-muted-foreground">
-                  ${calc.diyEquipmentCostLow.toLocaleString()} – ${calc.diyEquipmentCostHigh.toLocaleString()}
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  ${(calc.diyEquipmentCostLow / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} – ${(calc.diyEquipmentCostHigh / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} per watt (equipment only)
-                </p>
-                <div className="mt-3 pt-3 border-t">
-                  <p className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-1.5">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    DIY installation must still comply with local building and electrical codes. Permits and inspections are required.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+              );
+            }
+
+            return (
+              <div className="grid sm:grid-cols-2 gap-4">
+                {/* Professional Installation */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Professional Installation</CardTitle>
+                    <CardDescription>Turnkey, fully installed by a licensed contractor</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-black">
+                      ${Math.round(calc.installedCostLow).toLocaleString()} – ${Math.round(calc.installedCostHigh).toLocaleString()}
+                    </div>
+                    {hasBatteryCost && (
+                      <div className="mt-3 pt-3 border-t space-y-0.5">
+                        <CostBreakdownRow
+                          label={`Solar array (${calc.adjustedArraySizeKw.toFixed(1)} kW)`}
+                          low={calc.solarArrayInstalledCostLow ?? calc.solarArrayDiyCostLow ?? 0}
+                          high={calc.solarArrayInstalledCostHigh ?? calc.solarArrayDiyCostHigh ?? 0}
+                        />
+                        <CostBreakdownRow
+                          label={`Battery system (${calc.totalBatteryBankKwh.toFixed(1)} kWh bank)`}
+                          low={calc.batteryInstalledCostLow ?? 0}
+                          high={calc.batteryInstalledCostHigh ?? 0}
+                        />
+                        <CostBreakdownRow
+                          label="Total installed"
+                          low={calc.installedCostLow}
+                          high={calc.installedCostHigh}
+                          bold
+                        />
+                      </div>
+                    )}
+                    {!hasBatteryCost && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        ${(calc.installedCostLow / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} – ${(calc.installedCostHigh / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} per watt installed
+                      </p>
+                    )}
+                    {calc.paybackYears && (
+                      <div className="mt-3 pt-3 border-t flex justify-between text-sm">
+                        <span className="text-muted-foreground">Est. payback period</span>
+                        <span className="font-semibold">{calc.paybackYears.toFixed(1)} yrs</span>
+                      </div>
+                    )}
+                    <div className="mt-2 flex justify-between text-sm">
+                      <span className="text-muted-foreground">Est. yearly savings</span>
+                      <span className="font-semibold text-green-600">${calc.estimatedYearlySavings.toLocaleString()}/yr</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* DIY Equipment */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">DIY Equipment Only</CardTitle>
+                    <CardDescription>Self-installed — equipment purchase cost only, no labor</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-3xl font-black text-muted-foreground">
+                      ${Math.round(calc.diyEquipmentCostLow).toLocaleString()} – ${Math.round(calc.diyEquipmentCostHigh).toLocaleString()}
+                    </div>
+                    {hasBatteryCost && (
+                      <div className="mt-3 pt-3 border-t space-y-0.5">
+                        <CostBreakdownRow
+                          label={`Solar array (${calc.adjustedArraySizeKw.toFixed(1)} kW)`}
+                          low={calc.solarArrayDiyCostLow ?? 0}
+                          high={calc.solarArrayDiyCostHigh ?? 0}
+                        />
+                        <CostBreakdownRow
+                          label={`Battery equipment (${calc.totalBatteryBankKwh.toFixed(1)} kWh)`}
+                          low={calc.batteryDiyCostLow ?? 0}
+                          high={calc.batteryDiyCostHigh ?? 0}
+                        />
+                        <CostBreakdownRow
+                          label="Total equipment"
+                          low={calc.diyEquipmentCostLow}
+                          high={calc.diyEquipmentCostHigh}
+                          bold
+                        />
+                      </div>
+                    )}
+                    {!hasBatteryCost && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        ${(calc.diyEquipmentCostLow / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} – ${(calc.diyEquipmentCostHigh / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} per watt (equipment only)
+                      </p>
+                    )}
+                    <div className="mt-3 pt-3 border-t">
+                      <p className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        DIY installation must still comply with local building and electrical codes. Permits, inspections, and electrical sign-off are required.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })()}
+
           <div className="mt-3 p-3 rounded-lg border bg-muted/30 text-xs text-muted-foreground">
-            Prices are preliminary estimates for the {project.budgetTier} equipment tier and may vary by 15–25% based on market conditions, specific equipment selection, local labor rates, and site conditions. Federal ITC (30%) and state incentives are not reflected.
+            Prices are preliminary estimates for the {project.budgetTier} equipment tier and may vary by 15–25% based on market conditions, specific equipment selection, local labor rates, and site conditions. Battery costs are priced per kWh of total rated bank capacity at the selected chemistry rates. Federal ITC (30%) and state incentives are not reflected — the 30% tax credit significantly reduces net cost.
           </div>
         </section>
 

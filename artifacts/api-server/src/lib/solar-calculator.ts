@@ -287,10 +287,53 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     installedPerWattHigh = settings.midRangeInstalledPerWatt;
   }
 
-  const diyEquipmentCostLow = systemWatts * diyPerWattLow;
-  const diyEquipmentCostHigh = systemWatts * diyPerWattHigh;
-  const installedCostLow = systemWatts * installedPerWattLow;
-  const installedCostHigh = systemWatts * installedPerWattHigh;
+  // Solar array equipment cost (panels + inverter + racking + BOS wiring)
+  const solarArrayDiyCostLow = systemWatts * diyPerWattLow;
+  const solarArrayDiyCostHigh = systemWatts * diyPerWattHigh;
+  const solarArrayInstalledCostLow = systemWatts * installedPerWattLow;
+  const solarArrayInstalledCostHigh = systemWatts * installedPerWattHigh;
+
+  // ── Battery equipment cost ────────────────────────────────────────────────
+  // The per-watt rates above cover only panels + inverter + racking.
+  // Batteries are priced separately per kWh of total bank capacity.
+  // Rates match the BOM helper (bom.ts → batteryCostPerKwh) so both are consistent.
+  //
+  // Chemistry cost per kWh of total rated bank (2024/2025 US market):
+  //   LiFePO4  — economy $400, mid $550, premium $800  (× 1.2 for high bound)
+  //   AGM/Gel  — economy $180, mid $230, premium $300  (× 1.2 for high bound)
+  //   Lead-acid — economy $100, mid $150, premium $200 (× 1.2 for high bound)
+  //
+  // Installation labor per kWh added to the installed total only:
+  //   Lithium  — $100–$200/kWh (heavy lifting, DC bus wiring, BMS commissioning)
+  //   Lead-acid — $60–$120/kWh (less BMS work but ventilation/equalization setup)
+  const chem = (project.batteryChemistry ?? "lifepo4").toLowerCase();
+  const tier = project.budgetTier ?? "mid-range";
+
+  let batEquipBase: number;
+  let batLaborLow: number;
+  let batLaborHigh: number;
+
+  if (chem === "agm" || chem === "gel") {
+    batEquipBase = tier === "premium" ? 300 : tier === "economy" ? 180 : 230;
+    batLaborLow = 75; batLaborHigh = 150;
+  } else if (chem === "lead-acid" || chem === "flooded") {
+    batEquipBase = tier === "premium" ? 200 : tier === "economy" ? 100 : 150;
+    batLaborLow = 60; batLaborHigh = 120;
+  } else {
+    // lifepo4, nmc, default lithium
+    batEquipBase = tier === "premium" ? 800 : tier === "economy" ? 400 : 550;
+    batLaborLow = 100; batLaborHigh = 200;
+  }
+
+  const batteryDiyCostLow  = hasBattery ? totalBatteryBankKwh * batEquipBase : 0;
+  const batteryDiyCostHigh = hasBattery ? totalBatteryBankKwh * batEquipBase * 1.2 : 0;
+  const batteryInstalledCostLow  = batteryDiyCostLow  + (hasBattery ? totalBatteryBankKwh * batLaborLow  : 0);
+  const batteryInstalledCostHigh = batteryDiyCostHigh + (hasBattery ? totalBatteryBankKwh * batLaborHigh : 0);
+
+  const diyEquipmentCostLow  = solarArrayDiyCostLow  + batteryDiyCostLow;
+  const diyEquipmentCostHigh = solarArrayDiyCostHigh + batteryDiyCostHigh;
+  const installedCostLow  = solarArrayInstalledCostLow  + batteryInstalledCostLow;
+  const installedCostHigh = solarArrayInstalledCostHigh + batteryInstalledCostHigh;
 
   const paybackYears =
     project.systemType !== "off-grid" && estimatedYearlySavings > 0
@@ -464,10 +507,20 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     dirtLossPct: settings.dirtLossPct,
     misMatchLossPct: MISMATCH_LOSS_PCT,
     batteryLossPct,
+    // Total costs (solar array + battery)
     diyEquipmentCostLow: round2(diyEquipmentCostLow),
     diyEquipmentCostHigh: round2(diyEquipmentCostHigh),
     installedCostLow: round2(installedCostLow),
     installedCostHigh: round2(installedCostHigh),
+    // Breakdown for UI display
+    solarArrayDiyCostLow: round2(solarArrayDiyCostLow),
+    solarArrayDiyCostHigh: round2(solarArrayDiyCostHigh),
+    solarArrayInstalledCostLow: round2(solarArrayInstalledCostLow),
+    solarArrayInstalledCostHigh: round2(solarArrayInstalledCostHigh),
+    batteryDiyCostLow: round2(batteryDiyCostLow),
+    batteryDiyCostHigh: round2(batteryDiyCostHigh),
+    batteryInstalledCostLow: round2(batteryInstalledCostLow),
+    batteryInstalledCostHigh: round2(batteryInstalledCostHigh),
     estimatedYearlySavings: round2(estimatedYearlySavings),
     paybackYears: paybackYears !== null ? round2(paybackYears) : null,
     recommendedPanelBrand: panelBrands[project.budgetTier] ?? "Qcells",

@@ -79,6 +79,22 @@ export interface CalculationResult {
   diyEquipmentCostHigh: number;
   installedCostLow: number;
   installedCostHigh: number;
+  /** Solar array only (panels + inverter + racking), DIY equipment cost — low bound */
+  solarArrayDiyCostLow?: number;
+  /** Solar array only (panels + inverter + racking), DIY equipment cost — high bound */
+  solarArrayDiyCostHigh?: number;
+  /** Solar array only, fully installed cost — low bound */
+  solarArrayInstalledCostLow?: number;
+  /** Solar array only, fully installed cost — high bound */
+  solarArrayInstalledCostHigh?: number;
+  /** Battery bank equipment cost only (excludes installation labor) — low bound */
+  batteryDiyCostLow?: number;
+  /** Battery bank equipment cost only — high bound */
+  batteryDiyCostHigh?: number;
+  /** Battery bank equipment + installation labor — low bound */
+  batteryInstalledCostLow?: number;
+  /** Battery bank equipment + installation labor — high bound */
+  batteryInstalledCostHigh?: number;
   estimatedYearlySavings: number;
   /** @nullable */
   paybackYears: number | null;

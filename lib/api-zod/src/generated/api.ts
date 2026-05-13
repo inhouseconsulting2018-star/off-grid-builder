@@ -68,6 +68,44 @@ export const ListProjectsResponseItem = zod.object({
       diyEquipmentCostHigh: zod.number(),
       installedCostLow: zod.number(),
       installedCostHigh: zod.number(),
+      solarArrayDiyCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Solar array only (panels + inverter + racking), DIY equipment cost — low bound",
+        ),
+      solarArrayDiyCostHigh: zod
+        .number()
+        .optional()
+        .describe(
+          "Solar array only (panels + inverter + racking), DIY equipment cost — high bound",
+        ),
+      solarArrayInstalledCostLow: zod
+        .number()
+        .optional()
+        .describe("Solar array only, fully installed cost — low bound"),
+      solarArrayInstalledCostHigh: zod
+        .number()
+        .optional()
+        .describe("Solar array only, fully installed cost — high bound"),
+      batteryDiyCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Battery bank equipment cost only (excludes installation labor) — low bound",
+        ),
+      batteryDiyCostHigh: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment cost only — high bound"),
+      batteryInstalledCostLow: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment + installation labor — low bound"),
+      batteryInstalledCostHigh: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment + installation labor — high bound"),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -240,6 +278,44 @@ export const GetProjectResponse = zod.object({
       diyEquipmentCostHigh: zod.number(),
       installedCostLow: zod.number(),
       installedCostHigh: zod.number(),
+      solarArrayDiyCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Solar array only (panels + inverter + racking), DIY equipment cost — low bound",
+        ),
+      solarArrayDiyCostHigh: zod
+        .number()
+        .optional()
+        .describe(
+          "Solar array only (panels + inverter + racking), DIY equipment cost — high bound",
+        ),
+      solarArrayInstalledCostLow: zod
+        .number()
+        .optional()
+        .describe("Solar array only, fully installed cost — low bound"),
+      solarArrayInstalledCostHigh: zod
+        .number()
+        .optional()
+        .describe("Solar array only, fully installed cost — high bound"),
+      batteryDiyCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Battery bank equipment cost only (excludes installation labor) — low bound",
+        ),
+      batteryDiyCostHigh: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment cost only — high bound"),
+      batteryInstalledCostLow: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment + installation labor — low bound"),
+      batteryInstalledCostHigh: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment + installation labor — high bound"),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -412,6 +488,44 @@ export const UpdateProjectResponse = zod.object({
       diyEquipmentCostHigh: zod.number(),
       installedCostLow: zod.number(),
       installedCostHigh: zod.number(),
+      solarArrayDiyCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Solar array only (panels + inverter + racking), DIY equipment cost — low bound",
+        ),
+      solarArrayDiyCostHigh: zod
+        .number()
+        .optional()
+        .describe(
+          "Solar array only (panels + inverter + racking), DIY equipment cost — high bound",
+        ),
+      solarArrayInstalledCostLow: zod
+        .number()
+        .optional()
+        .describe("Solar array only, fully installed cost — low bound"),
+      solarArrayInstalledCostHigh: zod
+        .number()
+        .optional()
+        .describe("Solar array only, fully installed cost — high bound"),
+      batteryDiyCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Battery bank equipment cost only (excludes installation labor) — low bound",
+        ),
+      batteryDiyCostHigh: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment cost only — high bound"),
+      batteryInstalledCostLow: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment + installation labor — low bound"),
+      batteryInstalledCostHigh: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment + installation labor — high bound"),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -518,6 +632,44 @@ export const CalculateProjectResponse = zod.object({
   diyEquipmentCostHigh: zod.number(),
   installedCostLow: zod.number(),
   installedCostHigh: zod.number(),
+  solarArrayDiyCostLow: zod
+    .number()
+    .optional()
+    .describe(
+      "Solar array only (panels + inverter + racking), DIY equipment cost — low bound",
+    ),
+  solarArrayDiyCostHigh: zod
+    .number()
+    .optional()
+    .describe(
+      "Solar array only (panels + inverter + racking), DIY equipment cost — high bound",
+    ),
+  solarArrayInstalledCostLow: zod
+    .number()
+    .optional()
+    .describe("Solar array only, fully installed cost — low bound"),
+  solarArrayInstalledCostHigh: zod
+    .number()
+    .optional()
+    .describe("Solar array only, fully installed cost — high bound"),
+  batteryDiyCostLow: zod
+    .number()
+    .optional()
+    .describe(
+      "Battery bank equipment cost only (excludes installation labor) — low bound",
+    ),
+  batteryDiyCostHigh: zod
+    .number()
+    .optional()
+    .describe("Battery bank equipment cost only — high bound"),
+  batteryInstalledCostLow: zod
+    .number()
+    .optional()
+    .describe("Battery bank equipment + installation labor — low bound"),
+  batteryInstalledCostHigh: zod
+    .number()
+    .optional()
+    .describe("Battery bank equipment + installation labor — high bound"),
   estimatedYearlySavings: zod.number(),
   paybackYears: zod.number().nullable(),
   recommendedPanelBrand: zod.string(),
@@ -703,6 +855,48 @@ export const GetProjectsSummaryResponse = zod.object({
           diyEquipmentCostHigh: zod.number(),
           installedCostLow: zod.number(),
           installedCostHigh: zod.number(),
+          solarArrayDiyCostLow: zod
+            .number()
+            .optional()
+            .describe(
+              "Solar array only (panels + inverter + racking), DIY equipment cost — low bound",
+            ),
+          solarArrayDiyCostHigh: zod
+            .number()
+            .optional()
+            .describe(
+              "Solar array only (panels + inverter + racking), DIY equipment cost — high bound",
+            ),
+          solarArrayInstalledCostLow: zod
+            .number()
+            .optional()
+            .describe("Solar array only, fully installed cost — low bound"),
+          solarArrayInstalledCostHigh: zod
+            .number()
+            .optional()
+            .describe("Solar array only, fully installed cost — high bound"),
+          batteryDiyCostLow: zod
+            .number()
+            .optional()
+            .describe(
+              "Battery bank equipment cost only (excludes installation labor) — low bound",
+            ),
+          batteryDiyCostHigh: zod
+            .number()
+            .optional()
+            .describe("Battery bank equipment cost only — high bound"),
+          batteryInstalledCostLow: zod
+            .number()
+            .optional()
+            .describe(
+              "Battery bank equipment + installation labor — low bound",
+            ),
+          batteryInstalledCostHigh: zod
+            .number()
+            .optional()
+            .describe(
+              "Battery bank equipment + installation labor — high bound",
+            ),
           estimatedYearlySavings: zod.number(),
           paybackYears: zod.number().nullable(),
           recommendedPanelBrand: zod.string(),
