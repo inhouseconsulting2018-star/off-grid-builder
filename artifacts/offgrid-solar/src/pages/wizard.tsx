@@ -283,50 +283,154 @@ export default function Wizard() {
                 )}
 
                 {/* Step 4: Site */}
-                {step === 4 && (
-                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    <FormField control={form.control} name="shadeLevel" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Shade Level on Array</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">None — Full sun all day</SelectItem>
-                            <SelectItem value="light">Light — Minor shading (10%)</SelectItem>
-                            <SelectItem value="medium">Medium — Partial shading (25%)</SelectItem>
-                            <SelectItem value="heavy">Heavy — Significant shading (40%)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <FormField control={form.control} name="roofPitch" render={({ field }) => (
-                        <FormItem><FormLabel>Roof Pitch (degrees)</FormLabel><FormControl><Input placeholder="20" {...field} /></FormControl><FormMessage /></FormItem>
-                      )} />
-                      <FormField control={form.control} name="roofDirection" render={({ field }) => (
-                        <FormItem><FormLabel>Panel Orientation</FormLabel><FormControl><Input placeholder="South, SW, etc." {...field} /></FormControl><FormMessage /></FormItem>
-                      )} />
-                    </div>
-                    <FormField control={form.control} name="availableSqft" render={({ field }) => (
-                      <FormItem><FormLabel>Available Space (sq ft)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormDescription className="text-xs">Roof or ground space for panels</FormDescription><FormMessage /></FormItem>
-                    )} />
-                    <div className="flex gap-6">
-                      <FormField control={form.control} name="snowArea" render={({ field }) => (
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                          <FormLabel className="font-normal text-sm cursor-pointer">High Snow Load Area</FormLabel>
+                {step === 4 && (() => {
+                  const mountType = form.watch("installationType");
+                  const isRoof = mountType === "roof";
+                  const isGround = mountType === "ground" || mountType === "pole";
+                  const isCarport = mountType === "carport";
+
+                  return (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      <FormField control={form.control} name="shadeLevel" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Shade Level on Array</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">None — Full sun all day</SelectItem>
+                              <SelectItem value="light">Light — Minor shading (10%)</SelectItem>
+                              <SelectItem value="medium">Medium — Partial shading (25%)</SelectItem>
+                              <SelectItem value="heavy">Heavy — Significant shading (40%)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
                         </FormItem>
                       )} />
-                      <FormField control={form.control} name="highWindArea" render={({ field }) => (
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                          <FormLabel className="font-normal text-sm cursor-pointer">High Wind Area</FormLabel>
+
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        {/* Angle field — context-aware label */}
+                        <FormField control={form.control} name="roofPitch" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              {isRoof ? "Roof Pitch (degrees)" : "Panel Tilt Angle (degrees)"}
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder={isRoof ? "e.g. 20" : "e.g. 30"}
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription className="text-xs">
+                              {isRoof
+                                ? "The slope angle of your roof surface."
+                                : isGround
+                                ? "Angle from horizontal. Typical fixed ground mount: 25–35°. Tracking systems adjust automatically."
+                                : "Tilt angle of the carport canopy from horizontal."}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+
+                        {/* Orientation / tracking field — context-aware */}
+                        {isGround ? (
+                          <FormField control={form.control} name="roofDirection" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Tracking System</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={["fixed", "single-axis", "dual-axis"].includes(field.value) ? field.value : "fixed"}
+                              >
+                                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                                <SelectContent>
+                                  <SelectItem value="fixed">Fixed Tilt — No tracking</SelectItem>
+                                  <SelectItem value="single-axis">Single-Axis Tracking — Follows sun E→W</SelectItem>
+                                  <SelectItem value="dual-axis">Dual-Axis Tracking — Follows sun all day</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription className="text-xs">
+                                {field.value === "single-axis"
+                                  ? "Adds ~15–20% more production vs. fixed. Panels rotate east to west throughout the day."
+                                  : field.value === "dual-axis"
+                                  ? "Adds ~25–40% more production vs. fixed. Tracks sun in both axes. Higher cost and maintenance."
+                                  : "Standard fixed-angle rack. No moving parts, lowest cost, easiest maintenance."}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        ) : (
+                          <FormField control={form.control} name="roofDirection" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {isRoof ? "Roof Orientation" : "Panel Orientation"}
+                              </FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={["South", "SW", "SE", "West", "East"].includes(field.value) ? field.value : "South"}
+                              >
+                                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                                <SelectContent>
+                                  <SelectItem value="South">South — Optimal (most production)</SelectItem>
+                                  <SelectItem value="SW">Southwest — Very good</SelectItem>
+                                  <SelectItem value="SE">Southeast — Very good</SelectItem>
+                                  <SelectItem value="West">West — Good for afternoon peak</SelectItem>
+                                  <SelectItem value="East">East — Good for morning production</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription className="text-xs">
+                                {isRoof
+                                  ? "The compass direction your roof faces. South-facing roofs produce the most power in the northern hemisphere."
+                                  : "Direction the panels face. South is optimal in the US."}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        )}
+                      </div>
+
+                      {/* Ground/pole azimuth note */}
+                      {isGround && (
+                        <div className="rounded-md border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+                          <strong className="text-foreground">Panel Azimuth:</strong> Ground and pole mounts are typically aimed true South (180°) for maximum annual production in the US. If your site has a specific orientation constraint, note it in your project name or design notes.
+                        </div>
+                      )}
+
+                      <FormField control={form.control} name="availableSqft" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            {isRoof ? "Available Roof Space (sq ft)"
+                              : isGround ? "Available Ground Area (sq ft)"
+                              : isCarport ? "Carport Area (sq ft)"
+                              : "Available Space (sq ft)"}
+                          </FormLabel>
+                          <FormControl><Input type="number" {...field} /></FormControl>
+                          <FormDescription className="text-xs">
+                            {isRoof
+                              ? "Usable unshaded roof area for panels. Each 400W panel needs ~22 sq ft."
+                              : isGround
+                              ? "Ground area available for the array. Ground mounts need extra space between rows for maintenance access (1.5–2× panel area)."
+                              : "Area available for the solar canopy."}
+                          </FormDescription>
+                          <FormMessage />
                         </FormItem>
                       )} />
+
+                      <div className="flex gap-6">
+                        <FormField control={form.control} name="snowArea" render={({ field }) => (
+                          <FormItem className="flex items-center space-x-2 space-y-0">
+                            <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                            <FormLabel className="font-normal text-sm cursor-pointer">High Snow Load Area</FormLabel>
+                          </FormItem>
+                        )} />
+                        <FormField control={form.control} name="highWindArea" render={({ field }) => (
+                          <FormItem className="flex items-center space-x-2 space-y-0">
+                            <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                            <FormLabel className="font-normal text-sm cursor-pointer">High Wind Area</FormLabel>
+                          </FormItem>
+                        )} />
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Step 5: Budget */}
                 {step === 5 && (

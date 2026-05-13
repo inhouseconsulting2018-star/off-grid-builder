@@ -7,7 +7,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useUpdateProject, useGetProject, useCalculateProject, getGetProjectQueryKey } from "@workspace/api-client-react";
@@ -240,6 +240,12 @@ export default function EditProject() {
                 </div>
 
                 {/* ── Section: Site Conditions ──────────────────── */}
+                {(() => {
+                  const mountType = form.watch("installationType");
+                  const isRoof = mountType === "roof";
+                  const isGround = mountType === "ground" || mountType === "pole";
+                  const isCarport = mountType === "carport";
+                  return (
                 <div>
                   <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-4 pb-2 border-b">Site Conditions</h3>
                   <div className="grid sm:grid-cols-2 gap-4">
@@ -273,16 +279,96 @@ export default function EditProject() {
                         <FormMessage />
                       </FormItem>
                     )} />
+
+                    {/* Angle — context-aware */}
                     <FormField control={form.control} name="roofPitch" render={({ field }) => (
-                      <FormItem><FormLabel>Roof Pitch (degrees)</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                      <FormItem>
+                        <FormLabel>{isRoof ? "Roof Pitch (degrees)" : "Panel Tilt Angle (degrees)"}</FormLabel>
+                        <FormControl><Input placeholder={isRoof ? "e.g. 20" : "e.g. 30"} {...field} /></FormControl>
+                        <FormDescription className="text-xs">
+                          {isRoof
+                            ? "The slope angle of your roof surface."
+                            : isGround
+                            ? "Angle from horizontal. Typical: 25–35°. Tracking systems adjust automatically."
+                            : "Tilt angle of the canopy from horizontal."}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
                     )} />
-                    <FormField control={form.control} name="roofDirection" render={({ field }) => (
-                      <FormItem><FormLabel>Roof Orientation</FormLabel><FormControl><Input placeholder="e.g. South, SW" {...field} /></FormControl><FormMessage /></FormItem>
-                    )} />
+
+                    {/* Orientation / tracking — context-aware */}
+                    {isGround ? (
+                      <FormField control={form.control} name="roofDirection" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Tracking System</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={["fixed", "single-axis", "dual-axis"].includes(field.value) ? field.value : "fixed"}
+                          >
+                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              <SelectItem value="fixed">Fixed Tilt — No tracking</SelectItem>
+                              <SelectItem value="single-axis">Single-Axis — Follows sun E→W</SelectItem>
+                              <SelectItem value="dual-axis">Dual-Axis — Tracks sun all day</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription className="text-xs">
+                            {field.value === "single-axis"
+                              ? "+15–20% production vs. fixed. Panels rotate east to west during the day."
+                              : field.value === "dual-axis"
+                              ? "+25–40% production vs. fixed. Tracks sun in both axes. Higher cost and maintenance."
+                              : "Standard fixed-angle rack. No moving parts, lowest cost."}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    ) : (
+                      <FormField control={form.control} name="roofDirection" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{isRoof ? "Roof Orientation" : "Panel Orientation"}</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={["South", "SW", "SE", "West", "East"].includes(field.value) ? field.value : "South"}
+                          >
+                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              <SelectItem value="South">South — Optimal</SelectItem>
+                              <SelectItem value="SW">Southwest — Very good</SelectItem>
+                              <SelectItem value="SE">Southeast — Very good</SelectItem>
+                              <SelectItem value="West">West — Good for afternoon peak</SelectItem>
+                              <SelectItem value="East">East — Good for morning</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription className="text-xs">
+                            {isRoof
+                              ? "Direction your roof faces. South-facing produces the most power in the US."
+                              : "Direction the carport canopy faces. South is optimal."}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    )}
+
                     <FormField control={form.control} name="availableSqft" render={({ field }) => (
-                      <FormItem><FormLabel>Available Space (sq ft)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
+                      <FormItem>
+                        <FormLabel>
+                          {isRoof ? "Available Roof Space (sq ft)"
+                            : isGround ? "Available Ground Area (sq ft)"
+                            : isCarport ? "Carport Area (sq ft)"
+                            : "Available Space (sq ft)"}
+                        </FormLabel>
+                        <FormControl><Input type="number" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
                     )} />
                   </div>
+
+                  {/* Ground/pole azimuth note */}
+                  {isGround && (
+                    <div className="rounded-md border bg-muted/40 px-4 py-3 mt-4 text-xs text-muted-foreground">
+                      <strong className="text-foreground">Panel Azimuth:</strong> Ground and pole mounts are typically aimed true South (180°) for maximum annual output in the US. If your site has an orientation constraint, note it in the project name.
+                    </div>
+                  )}
                   <div className="flex gap-6 mt-4">
                     <FormField control={form.control} name="snowArea" render={({ field }) => (
                       <FormItem className="flex items-center space-x-2 space-y-0">
@@ -298,6 +384,8 @@ export default function EditProject() {
                     )} />
                   </div>
                 </div>
+                  );
+                })()}
 
                 {/* ── Section: Budget ───────────────────────────── */}
                 <div>
