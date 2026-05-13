@@ -586,6 +586,63 @@ export const CalculateProjectResponse = zod.object({
 });
 
 /**
+ * @summary Quick stateless solar proposal estimate (no DB write)
+ */
+export const createProposalEstimateBodyStateMin = 2;
+export const createProposalEstimateBodyStateMax = 2;
+
+export const createProposalEstimateBodyPanelWattageDefault = 440;
+export const createProposalEstimateBodyEfficiencyFactorDefault = 0.78;
+export const createProposalEstimateBodyIncludeBatteryDefault = false;
+export const createProposalEstimateBodyBatteryBackupHoursDefault = 8;
+
+export const CreateProposalEstimateBody = zod.object({
+  address: zod.string(),
+  city: zod.string(),
+  state: zod
+    .string()
+    .min(createProposalEstimateBodyStateMin)
+    .max(createProposalEstimateBodyStateMax),
+  zip: zod.string(),
+  annualKwh: zod.number().nullish(),
+  monthlyKwh: zod.number().nullish(),
+  panelWattage: zod
+    .number()
+    .default(createProposalEstimateBodyPanelWattageDefault),
+  efficiencyFactor: zod
+    .number()
+    .default(createProposalEstimateBodyEfficiencyFactorDefault),
+  includeBattery: zod
+    .boolean()
+    .default(createProposalEstimateBodyIncludeBatteryDefault),
+  batteryBackupHours: zod
+    .number()
+    .default(createProposalEstimateBodyBatteryBackupHoursDefault),
+});
+
+export const CreateProposalEstimateResponse = zod.object({
+  address: zod.string(),
+  city: zod.string(),
+  state: zod.string(),
+  zip: zod.string(),
+  annualKwhUsage: zod.number(),
+  monthlyKwhUsage: zod.number(),
+  peakSunHours: zod.number(),
+  peakSunHoursSource: zod.string().describe("'pvwatts' | 'state' | 'default'"),
+  panelWattage: zod.number(),
+  efficiencyFactor: zod.number(),
+  requiredSystemKw: zod.number(),
+  panelCount: zod.number(),
+  finalSystemKw: zod.number(),
+  estimatedAnnualKwh: zod.number(),
+  estimatedMonthlyKwh: zod.number(),
+  offsetPct: zod.number(),
+  monthlyProductionKwh: zod.array(zod.number()).nullish(),
+  batteryRecommendedKwh: zod.number().nullish(),
+  notes: zod.array(zod.string()),
+});
+
+/**
  * @summary Dashboard summary stats across all projects
  */
 export const GetProjectsSummaryResponse = zod.object({

@@ -6,6 +6,7 @@ import {
   Settings as SettingsIcon,
   MessageSquare,
   PlusCircle,
+  FileText,
   Menu,
   X,
 } from "lucide-react";
@@ -18,6 +19,7 @@ interface AppLayoutProps {
 
 const navigation = [
   { name: "Dashboard", href: "/projects", icon: LayoutDashboard },
+  { name: "Quick Proposal", href: "/proposal", icon: FileText },
   { name: "New Design", href: "/wizard", icon: PlusCircle },
   { name: "AI Assistant", href: "/ai-assistant", icon: MessageSquare },
   { name: "Settings", href: "/settings", icon: SettingsIcon },

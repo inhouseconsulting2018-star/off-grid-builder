@@ -23,6 +23,8 @@ import type {
   ProjectInput,
   ProjectPatch,
   ProjectsSummary,
+  ProposalEstimate,
+  ProposalEstimateInput,
   Settings,
   SettingsPatch,
 } from "./api.schemas";
@@ -613,6 +615,93 @@ export const useCalculateProject = <
   TContext
 > => {
   return useMutation(getCalculateProjectMutationOptions(options));
+};
+
+/**
+ * @summary Quick stateless solar proposal estimate (no DB write)
+ */
+export const getCreateProposalEstimateUrl = () => {
+  return `/api/proposals/estimate`;
+};
+
+export const createProposalEstimate = async (
+  proposalEstimateInput: ProposalEstimateInput,
+  options?: RequestInit,
+): Promise<ProposalEstimate> => {
+  return customFetch<ProposalEstimate>(getCreateProposalEstimateUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(proposalEstimateInput),
+  });
+};
+
+export const getCreateProposalEstimateMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProposalEstimate>>,
+    TError,
+    { data: BodyType<ProposalEstimateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createProposalEstimate>>,
+  TError,
+  { data: BodyType<ProposalEstimateInput> },
+  TContext
+> => {
+  const mutationKey = ["createProposalEstimate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createProposalEstimate>>,
+    { data: BodyType<ProposalEstimateInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createProposalEstimate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateProposalEstimateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createProposalEstimate>>
+>;
+export type CreateProposalEstimateMutationBody =
+  BodyType<ProposalEstimateInput>;
+export type CreateProposalEstimateMutationError = ErrorType<void>;
+
+/**
+ * @summary Quick stateless solar proposal estimate (no DB write)
+ */
+export const useCreateProposalEstimate = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProposalEstimate>>,
+    TError,
+    { data: BodyType<ProposalEstimateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createProposalEstimate>>,
+  TError,
+  { data: BodyType<ProposalEstimateInput> },
+  TContext
+> => {
+  return useMutation(getCreateProposalEstimateMutationOptions(options));
 };
 
 /**

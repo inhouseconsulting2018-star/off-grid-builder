@@ -325,6 +325,46 @@ export interface ProjectPatch {
   customBudget?: number | null;
 }
 
+export interface ProposalEstimateInput {
+  address: string;
+  city: string;
+  /**
+   * @minLength 2
+   * @maxLength 2
+   */
+  state: string;
+  zip: string;
+  annualKwh?: number | null;
+  monthlyKwh?: number | null;
+  panelWattage?: number;
+  efficiencyFactor?: number;
+  includeBattery?: boolean;
+  batteryBackupHours?: number;
+}
+
+export interface ProposalEstimate {
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  annualKwhUsage: number;
+  monthlyKwhUsage: number;
+  peakSunHours: number;
+  /** 'pvwatts' | 'state' | 'default' */
+  peakSunHoursSource: string;
+  panelWattage: number;
+  efficiencyFactor: number;
+  requiredSystemKw: number;
+  panelCount: number;
+  finalSystemKw: number;
+  estimatedAnnualKwh: number;
+  estimatedMonthlyKwh: number;
+  offsetPct: number;
+  monthlyProductionKwh?: number[] | null;
+  batteryRecommendedKwh?: number | null;
+  notes: string[];
+}
+
 export interface ProjectsSummary {
   totalProjects: number;
   totalSystemKw: number;

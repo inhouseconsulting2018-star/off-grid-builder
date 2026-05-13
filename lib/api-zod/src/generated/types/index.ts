@@ -27,5 +27,7 @@ export * from "./projectPatchSystemType";
 export * from "./projectShadeLevel";
 export * from "./projectsSummary";
 export * from "./projectSystemType";
+export * from "./proposalEstimate";
+export * from "./proposalEstimateInput";
 export * from "./settings";
 export * from "./settingsPatch";

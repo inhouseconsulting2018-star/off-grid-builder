@@ -148,6 +148,27 @@ paths:
         "404":
           description: Project not found
 
+  /proposals/estimate:
+    post:
+      operationId: createProposalEstimate
+      tags: [calculations]
+      summary: Quick stateless solar proposal estimate (no DB write)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProposalEstimateInput"
+      responses:
+        "200":
+          description: Solar proposal estimate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProposalEstimate"
+        "400":
+          description: Invalid input
+
   /projects/stats/summary:
     get:
       operationId: getProjectsSummary
@@ -560,6 +581,110 @@ components:
         batteryTempDeratingPct:
           type: number
           description: "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied)."
+
+    ProposalEstimateInput:
+      type: object
+      required:
+        - address
+        - city
+        - state
+        - zip
+      properties:
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+          minLength: 2
+          maxLength: 2
+        zip:
+          type: string
+        annualKwh:
+          type: number
+          nullable: true
+        monthlyKwh:
+          type: number
+          nullable: true
+        panelWattage:
+          type: number
+          default: 440
+        efficiencyFactor:
+          type: number
+          default: 0.78
+        includeBattery:
+          type: boolean
+          default: false
+        batteryBackupHours:
+          type: number
+          default: 8
+
+    ProposalEstimate:
+      type: object
+      required:
+        - address
+        - city
+        - state
+        - zip
+        - annualKwhUsage
+        - monthlyKwhUsage
+        - peakSunHours
+        - peakSunHoursSource
+        - panelWattage
+        - efficiencyFactor
+        - requiredSystemKw
+        - panelCount
+        - finalSystemKw
+        - estimatedAnnualKwh
+        - estimatedMonthlyKwh
+        - offsetPct
+        - notes
+      properties:
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zip:
+          type: string
+        annualKwhUsage:
+          type: number
+        monthlyKwhUsage:
+          type: number
+        peakSunHours:
+          type: number
+        peakSunHoursSource:
+          type: string
+          description: "'pvwatts' | 'state' | 'default'"
+        panelWattage:
+          type: number
+        efficiencyFactor:
+          type: number
+        requiredSystemKw:
+          type: number
+        panelCount:
+          type: integer
+        finalSystemKw:
+          type: number
+        estimatedAnnualKwh:
+          type: number
+        estimatedMonthlyKwh:
+          type: number
+        offsetPct:
+          type: number
+        monthlyProductionKwh:
+          type: array
+          items:
+            type: number
+          nullable: true
+        batteryRecommendedKwh:
+          type: number
+          nullable: true
+        notes:
+          type: array
+          items:
+            type: string
 
     ProjectsSummary:
       type: object
