@@ -56,21 +56,23 @@ const STATE_CENTERS: Record<string, GeoCoords> = {
   WI: { lat: 44.3, lng: -89.6 }, WY: { lat: 43.0, lng: -107.6 },
 };
 
+/**
+ * Geocode an address by calling our backend proxy.
+ * No external geocoding API is called from this file —
+ * the provider (Nominatim, Google Maps, etc.) is hidden server-side.
+ */
 async function geocodeAddress(address: string, city: string, state: string, zip: string): Promise<GeoCoords | null> {
-  const queries = [
-    `${address}, ${city}, ${state} ${zip}, USA`,
-    `${city}, ${state} ${zip}, USA`,
-    `${city}, ${state}, USA`,
-  ];
-  for (const q of queries) {
-    try {
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us`;
-      const res = await fetch(url, { headers: { "Accept-Language": "en", "User-Agent": "OffGridSolarBuilder/1.0" } });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    } catch { /* try next */ }
-  }
+  try {
+    const params = new URLSearchParams({ address, city, state, zip });
+    const base = (import.meta.env.BASE_URL as string) ?? "/";
+    const url = `${base}api/geocode/coords?${params.toString()}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json() as { lat?: number; lon?: number };
+    if (typeof data.lat === "number" && typeof data.lon === "number") {
+      return { lat: data.lat, lng: data.lon };
+    }
+  } catch { /* fall through to state centroid fallback */ }
   return null;
 }
 

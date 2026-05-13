@@ -1,15 +1,16 @@
 /**
  * Quick Proposal — 3-step residential solar estimating wizard.
  *
- * Step 1: Property address (with Nominatim autocomplete)
+ * Step 1: Property address (with backend-proxied autocomplete)
  * Step 2: Energy usage (annual or monthly kWh)
  * Step 3: Proposal output card with system sizing, production chart, battery rec
  *
  * Architecture notes:
  *   - All calculation logic lives in api-server/src/lib/proposal-calculator.ts
- *   - Address geocoding uses Nominatim (client-side) for autocomplete suggestions;
- *     PVWatts irradiance lookup is handled server-side in the /estimate endpoint
- *   - Future API hooks (Google Maps, Aurora Solar, financing) go in the backend route
+ *   - Address autocomplete calls /api/geocode/suggest (backend proxy — provider hidden)
+ *   - PVWatts irradiance lookup is handled server-side in the /estimate endpoint
+ *   - Future API hooks (Google Maps, Aurora Solar, financing) go in the backend routes
+ *   - No external API is ever called directly from this file
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
@@ -78,24 +79,6 @@ interface ProposalEstimate {
   notes: string[];
 }
 
-interface NominatimAddress {
-  house_number?: string;
-  road?: string;
-  city?: string;
-  town?: string;
-  village?: string;
-  state?: string;
-  state_code?: string;
-  postcode?: string;
-}
-
-interface NominatimResult {
-  display_name: string;
-  lat: string;
-  lon: string;
-  address: NominatimAddress;
-}
-
 interface AddressSuggestion {
   displayName: string;
   streetAddress: string;
@@ -150,44 +133,18 @@ const DEMO_SCENARIO = {
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// ─── Nominatim address autocomplete ──────────────────────────────────────────
+// ─── Address autocomplete — calls our backend proxy ──────────────────────────
+// The geocoding provider (Nominatim, Google Maps, etc.) is hidden server-side.
+// To swap providers, update api-server/src/routes/geocode.ts — no frontend changes needed.
 
-async function searchNominatim(query: string): Promise<AddressSuggestion[]> {
+async function suggestAddresses(query: string): Promise<AddressSuggestion[]> {
   if (query.trim().length < 5) return [];
-  const url = new URL("https://nominatim.openstreetmap.org/search");
-  url.searchParams.set("q", query);
-  url.searchParams.set("format", "json");
-  url.searchParams.set("limit", "6");
-  url.searchParams.set("countrycodes", "us");
-  url.searchParams.set("addressdetails", "1");
-
-  const resp = await fetch(url.toString(), {
-    headers: { "User-Agent": "OffGridSolarBuilder/2.0 (solar-estimating-app)" },
-  });
+  const base = (import.meta.env.BASE_URL as string) ?? "/";
+  const url = `${base}api/geocode/suggest?q=${encodeURIComponent(query)}`;
+  const resp = await fetch(url);
   if (!resp.ok) return [];
-
-  const results: NominatimResult[] = await resp.json();
-
-  return results
-    .filter((r) => r.address.postcode && r.address.state_code)
-    .map((r) => {
-      const a = r.address;
-      const streetParts = [a.house_number, a.road].filter(Boolean);
-      const streetAddress = streetParts.length > 0 ? streetParts.join(" ") : "";
-      const city = a.city ?? a.town ?? a.village ?? "";
-      const state = (a.state_code ?? "").toUpperCase().slice(0, 2);
-      const zip = (a.postcode ?? "").slice(0, 5);
-      return {
-        displayName: r.display_name,
-        streetAddress,
-        city,
-        state,
-        zip,
-        lat: parseFloat(r.lat),
-        lon: parseFloat(r.lon),
-      };
-    })
-    .filter((s) => s.streetAddress && s.city && s.state.length === 2 && /^\d{5}$/.test(s.zip));
+  const data = await resp.json() as { suggestions?: AddressSuggestion[] };
+  return data.suggestions ?? [];
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -301,7 +258,7 @@ export default function QuickProposal() {
     debounceRef.current = setTimeout(async () => {
       setLoadingSuggestions(true);
       try {
-        const results = await searchNominatim(value);
+        const results = await suggestAddresses(value);
         setSuggestions(results);
         setShowSuggestions(results.length > 0);
       } catch {
