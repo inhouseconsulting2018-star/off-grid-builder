@@ -7,6 +7,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -15,6 +16,8 @@ import { useCreateProject, useCalculateProject } from "@workspace/api-client-rea
 import { useToast } from "@/hooks/use-toast";
 import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, CheckCircle2 } from "lucide-react";
 
+const BASE_URL = (import.meta.env.BASE_URL as string) ?? "/";
+
 const wizardSchema = z.object({
   name: z.string().min(1, "Project name is required"),
   address: z.string().min(1, "Address is required"),
@@ -22,6 +25,14 @@ const wizardSchema = z.object({
   state: z.string().min(1, "State is required"),
   zip: z.string().min(1, "ZIP code is required"),
   installationType: z.enum(["roof", "ground", "pole", "carport"]),
+  arrayLocationNote: z.string().optional(),
+  separateArrayAddress: z.boolean().default(false),
+  arrayAddress: z.string().optional(),
+  arrayCity: z.string().optional(),
+  arrayState: z.string().optional(),
+  arrayZip: z.string().optional(),
+  arrayLat: z.number().nullable().optional(),
+  arrayLon: z.number().nullable().optional(),
   annualKwh: z.coerce.number().min(0),
   monthlyBill: z.coerce.number().min(0),
   utilityRatePerKwh: z.coerce.number().min(0),
@@ -53,7 +64,7 @@ const STEPS = [
 ];
 
 const STEP_FIELDS: Record<number, (keyof WizardFormValues)[]> = {
-  1: ["name", "address", "city", "state", "zip", "installationType"],
+  1: ["name", "address", "city", "state", "zip", "installationType", "arrayLocationNote"],
   2: ["annualKwh", "monthlyBill", "utilityRatePerKwh", "systemType"],
   3: ["backupHours"],
   4: ["shadeLevel", "roofPitch", "roofDirection", "availableSqft"],
@@ -76,6 +87,14 @@ export default function Wizard() {
       state: "",
       zip: "",
       installationType: "roof",
+      arrayLocationNote: "",
+      separateArrayAddress: false,
+      arrayAddress: "",
+      arrayCity: "",
+      arrayState: "",
+      arrayZip: "",
+      arrayLat: null,
+      arrayLon: null,
       annualKwh: 10000,
       monthlyBill: 150,
       utilityRatePerKwh: 0.15,
@@ -100,7 +119,37 @@ export default function Wizard() {
 
   const onSubmit = async (data: WizardFormValues) => {
     try {
-      const project = await createProject.mutateAsync({ data });
+      let arrayLat = data.arrayLat ?? null;
+      let arrayLon = data.arrayLon ?? null;
+
+      // If user entered a separate array address, geocode it now
+      if (data.separateArrayAddress && data.arrayAddress && data.arrayCity && data.arrayState) {
+        try {
+          const params = new URLSearchParams({
+            address: data.arrayAddress,
+            city: data.arrayCity,
+            state: data.arrayState,
+            zip: data.arrayZip ?? "",
+          });
+          const res = await fetch(`${BASE_URL}api/geocode/coords?${params}`);
+          if (res.ok) {
+            const coords = await res.json() as { lat?: number; lon?: number };
+            if (typeof coords.lat === "number" && typeof coords.lon === "number") {
+              arrayLat = coords.lat;
+              arrayLon = coords.lon;
+            }
+          }
+        } catch { /* ignore geocode errors — PVWatts will fall back to property address */ }
+      }
+
+      const project = await createProject.mutateAsync({
+        data: {
+          ...data,
+          arrayLat: arrayLat ?? undefined,
+          arrayLon: arrayLon ?? undefined,
+          arrayLocationNote: data.arrayLocationNote || undefined,
+        },
+      });
       await calculateProject.mutateAsync({ id: project.id });
       toast({ title: "Design Complete", description: "Your solar report is ready." });
       setLocation(`/results/${project.id}`);
@@ -208,6 +257,55 @@ export default function Wizard() {
                         <FormMessage />
                       </FormItem>
                     )} />
+
+                    {/* Array Location */}
+                    <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                      <div className="text-sm font-medium">Array Location <span className="text-muted-foreground font-normal">(optional)</span></div>
+                      <FormField control={form.control} name="arrayLocationNote" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-muted-foreground">Where will the panels be installed?</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              placeholder="e.g. North field, ground mount, 200 ft from the barn — facing south"
+                              className="resize-none text-sm"
+                              rows={2}
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription className="text-xs">Describe the array placement for your report. If the array is on a separate parcel or far from the property, you can enter its address below for accurate solar production data.</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+
+                      <FormField control={form.control} name="separateArrayAddress" render={({ field }) => (
+                        <FormItem className="flex items-center gap-2">
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                          <FormLabel className="text-xs font-normal cursor-pointer">Array is at a different address (use its location for solar data)</FormLabel>
+                        </FormItem>
+                      )} />
+
+                      {form.watch("separateArrayAddress") && (
+                        <div className="space-y-2 pt-1">
+                          <FormField control={form.control} name="arrayAddress" render={({ field }) => (
+                            <FormItem><FormLabel className="text-xs">Array Street Address</FormLabel><FormControl><Input placeholder="e.g. 100 North Field Rd" className="text-sm" {...field} /></FormControl></FormItem>
+                          )} />
+                          <div className="grid grid-cols-3 gap-2">
+                            <FormField control={form.control} name="arrayCity" render={({ field }) => (
+                              <FormItem className="col-span-1"><FormLabel className="text-xs">City</FormLabel><FormControl><Input className="text-sm" {...field} /></FormControl></FormItem>
+                            )} />
+                            <FormField control={form.control} name="arrayState" render={({ field }) => (
+                              <FormItem><FormLabel className="text-xs">State</FormLabel><FormControl><Input placeholder="AZ" maxLength={2} className="text-sm" {...field} /></FormControl></FormItem>
+                            )} />
+                            <FormField control={form.control} name="arrayZip" render={({ field }) => (
+                              <FormItem><FormLabel className="text-xs">ZIP</FormLabel><FormControl><Input placeholder="85001" className="text-sm" {...field} /></FormControl></FormItem>
+                            )} />
+                          </div>
+                          <p className="text-xs text-muted-foreground">This address will be geocoded and used for NREL PVWatts solar production estimates.</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

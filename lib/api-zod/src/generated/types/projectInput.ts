@@ -45,4 +45,10 @@ export interface ProjectInput {
   budgetTier: ProjectInputBudgetTier;
   /** @nullable */
   customBudget?: number | null;
+  /** @nullable */
+  arrayLat?: number | null;
+  /** @nullable */
+  arrayLon?: number | null;
+  /** @nullable */
+  arrayLocationNote?: string | null;
 }

@@ -10,6 +10,9 @@ export interface PVWattsParams {
   city: string;
   state: string;
   zip: string;
+  /** Optional: override geocoded coords with the actual array location */
+  arrayLat?: number | null;
+  arrayLon?: number | null;
 }
 
 export interface PVWattsResult {
@@ -128,7 +131,14 @@ export async function fetchPVWatts(params: PVWattsParams): Promise<PVWattsResult
   }
 
   // Resolve lat/lon — PVWatts v8 no longer accepts 'address' parameter (deprecated 2025-02-25)
-  let coords = await geocode(params.zip, params.city, params.state);
+  // If the user specified a separate array location, use it directly (skips geocoding).
+  let coords: { lat: number; lon: number } | null =
+    (typeof params.arrayLat === "number" && typeof params.arrayLon === "number")
+      ? { lat: params.arrayLat, lon: params.arrayLon }
+      : null;
+  if (!coords) {
+    coords = await geocode(params.zip, params.city, params.state);
+  }
   if (!coords) {
     const centroid = STATE_CENTROIDS[params.state?.toUpperCase()];
     if (centroid) {

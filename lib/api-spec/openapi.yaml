@@ -304,6 +304,15 @@ components:
           enum: [economy, mid-range, premium, custom]
         customBudget:
           type: ["number", "null"]
+        arrayLat:
+          type: ["number", "null"]
+          description: "Latitude of the solar array (if different from property address)"
+        arrayLon:
+          type: ["number", "null"]
+          description: "Longitude of the solar array (if different from property address)"
+        arrayLocationNote:
+          type: ["string", "null"]
+          description: "Free-text description of where the array will be installed"
         calculationResult:
           $ref: "#/components/schemas/CalculationResult"
         createdAt:
@@ -394,6 +403,12 @@ components:
           enum: [economy, mid-range, premium, custom]
         customBudget:
           type: ["number", "null"]
+        arrayLat:
+          type: ["number", "null"]
+        arrayLon:
+          type: ["number", "null"]
+        arrayLocationNote:
+          type: ["string", "null"]
 
     ProjectPatch:
       type: object
@@ -457,6 +472,12 @@ components:
           enum: [economy, mid-range, premium, custom]
         customBudget:
           type: ["number", "null"]
+        arrayLat:
+          type: ["number", "null"]
+        arrayLon:
+          type: ["number", "null"]
+        arrayLocationNote:
+          type: ["string", "null"]
 
     CalculationResult:
       type: object
@@ -553,6 +574,18 @@ components:
         batteryInstalledCostHigh:
           type: number
           description: "Battery bank equipment + installation labor — high bound"
+        usedSolarEquipCostLow:
+          type: number
+          description: "Used/refurbished panels + inverter — low estimate (~40% of new)"
+        usedSolarEquipCostHigh:
+          type: number
+          description: "Used/refurbished panels + inverter — high estimate (~55% of new)"
+        usedBatteryEquipCostLow:
+          type: ["number", "null"]
+          description: "Used battery equipment cost — null if lithium (not recommended used)"
+        usedBatteryEquipCostHigh:
+          type: ["number", "null"]
+          description: "Used battery equipment cost high bound — null if lithium"
         estimatedYearlySavings:
           type: number
         paybackYears:

@@ -693,8 +693,102 @@ export default function Results() {
             );
           })()}
 
+          {/* Used / Refurbished Market */}
+          {(() => {
+            const usedSolarLow = calc.usedSolarEquipCostLow ?? 0;
+            const usedSolarHigh = calc.usedSolarEquipCostHigh ?? 0;
+            const hasUsedBattery = typeof calc.usedBatteryEquipCostLow === "number" && (calc.usedBatteryEquipCostLow ?? 0) > 0;
+            const hasBatteryAtAll = (calc.batteryDiyCostLow ?? 0) > 0;
+            const usedTotalLow  = usedSolarLow  + (hasUsedBattery ? (calc.usedBatteryEquipCostLow ?? 0) : hasBatteryAtAll ? (calc.batteryDiyCostLow ?? 0) : 0);
+            const usedTotalHigh = usedSolarHigh + (hasUsedBattery ? (calc.usedBatteryEquipCostHigh ?? 0) : hasBatteryAtAll ? (calc.batteryDiyCostHigh ?? 0) : 0);
+
+            function UsedRow({ label, low, high, bold }: { label: string; low: number; high: number; bold?: boolean }) {
+              return (
+                <div className={`flex justify-between text-sm py-1.5 ${bold ? "border-t mt-1 pt-2.5 font-bold text-foreground" : "text-muted-foreground"}`}>
+                  <span>{label}</span>
+                  <span>${Math.round(low).toLocaleString()} – ${Math.round(high).toLocaleString()}</span>
+                </div>
+              );
+            }
+
+            return (
+              <div className="mt-4 rounded-lg border border-dashed border-muted-foreground/40 bg-muted/20 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-base">♻</span>
+                  <span className="font-semibold text-sm">Used / Refurbished Market Estimate</span>
+                  <span className="ml-auto text-xs text-muted-foreground">Equipment purchase only</span>
+                </div>
+                <div className="space-y-0.5">
+                  <UsedRow label={`Used panels + inverter (${calc.adjustedArraySizeKw.toFixed(1)} kW)`} low={usedSolarLow} high={usedSolarHigh} />
+                  {hasUsedBattery && (
+                    <UsedRow label={`Used batteries (${calc.totalBatteryBankKwh.toFixed(1)} kWh, lead-acid)`} low={calc.usedBatteryEquipCostLow ?? 0} high={calc.usedBatteryEquipCostHigh ?? 0} />
+                  )}
+                  {hasBatteryAtAll && !hasUsedBattery && (
+                    <div className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400 py-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>Used LiFePO4 batteries are <strong>not recommended</strong> — state of health and remaining cycle life are unknown. New battery cost applies.</span>
+                    </div>
+                  )}
+                  {(hasBatteryAtAll) && (
+                    <UsedRow
+                      label="Estimated used market total"
+                      low={usedTotalLow}
+                      high={usedTotalHigh}
+                      bold
+                    />
+                  )}
+                  {!hasBatteryAtAll && (
+                    <UsedRow label="Estimated used market total" low={usedSolarLow} high={usedSolarHigh} bold />
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-3 pt-2 border-t">
+                  Used solar panels and inverters are widely available through eBay, Craigslist, and specialty solar resellers at 40–55% of new cost. Mounting hardware and wiring should always be purchased new. Inspect used panels for microcracks (EL imaging) and verify used inverters carry remaining warranty before purchase.
+                </p>
+              </div>
+            );
+          })()}
+
           <div className="mt-3 p-3 rounded-lg border bg-muted/30 text-xs text-muted-foreground">
             Prices are preliminary estimates for the {project.budgetTier} equipment tier and may vary by 15–25% based on market conditions, specific equipment selection, local labor rates, and site conditions. Battery costs are priced per kWh of total rated bank capacity at the selected chemistry rates. Federal ITC (30%) and state incentives are not reflected — the 30% tax credit significantly reduces net cost.
+          </div>
+
+          {/* Find a Professional Installer */}
+          <div className="mt-4 rounded-lg border bg-card p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">🏗</span>
+              <span className="font-semibold text-sm">Find a Professional Installer</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">Connect with vetted, certified solar installers in your area. Always get 3+ quotes and verify NABCEP certification.</p>
+            <div className="grid sm:grid-cols-2 gap-2">
+              {[
+                { name: "EnergySage", desc: "Compare quotes from pre-screened local installers", url: "https://www.energysage.com", badge: "Most popular" },
+                { name: "SolarReviews", desc: "Read verified reviews and find installers near you", url: "https://www.solarreviews.com", badge: null },
+                { name: "NABCEP Installer Locator", desc: "Find certified solar professionals (highest credential)", url: "https://www.nabcep.org/installer-locator", badge: "Certified" },
+                { name: "SEIA Member Directory", desc: "Solar Energy Industries Association installer list", url: "https://www.seia.org/find-a-solar-installer", badge: null },
+                { name: "Sunrun", desc: "Largest residential solar installer — nationwide coverage", url: "https://www.sunrun.com", badge: null },
+                { name: "SunPower", desc: "Premium panels + installation with 25-yr warranty", url: "https://us.sunpower.com", badge: "Premium" },
+              ].map(({ name, desc, url, badge }) => (
+                <a
+                  key={name}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-3 rounded-md border bg-muted/30 px-3 py-2.5 hover:bg-muted/60 transition-colors group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm font-semibold group-hover:text-primary transition-colors">{name}</span>
+                      {badge && <span className="text-[10px] bg-primary/10 text-primary rounded px-1.5 py-0.5 font-medium">{badge}</span>}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
+                  </div>
+                  <span className="text-muted-foreground group-hover:text-primary transition-colors text-xs mt-0.5">→</span>
+                </a>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              For DIY resources: <a href="https://diysolarforum.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">DIY Solar Forum</a> · <a href="https://www.solar-electric.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Northern Arizona Wind & Sun</a> · <a href="https://www.wholesalesolar.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Wholesale Solar</a>
+            </p>
           </div>
         </section>
 
@@ -800,10 +894,18 @@ export default function Results() {
                               <div className="text-xs font-semibold uppercase tracking-wide text-primary mb-0.5">{cat}</div>
                             )}
                             <div className="font-medium">{item.item}</div>
-                            <div className="text-xs text-muted-foreground mt-0.5 md:hidden">{item.brand}</div>
+                            <div className="text-xs text-muted-foreground mt-0.5 md:hidden">
+                              {item.brandLink
+                                ? <a href={item.brandLink} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">{item.brand} →</a>
+                                : item.brand}
+                            </div>
                             <div className="text-xs text-muted-foreground/80 mt-1 italic hidden sm:block">{item.reason}</div>
                           </td>
-                          <td className="px-4 py-3 text-muted-foreground hidden md:table-cell text-xs">{item.brand}</td>
+                          <td className="px-4 py-3 text-muted-foreground hidden md:table-cell text-xs">
+                            {item.brandLink
+                              ? <a href={item.brandLink} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">{item.brand} →</a>
+                              : item.brand}
+                          </td>
                           <td className="px-4 py-3 text-right text-xs whitespace-nowrap">{item.qty}</td>
                           <td className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap">{item.totalPrice}</td>
                         </tr>
@@ -862,6 +964,9 @@ export default function Results() {
                 arraySizeKw={calc.arraySizeKw}
                 numPanels={calc.numPanels}
                 batteryUsableKwh={calc.batteryUsableKwh}
+                arrayLat={project.arrayLat}
+                arrayLon={project.arrayLon}
+                arrayLocationNote={project.arrayLocationNote}
               />
             </CardContent>
           </Card>

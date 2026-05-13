@@ -188,6 +188,8 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
     city: project.city,
     state: project.state,
     zip: project.zip,
+    arrayLat: project.arrayLat,
+    arrayLon: project.arrayLon,
   });
 
   // Merge PVWatts data — if available, use real production figures; else mark as fallback

@@ -2,6 +2,7 @@ export interface BomItem {
   category: string;
   item: string;
   brand: string;
+  brandLink?: string;
   qty: string;
   unitPrice: string;
   totalPrice: string;
@@ -34,6 +35,53 @@ function priceRange(low: number, high: number): string {
   return `$${Math.round(low).toLocaleString()} – $${Math.round(high).toLocaleString()}`;
 }
 
+const BRAND_LINKS: Array<[string, string]> = [
+  ["Canadian Solar", "https://www.canadiansolar.com"],
+  ["Qcells", "https://www.q-cells.us"],
+  ["Q CELLS", "https://www.q-cells.us"],
+  ["Aptos", "https://aptossolar.com"],
+  ["REC", "https://www.recgroup.com"],
+  ["Panasonic", "https://na.panasonic.com/us/energy-solutions/solar"],
+  ["Jinko", "https://www.jinkosolar.com"],
+  ["LONGi", "https://longi.com"],
+  ["EG4", "https://eg4electronics.com"],
+  ["Victron", "https://www.victronenergy.com"],
+  ["Sol-Ark", "https://www.sol-ark.com"],
+  ["Enphase", "https://enphase.com"],
+  ["SMA", "https://www.sma-america.com"],
+  ["SolarEdge", "https://www.solaredge.com"],
+  ["Schneider", "https://www.se.com/us/en/work/products/solar/solar-inverters/"],
+  ["Growatt", "https://www.growatt.com"],
+  ["Ampere Time", "https://www.amperepower.com"],
+  ["Fortress Power", "https://www.fortresspower.com"],
+  ["Battle Born", "https://battlebornbatteries.com"],
+  ["Trojan", "https://www.trojanbattery.com"],
+  ["Crown Battery", "https://crownbattery.com"],
+  ["Rolls", "https://rollsbattery.com"],
+  ["IronRidge", "https://www.ironridge.com"],
+  ["Unirac", "https://www.unirac.com"],
+  ["Schletter", "https://www.schletter-group.com"],
+  ["Tamarack", "https://www.tamaracksolar.com"],
+  ["Quick Mount", "https://www.quickmountpv.com"],
+  ["K2 Systems", "https://k2-systems.com"],
+  ["MidNite Solar", "https://midnitesolar.com"],
+  ["MidNite", "https://midnitesolar.com"],
+  ["Tigo", "https://www.tigoenergy.com"],
+  ["Square D", "https://www.se.com"],
+  ["Siemens", "https://usa.siemens.com/en/home/products/electrification/wiring-devices-protection/circuit-breakers.html"],
+  ["Bussmann", "https://www.eaton.com/us/en-us/catalog/electrical-circuit-protection.html"],
+  ["Kohler", "https://www.kohlerpower.com/generators"],
+  ["Generac", "https://www.generac.com/generators"],
+  ["Champion", "https://www.championpowerequipment.com"],
+];
+
+function getBrandLink(brand: string): string | undefined {
+  for (const [name, url] of BRAND_LINKS) {
+    if (brand.toLowerCase().includes(name.toLowerCase())) return url;
+  }
+  return undefined;
+}
+
 export function generateBom(p: BomInputs): BomItem[] {
   const bom: BomItem[] = [];
   const panelW = panelWattage(p.budgetTier);
@@ -45,6 +93,7 @@ export function generateBom(p: BomInputs): BomItem[] {
     category: "Solar Panels",
     item: `${panelW}W Monocrystalline Solar Panel`,
     brand: p.recommendedPanelBrand,
+    brandLink: getBrandLink(p.recommendedPanelBrand),
     qty: `${p.numPanels} panels`,
     unitPrice: priceRange(panelUnitLow, panelUnitHigh),
     totalPrice: priceRange(panelUnitLow * p.numPanels, panelUnitHigh * p.numPanels),
@@ -59,6 +108,7 @@ export function generateBom(p: BomInputs): BomItem[] {
     category: "Inverter",
     item: `${p.inverterSizeKw.toFixed(1)} kW ${invType}`,
     brand: p.recommendedInverterBrand,
+    brandLink: getBrandLink(p.recommendedInverterBrand),
     qty: "1 unit",
     unitPrice: priceRange(invUnitLow, invUnitHigh),
     totalPrice: priceRange(invUnitLow, invUnitHigh),
@@ -85,6 +135,7 @@ export function generateBom(p: BomInputs): BomItem[] {
       category: "Battery Storage",
       item: `${batteryModuleKwh} kWh ${chemLabel} Battery`,
       brand: p.recommendedBatteryBrand,
+      brandLink: getBrandLink(p.recommendedBatteryBrand),
       qty: `${numBatteries} unit${numBatteries > 1 ? "s" : ""} (${p.totalBatteryBankKwh.toFixed(1)} kWh total)`,
       unitPrice: priceRange(batUnitLow, batUnitHigh),
       totalPrice: priceRange(batUnitLow * numBatteries, batUnitHigh * numBatteries),
@@ -121,6 +172,7 @@ export function generateBom(p: BomInputs): BomItem[] {
         category: "Generator Integration",
         item: `AC Coupling / Generator Integration for Existing Generator${genKw}`,
         brand: "Victron MultiPlus or Sol-Ark (AC-in port)",
+        brandLink: "https://www.victronenergy.com/inverters-chargers",
         qty: "1 lot",
         unitPrice: "$0 – $500",
         totalPrice: "$0 – $500",
@@ -136,6 +188,7 @@ export function generateBom(p: BomInputs): BomItem[] {
       category: "Backup Generator",
       item: `${recKw}–${recKw + 2} kW Propane or Diesel Generator`,
       brand: "Kohler, Generac, or Champion",
+      brandLink: "https://www.generac.com/generators",
       qty: "1 unit",
       unitPrice: recKw <= 6 ? "$2,000 – $4,500" : "$4,500 – $9,000",
       totalPrice: recKw <= 6 ? "$2,000 – $4,500" : "$4,500 – $9,000",
@@ -149,6 +202,7 @@ export function generateBom(p: BomInputs): BomItem[] {
       category: "Charge Controller",
       item: `MPPT Charge Controller (${Math.ceil(p.adjustedArraySizeKw * 1000 / 48)}A @ 48V)`,
       brand: "Victron SmartSolar or MidNite Solar",
+      brandLink: "https://www.victronenergy.com/solar-charge-controllers",
       qty: "1 unit",
       unitPrice: "$300 – $800",
       totalPrice: "$300 – $800",
@@ -168,6 +222,7 @@ export function generateBom(p: BomInputs): BomItem[] {
     category: "Racking & Mounting",
     item: mountLabel,
     brand: p.recommendedMountingBrand,
+    brandLink: getBrandLink(p.recommendedMountingBrand),
     qty: `${p.numPanels} panel positions`,
     unitPrice: `$30 – $65 / panel`,
     totalPrice: priceRange(rackCostLow, rackCostHigh),
@@ -180,6 +235,7 @@ export function generateBom(p: BomInputs): BomItem[] {
       category: "Electrical Protection",
       item: "DC Combiner Box with Fusing",
       brand: "MidNite Solar or Bussmann",
+      brandLink: "https://midnitesolar.com",
       qty: "1 unit",
       unitPrice: "$150 – $350",
       totalPrice: "$150 – $350",
@@ -192,6 +248,7 @@ export function generateBom(p: BomInputs): BomItem[] {
     category: "Electrical Protection",
     item: "AC & DC Disconnect Switches (NEC Compliant)",
     brand: "Square D or Siemens",
+    brandLink: "https://www.se.com",
     qty: "2 units",
     unitPrice: "$75 – $200 each",
     totalPrice: "$150 – $400",
@@ -204,6 +261,7 @@ export function generateBom(p: BomInputs): BomItem[] {
       category: "Safety Equipment",
       item: "Rapid Shutdown System (NEC 2017+)",
       brand: "Tigo, SunSpec, or Enphase IQ",
+      brandLink: "https://www.tigoenergy.com",
       qty: "1 system",
       unitPrice: "$200 – $600",
       totalPrice: "$200 – $600",
@@ -229,6 +287,7 @@ export function generateBom(p: BomInputs): BomItem[] {
     category: "Electrical Protection",
     item: "Circuit Breakers, Fuses, Busbar",
     brand: "Square D QO or Siemens",
+    brandLink: "https://www.se.com",
     qty: "1 lot",
     unitPrice: "$100 – $250",
     totalPrice: "$100 – $250",
@@ -251,6 +310,7 @@ export function generateBom(p: BomInputs): BomItem[] {
     category: "Monitoring",
     item: "Solar Production Monitor / Gateway",
     brand: "Enphase Envoy, SolarEdge, or Victron VRM",
+    brandLink: "https://enphase.com/homeowners/monitoring",
     qty: "1 unit",
     unitPrice: "$150 – $400",
     totalPrice: "$150 – $400",

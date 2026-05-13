@@ -46,6 +46,22 @@ export const ListProjectsResponseItem = zod.object({
   highWindArea: zod.boolean(),
   budgetTier: zod.enum(["economy", "mid-range", "premium", "custom"]),
   customBudget: zod.number().nullable(),
+  arrayLat: zod
+    .number()
+    .nullish()
+    .describe(
+      "Latitude of the solar array (if different from property address)",
+    ),
+  arrayLon: zod
+    .number()
+    .nullish()
+    .describe(
+      "Longitude of the solar array (if different from property address)",
+    ),
+  arrayLocationNote: zod
+    .string()
+    .nullish()
+    .describe("Free-text description of where the array will be installed"),
   calculationResult: zod
     .object({
       dailyKwh: zod.number(),
@@ -106,6 +122,28 @@ export const ListProjectsResponseItem = zod.object({
         .number()
         .optional()
         .describe("Battery bank equipment + installation labor — high bound"),
+      usedSolarEquipCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Used\/refurbished panels + inverter — low estimate (~40% of new)",
+        ),
+      usedSolarEquipCostHigh: zod
+        .number()
+        .optional()
+        .describe(
+          "Used\/refurbished panels + inverter — high estimate (~55% of new)",
+        ),
+      usedBatteryEquipCostLow: zod
+        .number()
+        .nullish()
+        .describe(
+          "Used battery equipment cost — null if lithium (not recommended used)",
+        ),
+      usedBatteryEquipCostHigh: zod
+        .number()
+        .nullish()
+        .describe("Used battery equipment cost high bound — null if lithium"),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -219,6 +257,9 @@ export const CreateProjectBody = zod.object({
   highWindArea: zod.boolean(),
   budgetTier: zod.enum(["economy", "mid-range", "premium", "custom"]),
   customBudget: zod.number().nullish(),
+  arrayLat: zod.number().nullish(),
+  arrayLon: zod.number().nullish(),
+  arrayLocationNote: zod.string().nullish(),
 });
 
 /**
@@ -256,6 +297,22 @@ export const GetProjectResponse = zod.object({
   highWindArea: zod.boolean(),
   budgetTier: zod.enum(["economy", "mid-range", "premium", "custom"]),
   customBudget: zod.number().nullable(),
+  arrayLat: zod
+    .number()
+    .nullish()
+    .describe(
+      "Latitude of the solar array (if different from property address)",
+    ),
+  arrayLon: zod
+    .number()
+    .nullish()
+    .describe(
+      "Longitude of the solar array (if different from property address)",
+    ),
+  arrayLocationNote: zod
+    .string()
+    .nullish()
+    .describe("Free-text description of where the array will be installed"),
   calculationResult: zod
     .object({
       dailyKwh: zod.number(),
@@ -316,6 +373,28 @@ export const GetProjectResponse = zod.object({
         .number()
         .optional()
         .describe("Battery bank equipment + installation labor — high bound"),
+      usedSolarEquipCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Used\/refurbished panels + inverter — low estimate (~40% of new)",
+        ),
+      usedSolarEquipCostHigh: zod
+        .number()
+        .optional()
+        .describe(
+          "Used\/refurbished panels + inverter — high estimate (~55% of new)",
+        ),
+      usedBatteryEquipCostLow: zod
+        .number()
+        .nullish()
+        .describe(
+          "Used battery equipment cost — null if lithium (not recommended used)",
+        ),
+      usedBatteryEquipCostHigh: zod
+        .number()
+        .nullish()
+        .describe("Used battery equipment cost high bound — null if lithium"),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -436,6 +515,9 @@ export const UpdateProjectBody = zod.object({
     .enum(["economy", "mid-range", "premium", "custom"])
     .optional(),
   customBudget: zod.number().nullish(),
+  arrayLat: zod.number().nullish(),
+  arrayLon: zod.number().nullish(),
+  arrayLocationNote: zod.string().nullish(),
 });
 
 export const UpdateProjectResponse = zod.object({
@@ -466,6 +548,22 @@ export const UpdateProjectResponse = zod.object({
   highWindArea: zod.boolean(),
   budgetTier: zod.enum(["economy", "mid-range", "premium", "custom"]),
   customBudget: zod.number().nullable(),
+  arrayLat: zod
+    .number()
+    .nullish()
+    .describe(
+      "Latitude of the solar array (if different from property address)",
+    ),
+  arrayLon: zod
+    .number()
+    .nullish()
+    .describe(
+      "Longitude of the solar array (if different from property address)",
+    ),
+  arrayLocationNote: zod
+    .string()
+    .nullish()
+    .describe("Free-text description of where the array will be installed"),
   calculationResult: zod
     .object({
       dailyKwh: zod.number(),
@@ -526,6 +624,28 @@ export const UpdateProjectResponse = zod.object({
         .number()
         .optional()
         .describe("Battery bank equipment + installation labor — high bound"),
+      usedSolarEquipCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Used\/refurbished panels + inverter — low estimate (~40% of new)",
+        ),
+      usedSolarEquipCostHigh: zod
+        .number()
+        .optional()
+        .describe(
+          "Used\/refurbished panels + inverter — high estimate (~55% of new)",
+        ),
+      usedBatteryEquipCostLow: zod
+        .number()
+        .nullish()
+        .describe(
+          "Used battery equipment cost — null if lithium (not recommended used)",
+        ),
+      usedBatteryEquipCostHigh: zod
+        .number()
+        .nullish()
+        .describe("Used battery equipment cost high bound — null if lithium"),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -670,6 +790,28 @@ export const CalculateProjectResponse = zod.object({
     .number()
     .optional()
     .describe("Battery bank equipment + installation labor — high bound"),
+  usedSolarEquipCostLow: zod
+    .number()
+    .optional()
+    .describe(
+      "Used\/refurbished panels + inverter — low estimate (~40% of new)",
+    ),
+  usedSolarEquipCostHigh: zod
+    .number()
+    .optional()
+    .describe(
+      "Used\/refurbished panels + inverter — high estimate (~55% of new)",
+    ),
+  usedBatteryEquipCostLow: zod
+    .number()
+    .nullish()
+    .describe(
+      "Used battery equipment cost — null if lithium (not recommended used)",
+    ),
+  usedBatteryEquipCostHigh: zod
+    .number()
+    .nullish()
+    .describe("Used battery equipment cost high bound — null if lithium"),
   estimatedYearlySavings: zod.number(),
   paybackYears: zod.number().nullable(),
   recommendedPanelBrand: zod.string(),
@@ -833,6 +975,22 @@ export const GetProjectsSummaryResponse = zod.object({
       highWindArea: zod.boolean(),
       budgetTier: zod.enum(["economy", "mid-range", "premium", "custom"]),
       customBudget: zod.number().nullable(),
+      arrayLat: zod
+        .number()
+        .nullish()
+        .describe(
+          "Latitude of the solar array (if different from property address)",
+        ),
+      arrayLon: zod
+        .number()
+        .nullish()
+        .describe(
+          "Longitude of the solar array (if different from property address)",
+        ),
+      arrayLocationNote: zod
+        .string()
+        .nullish()
+        .describe("Free-text description of where the array will be installed"),
       calculationResult: zod
         .object({
           dailyKwh: zod.number(),
@@ -896,6 +1054,30 @@ export const GetProjectsSummaryResponse = zod.object({
             .optional()
             .describe(
               "Battery bank equipment + installation labor — high bound",
+            ),
+          usedSolarEquipCostLow: zod
+            .number()
+            .optional()
+            .describe(
+              "Used\/refurbished panels + inverter — low estimate (~40% of new)",
+            ),
+          usedSolarEquipCostHigh: zod
+            .number()
+            .optional()
+            .describe(
+              "Used\/refurbished panels + inverter — high estimate (~55% of new)",
+            ),
+          usedBatteryEquipCostLow: zod
+            .number()
+            .nullish()
+            .describe(
+              "Used battery equipment cost — null if lithium (not recommended used)",
+            ),
+          usedBatteryEquipCostHigh: zod
+            .number()
+            .nullish()
+            .describe(
+              "Used battery equipment cost high bound — null if lithium",
             ),
           estimatedYearlySavings: zod.number(),
           paybackYears: zod.number().nullable(),

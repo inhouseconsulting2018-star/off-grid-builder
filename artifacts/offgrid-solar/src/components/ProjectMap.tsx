@@ -26,6 +26,10 @@ interface ProjectMapProps {
   arraySizeKw?: number;
   numPanels?: number;
   batteryUsableKwh?: number;
+  /** Optional: separate coordinates for the solar array (if different from property) */
+  arrayLat?: number | null;
+  arrayLon?: number | null;
+  arrayLocationNote?: string | null;
 }
 
 const STATE_CENTERS: Record<string, GeoCoords> = {
@@ -295,10 +299,18 @@ function Tip({ icon, color, children }: { icon: string; color: "amber" | "blue" 
 }
 
 // ─── Main component ────────────────────────────────────────────────────────
+const arrayIcon = L.divIcon({
+  html: `<div style="background:#f97316;width:20px;height:20px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;">☀</div>`,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+  className: "",
+});
+
 export function ProjectMap({
   address, city, state, zip,
   projectName, systemType, installationType,
   arraySizeKw, numPanels, batteryUsableKwh,
+  arrayLat, arrayLon, arrayLocationNote,
 }: ProjectMapProps) {
   const [coords, setCoords] = useState<GeoCoords | null>(null);
   const [status, setStatus] = useState<GeoStatus>("loading");
@@ -400,6 +412,17 @@ export function ProjectMap({
               <div style={{ lineHeight: 1.6, minWidth: 180 }} dangerouslySetInnerHTML={{ __html: popupLines }} />
             </Popup>
           </Marker>
+          {typeof arrayLat === "number" && typeof arrayLon === "number" && (
+            <Marker position={[arrayLat, arrayLon]} icon={arrayIcon}>
+              <Popup>
+                <div style={{ lineHeight: 1.6, minWidth: 160 }}>
+                  <strong>☀ Solar Array Location</strong><br />
+                  {arrayLocationNote || "Separate array site"}<br />
+                  {arraySizeKw ? `${arraySizeKw.toFixed(2)} kW` : ""}
+                </div>
+              </Popup>
+            </Marker>
+          )}
         </MapContainer>
       </div>
 

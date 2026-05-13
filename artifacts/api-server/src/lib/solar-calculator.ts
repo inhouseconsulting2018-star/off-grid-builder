@@ -335,6 +335,19 @@ export function runCalculations(project: ProjectData, settings: Settings) {
   const installedCostLow  = solarArrayInstalledCostLow  + batteryInstalledCostLow;
   const installedCostHigh = solarArrayInstalledCostHigh + batteryInstalledCostHigh;
 
+  // ── Used / refurbished market estimates ─────────────────────────────────
+  // Panels + inverter used market: ~40–55% of new equipment cost
+  // Mounting, wiring, and BOS are priced new (not practically available used)
+  const usedSolarEquipCostLow  = solarArrayDiyCostLow  * 0.40;
+  const usedSolarEquipCostHigh = solarArrayDiyCostHigh * 0.55;
+  // Batteries:
+  //  - Lead-acid (AGM, gel, flooded): used units available at 50–65% of new
+  //  - Lithium (LiFePO4, NMC, etc.): NOT recommended — state-of-health unknown, warranty void
+  const lithiumChems = ["lifepo4", "nmc", "lithium", "hjt"];
+  const usedBatteryAvailable = hasBattery && !lithiumChems.includes(chem);
+  const usedBatteryEquipCostLow  = usedBatteryAvailable ? batteryDiyCostLow  * 0.50 : null;
+  const usedBatteryEquipCostHigh = usedBatteryAvailable ? batteryDiyCostHigh * 0.65 : null;
+
   const paybackYears =
     project.systemType !== "off-grid" && estimatedYearlySavings > 0
       ? (installedCostLow + installedCostHigh) / 2 / estimatedYearlySavings
@@ -521,6 +534,10 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     batteryDiyCostHigh: round2(batteryDiyCostHigh),
     batteryInstalledCostLow: round2(batteryInstalledCostLow),
     batteryInstalledCostHigh: round2(batteryInstalledCostHigh),
+    usedSolarEquipCostLow: round2(usedSolarEquipCostLow),
+    usedSolarEquipCostHigh: round2(usedSolarEquipCostHigh),
+    usedBatteryEquipCostLow: usedBatteryEquipCostLow !== null ? round2(usedBatteryEquipCostLow) : null,
+    usedBatteryEquipCostHigh: usedBatteryEquipCostHigh !== null ? round2(usedBatteryEquipCostHigh) : null,
     estimatedYearlySavings: round2(estimatedYearlySavings),
     paybackYears: paybackYears !== null ? round2(paybackYears) : null,
     recommendedPanelBrand: panelBrands[project.budgetTier] ?? "Qcells",

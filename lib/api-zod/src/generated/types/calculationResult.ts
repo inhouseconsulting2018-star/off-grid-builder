@@ -43,6 +43,20 @@ export interface CalculationResult {
   batteryInstalledCostLow?: number;
   /** Battery bank equipment + installation labor — high bound */
   batteryInstalledCostHigh?: number;
+  /** Used/refurbished panels + inverter — low estimate (~40% of new) */
+  usedSolarEquipCostLow?: number;
+  /** Used/refurbished panels + inverter — high estimate (~55% of new) */
+  usedSolarEquipCostHigh?: number;
+  /**
+   * Used battery equipment cost — null if lithium (not recommended used)
+   * @nullable
+   */
+  usedBatteryEquipCostLow?: number | null;
+  /**
+   * Used battery equipment cost high bound — null if lithium
+   * @nullable
+   */
+  usedBatteryEquipCostHigh?: number | null;
   estimatedYearlySavings: number;
   /** @nullable */
   paybackYears: number | null;

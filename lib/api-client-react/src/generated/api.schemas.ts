@@ -95,6 +95,20 @@ export interface CalculationResult {
   batteryInstalledCostLow?: number;
   /** Battery bank equipment + installation labor — high bound */
   batteryInstalledCostHigh?: number;
+  /** Used/refurbished panels + inverter — low estimate (~40% of new) */
+  usedSolarEquipCostLow?: number;
+  /** Used/refurbished panels + inverter — high estimate (~55% of new) */
+  usedSolarEquipCostHigh?: number;
+  /**
+   * Used battery equipment cost — null if lithium (not recommended used)
+   * @nullable
+   */
+  usedBatteryEquipCostLow?: number | null;
+  /**
+   * Used battery equipment cost high bound — null if lithium
+   * @nullable
+   */
+  usedBatteryEquipCostHigh?: number | null;
   estimatedYearlySavings: number;
   /** @nullable */
   paybackYears: number | null;
@@ -166,6 +180,21 @@ export interface Project {
   budgetTier: ProjectBudgetTier;
   /** @nullable */
   customBudget: number | null;
+  /**
+   * Latitude of the solar array (if different from property address)
+   * @nullable
+   */
+  arrayLat?: number | null;
+  /**
+   * Longitude of the solar array (if different from property address)
+   * @nullable
+   */
+  arrayLon?: number | null;
+  /**
+   * Free-text description of where the array will be installed
+   * @nullable
+   */
+  arrayLocationNote?: string | null;
   calculationResult?: CalculationResult;
   createdAt: string;
   updatedAt: string;
@@ -254,6 +283,12 @@ export interface ProjectInput {
   budgetTier: ProjectInputBudgetTier;
   /** @nullable */
   customBudget?: number | null;
+  /** @nullable */
+  arrayLat?: number | null;
+  /** @nullable */
+  arrayLon?: number | null;
+  /** @nullable */
+  arrayLocationNote?: string | null;
 }
 
 export type ProjectPatchInstallationType =
@@ -339,6 +374,12 @@ export interface ProjectPatch {
   budgetTier?: ProjectPatchBudgetTier;
   /** @nullable */
   customBudget?: number | null;
+  /** @nullable */
+  arrayLat?: number | null;
+  /** @nullable */
+  arrayLon?: number | null;
+  /** @nullable */
+  arrayLocationNote?: string | null;
 }
 
 export interface ProposalEstimateInput {

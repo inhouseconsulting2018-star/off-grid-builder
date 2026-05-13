@@ -41,6 +41,21 @@ export interface Project {
   budgetTier: ProjectBudgetTier;
   /** @nullable */
   customBudget: number | null;
+  /**
+   * Latitude of the solar array (if different from property address)
+   * @nullable
+   */
+  arrayLat?: number | null;
+  /**
+   * Longitude of the solar array (if different from property address)
+   * @nullable
+   */
+  arrayLon?: number | null;
+  /**
+   * Free-text description of where the array will be installed
+   * @nullable
+   */
+  arrayLocationNote?: string | null;
   calculationResult?: CalculationResult;
   createdAt: Date;
   updatedAt: Date;
