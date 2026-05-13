@@ -3,10 +3,11 @@ import { useParams, Link } from "wouter";
 import { useGetProject, useCalculateProject, getGetProjectQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, PlusCircle, AlertTriangle, Zap, Battery, DollarSign, Settings2, Edit } from "lucide-react";
+import { Loader2, Download, PlusCircle, AlertTriangle, Zap, Battery, DollarSign, Settings2, Edit, MapPin } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { ProjectMap } from "@/components/ProjectMap";
 
 export default function Results() {
   const { id } = useParams();
@@ -220,6 +221,28 @@ export default function Results() {
             </CardContent>
           </Card>
         )}
+
+        {/* Project Location Map */}
+        <Card className="print:hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" /> Project Location
+            </CardTitle>
+            <CardDescription>{project.address}, {project.city}, {project.state} {project.zip}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ProjectMap
+              address={project.address}
+              city={project.city}
+              state={project.state}
+              zip={project.zip}
+              projectName={project.name}
+              systemType={project.systemType}
+              arraySizeKw={calc.arraySizeKw}
+              batteryUsableKwh={calc.batteryUsableKwh}
+            />
+          </CardContent>
+        </Card>
 
         {/* Disclaimer */}
         <div className="text-xs text-muted-foreground text-center p-6 border-t mt-8 print:mt-auto">

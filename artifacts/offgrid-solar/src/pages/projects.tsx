@@ -3,7 +3,7 @@ import { useListProjects, useGetProjectsSummary, useDeleteProject, getListProjec
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldAlert, ZapOff } from "lucide-react";
+import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldAlert, ZapOff, MapPin } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -133,11 +133,17 @@ export default function ProjectsDashboard() {
                         <span>Created {format(new Date(project.createdAt), 'MMM d, yyyy')}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Link href={`/results/${project.id}`}>
                         <Button variant="outline" size="sm">
                           <Eye className="h-4 w-4 mr-2" />
                           View
+                        </Button>
+                      </Link>
+                      <Link href={`/results/${project.id}#map`}>
+                        <Button variant="outline" size="sm">
+                          <MapPin className="h-4 w-4 mr-2" />
+                          Map
                         </Button>
                       </Link>
                       <Link href={`/projects/${project.id}/edit`}>
