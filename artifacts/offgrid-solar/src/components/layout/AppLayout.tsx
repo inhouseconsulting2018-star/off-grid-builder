@@ -53,7 +53,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   return (
     <div className="min-h-screen bg-background flex flex-col md:flex-row">
       {/* Mobile Header */}
-      <header className="md:hidden flex items-center justify-between px-4 py-3 border-b bg-card sticky top-0 z-40">
+      <header className="md:hidden print:hidden flex items-center justify-between px-4 py-3 border-b bg-card sticky top-0 z-40">
         <Link href="/">
           <div className="flex items-center gap-2 font-semibold text-lg cursor-pointer">
             <Sun className="h-5 w-5 text-primary" />
@@ -86,7 +86,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       </header>
 
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 border-r bg-card h-screen sticky top-0 shrink-0">
+      <aside className="hidden md:flex print:hidden flex-col w-64 border-r bg-card h-screen sticky top-0 shrink-0">
         <div className="p-5 border-b">
           <Link href="/">
             <div className="flex items-center gap-2 font-semibold text-lg cursor-pointer">
@@ -105,7 +105,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Main Content */}
       <main className="flex-1 min-w-0 flex flex-col">
-        <div className="flex-1 p-4 md:p-8">
+        <div className="flex-1 p-4 md:p-8 print:p-0">
           {children}
         </div>
       </main>

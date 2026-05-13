@@ -138,27 +138,35 @@ export default function Results() {
       <div className="max-w-5xl mx-auto flex flex-col gap-8 print:gap-6">
 
         {/* ── Report Header ─────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 print:hidden">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 print:hidden">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Sun className="h-5 w-5 text-primary" />
+              <Sun className="h-4 w-4 text-primary" />
               <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Solar Design Report</span>
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight">{project.name}</h1>
-            <p className="text-muted-foreground mt-1 flex items-center gap-1">
-              <MapPin className="h-3.5 w-3.5" />
-              {project.address}, {project.city}, {project.state} {project.zip}
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight">{project.name}</h1>
+            <p className="text-muted-foreground mt-1 flex items-center gap-1 text-sm">
+              <MapPin className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{project.address}, {project.city}, {project.state} {project.zip}</span>
             </p>
           </div>
-          <div className="flex gap-2 flex-wrap">
+          {/* Action buttons — compact icon+label on mobile, full on desktop */}
+          <div className="flex items-center gap-2 shrink-0">
             <Link href={`/projects/${project.id}/edit`}>
-              <Button variant="outline" size="sm"><Edit className="h-4 w-4 mr-1.5" /> Edit</Button>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Edit className="h-3.5 w-3.5" />
+                Edit
+              </Button>
             </Link>
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              <Download className="h-4 w-4 mr-1.5" /> Download Report
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Download </span>PDF
             </Button>
             <Link href="/wizard">
-              <Button size="sm"><PlusCircle className="h-4 w-4 mr-1.5" /> New Design</Button>
+              <Button size="sm" className="gap-1.5">
+                <PlusCircle className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">New </span>Design
+              </Button>
             </Link>
           </div>
         </div>
@@ -191,7 +199,7 @@ export default function Results() {
               </CardHeader>
               <CardContent className="px-4 pb-4">
                 <div className="text-3xl font-black text-primary">{calc.adjustedArraySizeKw.toFixed(2)} kW</div>
-                <div className="text-sm font-medium mt-1">{calc.numPanels} panels × ~400W</div>
+                <div className="text-sm font-medium mt-1">{calc.numPanels} panels × ~{Math.round(calc.adjustedArraySizeKw * 1000 / calc.numPanels / 5) * 5}W</div>
                 <div className="text-xs text-muted-foreground">{calc.yearlyProductionKwh.toLocaleString()} kWh/yr est.</div>
               </CardContent>
             </Card>
@@ -237,7 +245,7 @@ export default function Results() {
                       ["Daily Usage", `${calc.dailyKwh.toFixed(1)} kWh/day`],
                       ["Annual Usage", `${project.annualKwh.toLocaleString()} kWh/yr`],
                       ["Peak Sun Hours", `${calc.peakSunHours} hrs/day (${project.state})`],
-                      ["Installation", project.installationType.charAt(0).toUpperCase() + project.installationType.slice(1) + " Mount"],
+                      ["Installation", project.installationType === "carport" ? "Carport" : project.installationType.charAt(0).toUpperCase() + project.installationType.slice(1) + " Mount"],
                       ["Budget Tier", project.budgetTier.charAt(0).toUpperCase() + project.budgetTier.slice(1)],
                     ].map(([label, value]) => (
                       <tr key={label}>
@@ -284,17 +292,18 @@ export default function Results() {
           const unitKwh = chemistry === "lifepo4" ? 5 : chemistry === "agm" ? 2.4 : 2.0;
           const numUnits = Math.ceil(totalKwh / unitKwh);
           const isRoof = !project.installationType || project.installationType === "roof";
-          const isIndoor = chemistry !== "flooded-lead-acid";
+          // lead-acid requires outdoor ventilated enclosure; lifepo4 and agm are safe indoors
+          const isIndoor = chemistry !== "lead-acid";
 
           const chemLabel: Record<string, string> = {
             lifepo4: "LiFePO4 (Lithium Iron Phosphate)",
             agm: "AGM (Absorbed Glass Mat)",
-            "flooded-lead-acid": "Flooded Lead-Acid",
+            "lead-acid": "Flooded Lead-Acid",
           };
           const chemColor: Record<string, string> = {
             lifepo4: "text-green-700 bg-green-50 border-green-200",
             agm: "text-blue-700 bg-blue-50 border-blue-200",
-            "flooded-lead-acid": "text-amber-700 bg-amber-50 border-amber-200",
+            "lead-acid": "text-amber-700 bg-amber-50 border-amber-200",
           };
 
           return (
@@ -348,7 +357,7 @@ export default function Results() {
                         <BatteryFact icon="🔧" label="Maintenance" value="Low — check terminals annually" />
                       </>
                     )}
-                    {chemistry === "flooded-lead-acid" && (
+                    {chemistry === "lead-acid" && (
                       <>
                         <BatteryFact icon="✅" label="Cycle life" value="300–700 cycles (3–5 yrs)" />
                         <BatteryFact icon="⚠️" label="Safety" value="Off-gasses hydrogen — ventilation required" />
