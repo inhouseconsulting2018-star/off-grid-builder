@@ -74,7 +74,10 @@ export function runCalculations(project: ProjectData, settings: Settings) {
 
   const inverterSizeKw = Math.ceil(adjustedArraySizeKw * 1.25 * 2) / 2;
 
-  const backupHrs = project.customBackupHours ?? project.backupHours;
+  // Only use customBackupHours when backupHours is the "custom" sentinel (-1)
+  const backupHrs = (project.backupHours === -1 && project.customBackupHours != null && project.customBackupHours > 0)
+    ? project.customBackupHours
+    : Math.max(0, project.backupHours);
   const batteryUsableKwh = hasBattery ? dailyKwh * (backupHrs / 24) : 0;
   const totalBatteryBankKwh = hasBattery ? batteryUsableKwh / (effectiveDod / 100) : 0;
 
