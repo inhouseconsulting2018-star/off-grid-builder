@@ -181,3 +181,110 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 14mm 16mm 14mm;
+  }
+
+  html, body {
+    font-size: 11px !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide nav, sidebars, buttons */
+  nav, aside, header,
+  [data-sidebar],
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Remove shadows and backgrounds for print */
+  .shadow, .shadow-sm, .shadow-md, .shadow-lg {
+    box-shadow: none !important;
+  }
+
+  .rounded-lg, .rounded-xl, .rounded-md {
+    border-radius: 4px !important;
+  }
+
+  /* Cards print with light border */
+  [class*="card"],
+  .border {
+    border: 1px solid #d1d5db !important;
+    background: white !important;
+    break-inside: avoid;
+  }
+
+  /* Recharts chart fix for print */
+  .recharts-wrapper,
+  .recharts-surface {
+    width: 100% !important;
+  }
+
+  /* Section headings */
+  section {
+    break-inside: avoid;
+    margin-bottom: 16px !important;
+  }
+
+  section h2 {
+    font-size: 10px !important;
+    margin-bottom: 8px !important;
+    color: #6b7280 !important;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 4px;
+  }
+
+  /* Tables */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  th, td {
+    border-bottom: 1px solid #e5e7eb !important;
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+  }
+
+  /* Ensure URLs are not shown */
+  a[href]::after {
+    content: none !important;
+  }
+
+  /* Big numbers stay legible */
+  .text-3xl {
+    font-size: 20px !important;
+  }
+
+  .text-2xl {
+    font-size: 16px !important;
+  }
+
+  /* Color overrides */
+  .text-primary {
+    color: #d97706 !important;
+  }
+
+  .bg-primary\/5, .bg-muted\/30, .bg-muted\/20, .bg-muted\/40 {
+    background: #f9fafb !important;
+  }
+
+  /* Note cards */
+  .bg-amber-50, .bg-blue-50 {
+    background: #fffbeb !important;
+    border: 1px solid #fcd34d !important;
+  }
+
+  /* Grid adjustments */
+  .grid.sm\:grid-cols-2, .grid.sm\:grid-cols-3 {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .grid.sm\:grid-cols-3 {
+    grid-template-columns: 1fr 1fr 1fr !important;
+  }
+}
