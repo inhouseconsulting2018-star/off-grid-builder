@@ -1,0 +1,203 @@
+Build a working web app MVP called “OffGrid Solar Builder.”
+
+This should be a professional mobile-friendly SaaS web app that helps property owners design a solar system for off-grid, grid-tied, or hybrid use.
+
+Use a clean modern contractor-style design. Make it simple, professional, and easy for a non-technical homeowner to use.
+
+Build the MVP first. Do not overcomplicate it.
+
+CORE FEATURES:
+
+1. Landing Page
+Create a landing page that explains:
+- Design your solar setup in minutes
+- Works for off-grid, grid-tied, and hybrid systems
+- Calculates panels, batteries, inverter size, estimated cost, and losses
+- Generates a solar project report
+
+Include buttons:
+- Start Free Solar Design
+- View Sample Report
+
+2. User Project Wizard
+Create a step-by-step form that asks for:
+
+Property:
+- Project name
+- Address
+- City
+- State
+- ZIP code
+- Installation type: Roof mount, ground mount, pole mount, carport mount
+
+Energy usage:
+- Annual kWh usage
+- Average monthly electric bill
+- Utility price per kWh
+- Off-grid, grid-tied, or hybrid
+
+Backup goal:
+- No battery
+- 12 hours
+- 24 hours
+- 48 hours
+- 72 hours
+- Custom hours
+
+Site conditions:
+- Average shade level: none, light, medium, heavy
+- Roof pitch
+- Roof direction/orientation
+- Available square footage
+- Snow area: yes/no
+- High wind area: yes/no
+
+Budget:
+- Economy
+- Mid-range
+- Premium
+- Custom budget amount
+
+3. Calculation Engine
+Create working solar calculations using reasonable assumptions.
+
+Calculate:
+- average daily kWh usage = annual kWh / 365
+- estimated peak sun hours based on state or ZIP placeholder
+- solar array size in kW
+- number of panels required using 400W default panels
+- system losses from inverter loss, wire loss, shading loss, temperature loss, battery loss, dirt/soiling loss
+- adjusted solar size after losses
+- inverter size recommendation
+- battery usable kWh requirement based on backup hours
+- total battery bank size using 80% depth of discharge
+- estimated equipment cost
+- estimated DIY cost
+- estimated installed cost
+- grid-tied payback estimate
+- yearly production estimate
+
+Use these default assumptions:
+- panel wattage: 400W
+- base system loss: 14%
+- inverter loss: 4%
+- wire loss: 2%
+- dirt/soiling loss: 3%
+- temperature loss: 5%
+- battery round trip loss: 10% when batteries are selected
+- shade loss: none 0%, light 5%, medium 15%, heavy 30%
+- battery depth of discharge: 80%
+- economy cost: $1.25/watt DIY, $2.75/watt installed
+- mid-range cost: $1.75/watt DIY, $3.25/watt installed
+- premium cost: $2.25/watt DIY, $4.00/watt installed
+- default utility rate: user input or $0.35/kWh
+
+4. Results Page
+Show a clear solar design report with:
+
+- Recommended system size
+- Number of solar panels
+- Estimated yearly production
+- Battery size
+- Inverter size
+- Estimated cost range
+- Estimated savings
+- Payback estimate
+- Loss breakdown
+- Recommended equipment category
+- Notes and warnings
+
+Include separate results for:
+- Solar panels
+- Inverter
+- Batteries
+- Mounting
+- Generator backup if off-grid
+
+5. Equipment Recommendation Logic
+Use starter equipment recommendations:
+
+Solar panels:
+- Economy: Canadian Solar or Qcells
+- Mid-range: Qcells or Aptos
+- Premium: REC or Panasonic
+
+Inverters:
+- Off-grid: EG4, Victron, or Sol-Ark
+- Hybrid: Sol-Ark, EG4, or Schneider
+- Grid-tied: Enphase, SMA, or SolarEdge
+
+Batteries:
+- Economy: EG4 LiFePower4
+- Mid-range: EG4 PowerPro or Fortress
+- Premium: Tesla Powerwall or Simpliphi
+
+Mounting:
+- Roof: IronRidge or Unirac
+- Ground: IronRidge Ground Mount or Sinclair
+- Pole: Tamarack or MT Solar
+- Carport: commercial solar carport structure placeholder
+
+6. Saved Projects
+Allow users to save projects locally or in a simple database.
+Create a dashboard showing saved projects with:
+- project name
+- location
+- system type
+- system size
+- date created
+- view/edit/delete buttons
+
+7. PDF Report Placeholder
+Add a button called “Download Solar Report.”
+For now, generate a basic printable report page or PDF using the project results.
+
+8. API Placeholders
+Create clean placeholder functions for future APIs:
+- NREL PVWatts API
+- Google Solar API
+- Google Maps API
+- Weather API
+- Stripe payments
+- OpenAI assistant
+
+Do not require real API keys yet. Use mock data, but structure the code so API keys can be added later.
+
+9. AI Assistant Placeholder
+Create a page called “Solar AI Assistant.”
+For now, include a chat-style interface with preset answers explaining:
+- why the system size was selected
+- why battery size matters
+- what losses mean
+- difference between off-grid, grid-tied, and hybrid
+- what equipment is recommended
+
+10. Admin Settings Page
+Create a simple admin/settings page where calculation assumptions can be edited:
+- panel wattage
+- losses
+- cost per watt
+- default utility rate
+- battery depth of discharge
+
+11. Tech Requirements
+Use a simple reliable stack:
+- React frontend
+- Node/Express backend if needed
+- SQLite, PostgreSQL, or Replit database for saved projects
+- clean organized code
+- mobile responsive design
+- no broken links
+- no fake login required for MVP unless simple auth is easy
+
+12. Important Safety Disclaimer
+Add disclaimer:
+“This tool provides preliminary solar estimates only. Final system design, electrical work, permitting, and interconnection should be verified by a licensed solar/electrical professional and local authority having jurisdiction.”
+
+13. Final Output
+After building, provide:
+- instructions to run the app
+- list of files created
+- where to edit formulas
+- where to add API keys later
+- next steps to deploy

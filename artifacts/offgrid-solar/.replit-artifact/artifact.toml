@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "OffGrid Solar Builder"
+version = "1.0.0"
+id = "artifacts/offgrid-solar"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25678
+
+[services.development]
+run = "pnpm --filter @workspace/offgrid-solar run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/offgrid-solar", "run", "build" ]
+publicDir = "artifacts/offgrid-solar/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25678"
+BASE_PATH = "/"

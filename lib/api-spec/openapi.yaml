@@ -3,13 +3,20 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: OffGrid Solar Builder API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: projects
+    description: Solar project operations
+  - name: settings
+    description: Admin settings operations
+  - name: calculations
+    description: Solar calculation operations
+
 paths:
   /healthz:
     get:
@@ -24,6 +31,166 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all solar projects
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new solar project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Invalid input
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a single project by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update an existing project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectPatch"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /projects/{id}/calculate:
+    post:
+      operationId: calculateProject
+      tags: [calculations]
+      summary: Run solar calculations for a project and persist results
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Calculation results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalculationResult"
+        "404":
+          description: Project not found
+
+  /projects/stats/summary:
+    get:
+      operationId: getProjectsSummary
+      tags: [projects]
+      summary: Dashboard summary stats across all projects
+      responses:
+        "200":
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectsSummary"
+
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get current admin calculation settings
+      responses:
+        "200":
+          description: Settings object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    patch:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update admin calculation settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsPatch"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +201,414 @@ components:
       required:
         - status
 
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - createdAt
+        - updatedAt
+        - systemType
+        - installationType
+        - annualKwh
+        - state
+        - city
+        - address
+        - zip
+        - shadeLevel
+        - roofPitch
+        - roofDirection
+        - availableSqft
+        - snowArea
+        - highWindArea
+        - backupHours
+        - budgetTier
+        - utilityRatePerKwh
+        - monthlyBill
+        - customBudget
+        - customBackupHours
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zip:
+          type: string
+        installationType:
+          type: string
+          enum: [roof, ground, pole, carport]
+        systemType:
+          type: string
+          enum: [off-grid, grid-tied, hybrid]
+        annualKwh:
+          type: number
+        monthlyBill:
+          type: number
+        utilityRatePerKwh:
+          type: number
+        backupHours:
+          type: number
+        customBackupHours:
+          type: ["number", "null"]
+        shadeLevel:
+          type: string
+          enum: [none, light, medium, heavy]
+        roofPitch:
+          type: string
+        roofDirection:
+          type: string
+        availableSqft:
+          type: number
+        snowArea:
+          type: boolean
+        highWindArea:
+          type: boolean
+        budgetTier:
+          type: string
+          enum: [economy, mid-range, premium, custom]
+        customBudget:
+          type: ["number", "null"]
+        calculationResult:
+          $ref: "#/components/schemas/CalculationResult"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProjectInput:
+      type: object
+      required:
+        - name
+        - systemType
+        - installationType
+        - annualKwh
+        - state
+        - city
+        - address
+        - zip
+        - shadeLevel
+        - roofPitch
+        - roofDirection
+        - availableSqft
+        - snowArea
+        - highWindArea
+        - backupHours
+        - budgetTier
+        - utilityRatePerKwh
+        - monthlyBill
+      properties:
+        name:
+          type: string
+          minLength: 1
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zip:
+          type: string
+        installationType:
+          type: string
+          enum: [roof, ground, pole, carport]
+        systemType:
+          type: string
+          enum: [off-grid, grid-tied, hybrid]
+        annualKwh:
+          type: number
+          minimum: 0
+        monthlyBill:
+          type: number
+          minimum: 0
+        utilityRatePerKwh:
+          type: number
+          minimum: 0
+        backupHours:
+          type: number
+          minimum: 0
+        customBackupHours:
+          type: ["number", "null"]
+        shadeLevel:
+          type: string
+          enum: [none, light, medium, heavy]
+        roofPitch:
+          type: string
+        roofDirection:
+          type: string
+        availableSqft:
+          type: number
+          minimum: 0
+        snowArea:
+          type: boolean
+        highWindArea:
+          type: boolean
+        budgetTier:
+          type: string
+          enum: [economy, mid-range, premium, custom]
+        customBudget:
+          type: ["number", "null"]
+
+    ProjectPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zip:
+          type: string
+        installationType:
+          type: string
+          enum: [roof, ground, pole, carport]
+        systemType:
+          type: string
+          enum: [off-grid, grid-tied, hybrid]
+        annualKwh:
+          type: number
+          minimum: 0
+        monthlyBill:
+          type: number
+          minimum: 0
+        utilityRatePerKwh:
+          type: number
+          minimum: 0
+        backupHours:
+          type: number
+          minimum: 0
+        customBackupHours:
+          type: ["number", "null"]
+        shadeLevel:
+          type: string
+          enum: [none, light, medium, heavy]
+        roofPitch:
+          type: string
+        roofDirection:
+          type: string
+        availableSqft:
+          type: number
+          minimum: 0
+        snowArea:
+          type: boolean
+        highWindArea:
+          type: boolean
+        budgetTier:
+          type: string
+          enum: [economy, mid-range, premium, custom]
+        customBudget:
+          type: ["number", "null"]
+
+    CalculationResult:
+      type: object
+      required:
+        - dailyKwh
+        - peakSunHours
+        - arraySizeKw
+        - numPanels
+        - adjustedArraySizeKw
+        - inverterSizeKw
+        - batteryUsableKwh
+        - totalBatteryBankKwh
+        - yearlyProductionKwh
+        - totalSystemLossPct
+        - inverterLossPct
+        - wireLossPct
+        - shadeLossPct
+        - tempLossPct
+        - dirtLossPct
+        - batteryLossPct
+        - diyEquipmentCostLow
+        - diyEquipmentCostHigh
+        - installedCostLow
+        - installedCostHigh
+        - estimatedYearlySavings
+        - paybackYears
+        - recommendedPanelBrand
+        - recommendedInverterBrand
+        - recommendedBatteryBrand
+        - recommendedMountingBrand
+        - notes
+      properties:
+        dailyKwh:
+          type: number
+        peakSunHours:
+          type: number
+        arraySizeKw:
+          type: number
+        numPanels:
+          type: integer
+        adjustedArraySizeKw:
+          type: number
+        inverterSizeKw:
+          type: number
+        batteryUsableKwh:
+          type: number
+        totalBatteryBankKwh:
+          type: number
+        yearlyProductionKwh:
+          type: number
+        totalSystemLossPct:
+          type: number
+        inverterLossPct:
+          type: number
+        wireLossPct:
+          type: number
+        shadeLossPct:
+          type: number
+        tempLossPct:
+          type: number
+        dirtLossPct:
+          type: number
+        batteryLossPct:
+          type: number
+        diyEquipmentCostLow:
+          type: number
+        diyEquipmentCostHigh:
+          type: number
+        installedCostLow:
+          type: number
+        installedCostHigh:
+          type: number
+        estimatedYearlySavings:
+          type: number
+        paybackYears:
+          type: ["number", "null"]
+        recommendedPanelBrand:
+          type: string
+        recommendedInverterBrand:
+          type: string
+        recommendedBatteryBrand:
+          type: string
+        recommendedMountingBrand:
+          type: string
+        notes:
+          type: array
+          items:
+            type: string
+
+    ProjectsSummary:
+      type: object
+      required:
+        - totalProjects
+        - totalSystemKw
+        - avgSystemKw
+        - offGridCount
+        - gridTiedCount
+        - hybridCount
+        - recentProjects
+      properties:
+        totalProjects:
+          type: integer
+        totalSystemKw:
+          type: number
+        avgSystemKw:
+          type: number
+        offGridCount:
+          type: integer
+        gridTiedCount:
+          type: integer
+        hybridCount:
+          type: integer
+        recentProjects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+
+    Settings:
+      type: object
+      required:
+        - id
+        - panelWattage
+        - baseSystemLossPct
+        - inverterLossPct
+        - wireLossPct
+        - dirtLossPct
+        - tempLossPct
+        - batteryRoundTripLossPct
+        - batteryDod
+        - defaultUtilityRate
+        - economyDiyPerWatt
+        - economyInstalledPerWatt
+        - midRangeDiyPerWatt
+        - midRangeInstalledPerWatt
+        - premiumDiyPerWatt
+        - premiumInstalledPerWatt
+      properties:
+        id:
+          type: integer
+        panelWattage:
+          type: number
+        baseSystemLossPct:
+          type: number
+        inverterLossPct:
+          type: number
+        wireLossPct:
+          type: number
+        dirtLossPct:
+          type: number
+        tempLossPct:
+          type: number
+        batteryRoundTripLossPct:
+          type: number
+        batteryDod:
+          type: number
+        defaultUtilityRate:
+          type: number
+        economyDiyPerWatt:
+          type: number
+        economyInstalledPerWatt:
+          type: number
+        midRangeDiyPerWatt:
+          type: number
+        midRangeInstalledPerWatt:
+          type: number
+        premiumDiyPerWatt:
+          type: number
+        premiumInstalledPerWatt:
+          type: number
+
+    SettingsPatch:
+      type: object
+      properties:
+        panelWattage:
+          type: number
+        baseSystemLossPct:
+          type: number
+        inverterLossPct:
+          type: number
+        wireLossPct:
+          type: number
+        dirtLossPct:
+          type: number
+        tempLossPct:
+          type: number
+        batteryRoundTripLossPct:
+          type: number
+        batteryDod:
+          type: number
+        defaultUtilityRate:
+          type: number
+        economyDiyPerWatt:
+          type: number
+        economyInstalledPerWatt:
+          type: number
+        midRangeDiyPerWatt:
+          type: number
+        midRangeInstalledPerWatt:
+          type: number
+        premiumDiyPerWatt:
+          type: number
+        premiumInstalledPerWatt:
+          type: number

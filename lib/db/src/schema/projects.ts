@@ -1,0 +1,38 @@
+import { pgTable, text, serial, timestamp, real, integer, boolean, jsonb } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const projectsTable = pgTable("projects", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  address: text("address").notNull().default(""),
+  city: text("city").notNull().default(""),
+  state: text("state").notNull().default(""),
+  zip: text("zip").notNull().default(""),
+  installationType: text("installation_type").notNull().default("roof"),
+  systemType: text("system_type").notNull().default("grid-tied"),
+  annualKwh: real("annual_kwh").notNull().default(0),
+  monthlyBill: real("monthly_bill").notNull().default(0),
+  utilityRatePerKwh: real("utility_rate_per_kwh").notNull().default(0.35),
+  backupHours: real("backup_hours").notNull().default(0),
+  customBackupHours: real("custom_backup_hours"),
+  shadeLevel: text("shade_level").notNull().default("none"),
+  roofPitch: text("roof_pitch").notNull().default(""),
+  roofDirection: text("roof_direction").notNull().default(""),
+  availableSqft: real("available_sqft").notNull().default(0),
+  snowArea: boolean("snow_area").notNull().default(false),
+  highWindArea: boolean("high_wind_area").notNull().default(false),
+  budgetTier: text("budget_tier").notNull().default("mid-range"),
+  customBudget: real("custom_budget"),
+  calculationResult: jsonb("calculation_result"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const insertProjectSchema = createInsertSchema(projectsTable).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type Project = typeof projectsTable.$inferSelect;
