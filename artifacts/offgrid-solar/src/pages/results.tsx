@@ -135,6 +135,7 @@ export default function Results() {
     { name: "Shade", value: calc.shadeLossPct, color: "#64748b" },
     { name: "Temp", value: calc.tempLossPct, color: "#ef4444" },
     { name: "Dirt", value: calc.dirtLossPct, color: "#a16207" },
+    { name: "Mismatch", value: calc.misMatchLossPct ?? 2, color: "#8b5cf6" },
     ...(calc.batteryLossPct > 0 ? [{ name: "Battery", value: calc.batteryLossPct, color: "#6366f1" }] : []),
   ].filter(d => d.value > 0);
 
@@ -302,10 +303,12 @@ export default function Results() {
                       ["Array Size (gross)", `${calc.arraySizeKw.toFixed(2)} kW`],
                       ["Array Size (adjusted)", `${calc.adjustedArraySizeKw.toFixed(2)} kW`],
                       ["Number of Panels", `${calc.numPanels} panels`],
+                      ...(calc.squareFeetRequired != null ? [["Panel Footprint", `~${calc.squareFeetRequired} sqft${project.availableSqft ? ` of ${project.availableSqft} sqft` : ""}`]] : []),
                       ["Inverter Size", `${calc.inverterSizeKw.toFixed(1)} kW`],
                       ["Est. Yearly Production", `${calc.yearlyProductionKwh.toLocaleString()} kWh${hasPVWatts ? " ✓" : ""}`],
                       ["Est. Yearly Savings", `$${calc.estimatedYearlySavings.toLocaleString()}`],
                       ...(pvCalc.pvwattsCapacityFactor != null ? [["System Efficiency", `${pvCalc.pvwattsCapacityFactor.toFixed(1)}% capacity factor`]] : []),
+                      ...(calc.offGridDesignFactor != null && calc.offGridDesignFactor > 1 ? [["Design Margin", `+${((calc.offGridDesignFactor - 1) * 100).toFixed(0)}% (${project.systemType} reserve)`]] : []),
                       ...(calc.paybackYears ? [["Est. Payback Period", `${calc.paybackYears.toFixed(1)} years`]] : []),
                     ].map(([label, value]) => (
                       <tr key={label}>
@@ -681,6 +684,7 @@ export default function Results() {
                     { name: "Shading", pct: calc.shadeLossPct, note: `${project.shadeLevel} shade on array` },
                     { name: "Temperature", pct: calc.tempLossPct, note: "Hot panels produce less power" },
                     { name: "Dirt & Soiling", pct: calc.dirtLossPct, note: "Dust, bird droppings, pollen" },
+                    { name: "Panel Mismatch", pct: calc.misMatchLossPct ?? 2, note: "Manufacturing tolerance & string mismatch" },
                     ...(calc.batteryLossPct > 0 ? [{ name: "Battery Round-Trip", pct: calc.batteryLossPct, note: "Charge/discharge cycle loss" }] : []),
                   ].map(row => (
                     <tr key={row.name}>

@@ -167,6 +167,8 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
       wantsGenerator: project.wantsGenerator,
       generatorKw: project.generatorKw,
       highWindArea: project.highWindArea,
+      snowArea: project.snowArea,
+      availableSqft: project.availableSqft,
       budgetTier: project.budgetTier,
       utilityRatePerKwh: project.utilityRatePerKwh,
       state: project.state,

@@ -109,6 +109,30 @@ export const ListProjectsResponseItem = zod.object({
         .describe(
           "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
         ),
+      misMatchLossPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Panel-to-panel mismatch and manufacturing tolerance loss (%). Typically 2%.",
+        ),
+      squareFeetRequired: zod
+        .number()
+        .optional()
+        .describe(
+          "Total panel footprint required including racking clearance (sqft).",
+        ),
+      offGridDesignFactor: zod
+        .number()
+        .optional()
+        .describe(
+          "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
+        ),
+      batteryTempDeratingPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied).",
+        ),
     })
     .optional(),
   createdAt: zod.coerce.date(),
@@ -256,6 +280,30 @@ export const GetProjectResponse = zod.object({
         .nullish()
         .describe(
           "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
+        ),
+      misMatchLossPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Panel-to-panel mismatch and manufacturing tolerance loss (%). Typically 2%.",
+        ),
+      squareFeetRequired: zod
+        .number()
+        .optional()
+        .describe(
+          "Total panel footprint required including racking clearance (sqft).",
+        ),
+      offGridDesignFactor: zod
+        .number()
+        .optional()
+        .describe(
+          "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
+        ),
+      batteryTempDeratingPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied).",
         ),
     })
     .optional(),
@@ -405,6 +453,30 @@ export const UpdateProjectResponse = zod.object({
         .describe(
           "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
         ),
+      misMatchLossPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Panel-to-panel mismatch and manufacturing tolerance loss (%). Typically 2%.",
+        ),
+      squareFeetRequired: zod
+        .number()
+        .optional()
+        .describe(
+          "Total panel footprint required including racking clearance (sqft).",
+        ),
+      offGridDesignFactor: zod
+        .number()
+        .optional()
+        .describe(
+          "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
+        ),
+      batteryTempDeratingPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied).",
+        ),
     })
     .optional(),
   createdAt: zod.coerce.date(),
@@ -486,6 +558,30 @@ export const CalculateProjectResponse = zod.object({
     .nullish()
     .describe(
       "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
+    ),
+  misMatchLossPct: zod
+    .number()
+    .optional()
+    .describe(
+      "Panel-to-panel mismatch and manufacturing tolerance loss (%). Typically 2%.",
+    ),
+  squareFeetRequired: zod
+    .number()
+    .optional()
+    .describe(
+      "Total panel footprint required including racking clearance (sqft).",
+    ),
+  offGridDesignFactor: zod
+    .number()
+    .optional()
+    .describe(
+      "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
+    ),
+  batteryTempDeratingPct: zod
+    .number()
+    .optional()
+    .describe(
+      "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied).",
     ),
 });
 
@@ -590,6 +686,30 @@ export const GetProjectsSummaryResponse = zod.object({
             .nullish()
             .describe(
               "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
+            ),
+          misMatchLossPct: zod
+            .number()
+            .optional()
+            .describe(
+              "Panel-to-panel mismatch and manufacturing tolerance loss (%). Typically 2%.",
+            ),
+          squareFeetRequired: zod
+            .number()
+            .optional()
+            .describe(
+              "Total panel footprint required including racking clearance (sqft).",
+            ),
+          offGridDesignFactor: zod
+            .number()
+            .optional()
+            .describe(
+              "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
+            ),
+          batteryTempDeratingPct: zod
+            .number()
+            .optional()
+            .describe(
+              "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied).",
             ),
         })
         .optional(),

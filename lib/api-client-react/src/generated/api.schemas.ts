@@ -111,6 +111,14 @@ export interface CalculationResult {
    * @nullable
    */
   pvwattsSource?: string | null;
+  /** Panel-to-panel mismatch and manufacturing tolerance loss (%). Typically 2%. */
+  misMatchLossPct?: number;
+  /** Total panel footprint required including racking clearance (sqft). */
+  squareFeetRequired?: number;
+  /** Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied. */
+  offGridDesignFactor?: number;
+  /** Extra battery bank capacity added for cold-climate temperature derating (0 if not applied). */
+  batteryTempDeratingPct?: number;
 }
 
 export interface Project {

@@ -548,6 +548,18 @@ components:
         pvwattsSource:
           type: ["string", "null"]
           description: "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records."
+        misMatchLossPct:
+          type: number
+          description: "Panel-to-panel mismatch and manufacturing tolerance loss (%). Typically 2%."
+        squareFeetRequired:
+          type: number
+          description: "Total panel footprint required including racking clearance (sqft)."
+        offGridDesignFactor:
+          type: number
+          description: "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied."
+        batteryTempDeratingPct:
+          type: number
+          description: "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied)."
 
     ProjectsSummary:
       type: object
