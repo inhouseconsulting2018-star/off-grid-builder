@@ -1,0 +1,123 @@
+Build the next version of my residential solar estimating MVP.
+
+Important:
+Detect and use the API already connected in this Replit project for address lookup, geocoding, and solar/location data whenever available.
+If the API is unavailable or missing data, use fallback logic so the app still works.
+
+CORE FEATURES
+
+1. Address Lookup
+- User enters property address
+- Autocomplete suggestions if supported by the connected API
+- Store:
+  - full address
+  - city
+  - state
+  - ZIP
+  - latitude
+  - longitude
+- Add error handling for invalid or incomplete addresses
+
+2. Utility Usage Input
+- User can enter monthly kWh OR annual kWh
+- If monthly values are entered, automatically total annual usage
+- Add validation for numeric values
+- Do not allow negative usage values
+
+3. Solar Irradiance / Peak Sun Hours
+- Use API solar/location data if available
+- If API does not return irradiance data, use regional assumptions
+- California fallback default = 5.5 peak sun hours
+
+4. Solar Production Engine
+
+Use these formulas exactly:
+
+Annual Production = System Size kW × Peak Sun Hours × 365 × 0.78
+
+Required System Size = Annual Usage ÷ (Peak Sun Hours × 365 × 0.78)
+
+5. Panel Recommendation Engine
+- Default panel wattage = 440W
+- Calculate panel count and final rounded system size
+- Formula:
+Panel Count = Required System Size × 1000 ÷ 440
+- Round panel count up to nearest whole panel
+- Final System Size = Panel Count × 440 ÷ 1000
+
+6. Proposal Output
+Generate a clean customer-facing proposal card showing:
+- Property address
+- Estimated annual usage
+- Peak sun hours
+- Recommended system size before rounding
+- Final rounded system size
+- Panel count
+- Panel wattage
+- Estimated annual production
+- Estimated monthly production
+- Estimated utility offset percentage
+- Battery recommendation
+- Notes section
+
+7. Battery Recommendation Logic
+If annual usage exceeds 12,000 kWh:
+- recommend 20 kWh battery storage
+Otherwise:
+- recommend 10 kWh battery storage
+
+8. UI REQUIREMENTS
+- Modern clean dashboard
+- Mobile responsive
+- Dark/light mode support
+- Simple professional solar company appearance
+- Use cards for proposal sections
+- Add loading indicator during API calls
+- Add error handling for invalid addresses
+
+9. TEST SCENARIO
+
+Use:
+Address: 7408 Mamba Ct Rancho Murieta CA 95683
+Annual usage: 12000 kWh
+Peak sun hours: 5.5
+Efficiency factor: 0.78
+Panel wattage: 440W
+
+Expected calculations:
+Required system size ≈ 7.66 kW
+Recommended panels = 18
+Final system size ≈ 7.92 kW
+Estimated annual production ≈ 12,407 kWh
+Estimated monthly production ≈ 1,034 kWh
+Estimated offset ≈ 103%
+
+Add this as a visible test/demo scenario in the app so I can verify the numbers quickly.
+
+10. CODE REQUIREMENTS
+- Organize code cleanly
+- Separate calculation logic into utility/helper functions
+- Add comments explaining formulas
+- Add unit-style test functions or validation checks for the test scenario
+- Make system expandable for future:
+  - financing
+  - battery sizing
+  - PDF proposals
+  - roof measurements
+  - utility integrations
+  - CRM
+  - permit generation
+
+11. FUTURE READY STRUCTURE
+Create modular architecture so future APIs can be added:
+- Google Maps
+- Aurora Solar
+- OpenSolar
+- NREL PVWatts
+- Utility APIs
+- Financing APIs
+
+Build this as a production-ready MVP foundation for a solar sales and design platform.
+
+Do not remove any working existing features unless they conflict with this simplified MVP structure.
+Test the app after making changes and fix errors.

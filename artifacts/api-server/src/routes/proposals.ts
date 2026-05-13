@@ -1,26 +1,28 @@
+/**
+ * Proposals router — stateless Quick Proposal estimate endpoint.
+ *
+ * POST /api/proposals/estimate
+ *   No DB write. Accepts address + annual usage, returns a customer-facing
+ *   solar sizing estimate with optional PVWatts irradiance enrichment.
+ *
+ * Future API integration points are marked with TODO comments.
+ */
+
 import { Router, type IRouter } from "express";
 import { fetchPVWatts } from "../lib/pvwatts";
+import {
+  runProposalCalc,
+  verifyTestScenario,
+  STATE_PSH,
+  DEFAULT_PEAK_SUN_HOURS,
+  DEFAULT_PANEL_W,
+  EFFICIENCY_FACTOR,
+} from "../lib/proposal-calculator";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-// ─── Constants matching the proposal spec ────────────────────────────────────
-const DEFAULT_PANEL_W = 440;
-const EFFICIENCY_FACTOR = 0.78;
-const DAYS_PER_YEAR = 365;
-const DEFAULT_PEAK_SUN_HOURS = 5.5;
-
-// State peak sun hours — same table used by solar-calculator.ts
-const STATE_PEAK_SUN_HOURS: Record<string, number> = {
-  AZ: 6.5, CA: 5.8, NV: 6.4, NM: 6.3, TX: 5.5, FL: 5.3, CO: 5.7,
-  UT: 5.6, HI: 5.8, GA: 5.2, SC: 5.1, NC: 5.0, VA: 4.8, MD: 4.7,
-  DE: 4.6, NJ: 4.6, NY: 4.5, CT: 4.5, MA: 4.5, RI: 4.5, NH: 4.5,
-  VT: 4.4, ME: 4.4, PA: 4.6, OH: 4.4, IN: 4.5, IL: 4.5, MI: 4.3,
-  WI: 4.4, MN: 4.5, IA: 4.6, MO: 4.7, KS: 5.0, NE: 5.0, SD: 5.0,
-  ND: 4.8, MT: 5.2, ID: 5.0, WY: 5.5, OR: 4.5, WA: 4.0, AK: 3.5,
-  AL: 5.0, AR: 5.0, KY: 4.5, LA: 5.2, MS: 5.1, OK: 5.2, TN: 5.0,
-  WV: 4.5,
-};
+// ─── Input parsing ────────────────────────────────────────────────────────────
 
 interface EstimateInput {
   address: string;
@@ -31,22 +33,26 @@ interface EstimateInput {
   monthlyKwh?: number | null;
   panelWattage?: number;
   efficiencyFactor?: number;
-  includeBattery?: boolean;
-  batteryBackupHours?: number;
+  // TODO: future inputs — roofAzimuth, roofPitch, shading, utilityRate, financeType
 }
 
 function parseInput(body: unknown): { ok: true; data: EstimateInput } | { ok: false; error: string } {
   if (!body || typeof body !== "object") return { ok: false, error: "Request body required" };
   const b = body as Record<string, unknown>;
 
-  if (typeof b["address"] !== "string" || !b["address"]) return { ok: false, error: "address is required" };
-  if (typeof b["city"] !== "string" || !b["city"]) return { ok: false, error: "city is required" };
-  if (typeof b["state"] !== "string" || b["state"].length !== 2) return { ok: false, error: "state must be a 2-letter code (e.g. CA)" };
-  if (typeof b["zip"] !== "string" || !/^\d{5}$/.test(b["zip"])) return { ok: false, error: "zip must be a 5-digit ZIP code" };
+  if (typeof b["address"] !== "string" || !b["address"])
+    return { ok: false, error: "address is required" };
+  if (typeof b["city"] !== "string" || !b["city"])
+    return { ok: false, error: "city is required" };
+  if (typeof b["state"] !== "string" || b["state"].length !== 2)
+    return { ok: false, error: "state must be a 2-letter code (e.g. CA)" };
+  if (typeof b["zip"] !== "string" || !/^\d{5}$/.test(b["zip"]))
+    return { ok: false, error: "zip must be a 5-digit ZIP code" };
 
   const hasAnnual = typeof b["annualKwh"] === "number" && (b["annualKwh"] as number) > 0;
   const hasMonthly = typeof b["monthlyKwh"] === "number" && (b["monthlyKwh"] as number) > 0;
-  if (!hasAnnual && !hasMonthly) return { ok: false, error: "Provide annualKwh or monthlyKwh" };
+  if (!hasAnnual && !hasMonthly)
+    return { ok: false, error: "Provide annualKwh or monthlyKwh (must be positive)" };
 
   return {
     ok: true,
@@ -59,17 +65,12 @@ function parseInput(body: unknown): { ok: true; data: EstimateInput } | { ok: fa
       monthlyKwh: typeof b["monthlyKwh"] === "number" ? b["monthlyKwh"] : null,
       panelWattage: typeof b["panelWattage"] === "number" ? b["panelWattage"] : DEFAULT_PANEL_W,
       efficiencyFactor: typeof b["efficiencyFactor"] === "number" ? b["efficiencyFactor"] : EFFICIENCY_FACTOR,
-      includeBattery: b["includeBattery"] === true,
-      batteryBackupHours: typeof b["batteryBackupHours"] === "number" ? b["batteryBackupHours"] : 8,
     },
   };
 }
 
-/**
- * POST /api/proposals/estimate
- * Stateless quick proposal calculation — no DB write.
- * Accepts address + usage, returns a customer-facing solar estimate.
- */
+// ─── Route ────────────────────────────────────────────────────────────────────
+
 router.post("/proposals/estimate", async (req, res): Promise<void> => {
   const parsed = parseInput(req.body);
   if (!parsed.ok) {
@@ -88,14 +89,15 @@ router.post("/proposals/estimate", async (req, res): Promise<void> => {
       : (input.monthlyKwh ?? 0) * 12;
 
   // ── Resolve peak sun hours ──────────────────────────────────────────────
-  // Try PVWatts first (real TMY irradiance); fall back to state table, then default.
-  let peakSunHours = STATE_PEAK_SUN_HOURS[input.state.toUpperCase()] ?? DEFAULT_PEAK_SUN_HOURS;
-  let pvwattsSource: "pvwatts" | "state" | "default" =
-    STATE_PEAK_SUN_HOURS[input.state.toUpperCase()] != null ? "state" : "default";
+  // Priority: 1) NREL PVWatts (real TMY data)  2) State average  3) Default
+  let psh = STATE_PSH[input.state] ?? DEFAULT_PEAK_SUN_HOURS;
+  let pshSource: "pvwatts" | "state" | "default" =
+    STATE_PSH[input.state] != null ? "state" : "default";
   let pvwattsMonthlyKwh: number[] | null = null;
   let pvwattsAnnualAt5kw: number | null = null;
 
   try {
+    // TODO: swap fetchPVWatts for Aurora Solar or OpenSolar irradiance API here
     const pv = await fetchPVWatts({
       systemCapacityKw: 5,
       losses: 14,
@@ -108,51 +110,40 @@ router.post("/proposals/estimate", async (req, res): Promise<void> => {
       zip: input.zip,
     });
     if (pv) {
-      peakSunHours = pv.solradAnnual;
-      pvwattsSource = "pvwatts";
+      psh = pv.solradAnnual;
+      pshSource = "pvwatts";
       pvwattsMonthlyKwh = pv.acMonthly;
       pvwattsAnnualAt5kw = pv.acAnnual;
-      logger.info({ peakSunHours, zip: input.zip }, "Proposal: PVWatts irradiance resolved");
+      logger.info({ psh, zip: input.zip, source: "pvwatts" }, "Proposal: irradiance resolved");
     }
   } catch {
-    logger.warn({ state: input.state }, "Proposal: PVWatts failed, using state PSH fallback");
+    logger.warn({ state: input.state }, "Proposal: PVWatts unavailable, using state fallback");
   }
 
-  // ── Core formulas (spec §4 and §5) ─────────────────────────────────────
-  // Required kW = annualKwh ÷ (PSH × 365 × eff)
-  const requiredSystemKw = annualKwh / (peakSunHours * DAYS_PER_YEAR * eff);
+  // ── Run core calculation using extracted utility functions ──────────────
+  const calc = runProposalCalc(annualKwh, psh, eff, panelW);
 
-  // Panel count: round UP to nearest whole panel
-  const panelCount = Math.ceil((requiredSystemKw * 1000) / panelW);
-
-  // Final system size after rounding to whole panels
-  const finalSystemKw = (panelCount * panelW) / 1000;
-
-  // Annual production = finalSystemKw × PSH × 365 × eff
-  const estimatedAnnualKwh = Math.round(finalSystemKw * peakSunHours * DAYS_PER_YEAR * eff);
-  const estimatedMonthlyKwh = Math.round(estimatedAnnualKwh / 12);
-
-  // Offset = production ÷ usage
-  const offsetPct = Math.round((estimatedAnnualKwh / annualKwh) * 100);
-
-  // ── Optional battery sizing (LiFePO4, 80% DoD) ─────────────────────────
-  let batteryKwh: number | null = null;
-  if (input.includeBattery) {
-    const dailyKwh = annualKwh / 365;
-    const backupHrs = input.batteryBackupHours ?? 8;
-    batteryKwh = Math.round((dailyKwh * (backupHrs / 24)) / 0.8 * 10) / 10;
-  }
-
-  // ── Scale PVWatts monthly to actual final system size ───────────────────
-  // PVWatts was called at 5 kW; scale proportionally to finalSystemKw.
+  // ── Scale PVWatts monthly output to actual final system size ────────────
+  // PVWatts was called at 5 kW reference; scale linearly to actual system kW.
   let scaledMonthlyKwh: number[] | null = null;
   if (pvwattsMonthlyKwh && pvwattsAnnualAt5kw && pvwattsAnnualAt5kw > 0) {
-    const sizeScaleFactor = finalSystemKw / 5;
-    scaledMonthlyKwh = pvwattsMonthlyKwh.map(v => Math.round(v * sizeScaleFactor));
+    const scale = calc.finalSystemKw / 5;
+    scaledMonthlyKwh = pvwattsMonthlyKwh.map((v) => Math.round(v * scale));
   }
 
+  // ── Spec verification (for test/demo panel) ─────────────────────────────
+  // Runs the same formulas with spec-assumed PSH (5.5) so the UI can show
+  // expected numbers from the spec alongside the real PVWatts results.
+  const specVerification = verifyTestScenario();
+
+  // TODO: Future enrichment hooks:
+  //   - Utility rate lookup → estimatedSavingsPerYear
+  //   - Financing API → monthly payment estimate
+  //   - Permit/AHJ lookup → permitFee, setbackRequirements
+  //   - CRM auto-create lead → leadId
+
   res.json({
-    // Input echo
+    // ── Input echo ────────────────────────────────────────────────────────
     address: input.address,
     city: input.city,
     state: input.state,
@@ -160,34 +151,54 @@ router.post("/proposals/estimate", async (req, res): Promise<void> => {
     annualKwhUsage: Math.round(annualKwh),
     monthlyKwhUsage: Math.round(annualKwh / 12),
 
-    // Irradiance
-    peakSunHours: Math.round(peakSunHours * 100) / 100,
-    peakSunHoursSource: pvwattsSource,
+    // ── Irradiance ────────────────────────────────────────────────────────
+    peakSunHours: Math.round(psh * 100) / 100,
+    peakSunHoursSource: pshSource,   // "pvwatts" | "state" | "default"
 
-    // System sizing
+    // ── System sizing (from proposal-calculator.ts) ───────────────────────
     panelWattage: panelW,
     efficiencyFactor: eff,
-    requiredSystemKw: Math.round(requiredSystemKw * 100) / 100,
-    panelCount,
-    finalSystemKw: Math.round(finalSystemKw * 100) / 100,
+    requiredSystemKw: calc.requiredSystemKw,   // before rounding to whole panels
+    panelCount: calc.panelCount,
+    finalSystemKw: calc.finalSystemKw,         // after rounding
 
-    // Production
-    estimatedAnnualKwh,
-    estimatedMonthlyKwh,
-    offsetPct,
+    // ── Production ────────────────────────────────────────────────────────
+    estimatedAnnualKwh: calc.estimatedAnnualKwh,
+    estimatedMonthlyKwh: calc.estimatedMonthlyKwh,
+    offsetPct: calc.offsetPct,
 
-    // Monthly breakdown (PVWatts-scaled, or null)
+    // ── Monthly breakdown (PVWatts-scaled to actual system size) ──────────
     monthlyProductionKwh: scaledMonthlyKwh,
 
-    // Battery
-    batteryRecommendedKwh: batteryKwh,
+    // ── Battery recommendation (v2 spec rule: >12k → 20 kWh, else → 10 kWh)
+    battery: {
+      recommendedKwh: calc.battery.kwh,
+      rule: calc.battery.rule,
+      reason: calc.battery.reason,
+      chemistry: "LiFePO4",
+      depthOfDischarge: 0.8,
+    },
 
-    // Standard disclaimer notes
+    // ── Test/spec verification numbers (spec §9 with 5.5 PSH) ────────────
+    specVerification: {
+      psh: 5.5,
+      pass: specVerification.pass,
+      requiredSystemKw: specVerification.requiredSystemKw,
+      panelCount: specVerification.panelCount,
+      finalSystemKw: specVerification.finalSystemKw,
+      estimatedAnnualKwh: specVerification.estimatedAnnualKwh,
+      estimatedMonthlyKwh: specVerification.estimatedMonthlyKwh,
+      offsetPct: specVerification.offsetPct,
+      batteryKwh: specVerification.battery.kwh,
+    },
+
+    // ── Disclaimer ────────────────────────────────────────────────────────
     notes: [
-      "This estimate is based on standard assumptions and should be used for preliminary planning only.",
+      "This estimate is for preliminary planning only and should not be used for contract or permit purposes.",
       "Final design requires on-site roof measurements, shading analysis, utility bill review, and electrical panel inspection.",
       "System size may change after engineering review, local code compliance, and utility interconnection requirements.",
-      "Battery recommendation assumes LiFePO4 chemistry at 80% depth of discharge.",
+      "Battery recommendation is based on annual usage; actual backup time depends on which loads are connected.",
+      "Production estimates assume a south-facing roof at 20° tilt with standard losses. Results vary with roof orientation and shading.",
     ],
   });
 });
