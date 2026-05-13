@@ -16,9 +16,12 @@ export default function Results() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const hasTriggeredCalc = useRef(false);
+
   useEffect(() => {
-    // If project loaded but has no calculation result, calculate it
-    if (project && !project.calculationResult && !calculateProject.isPending) {
+    // If project loaded but has no calculation result, calculate it (only once)
+    if (project && !project.calculationResult && !hasTriggeredCalc.current) {
+      hasTriggeredCalc.current = true;
       calculateProject.mutate({ id: projectId }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
@@ -28,7 +31,7 @@ export default function Results() {
         }
       });
     }
-  }, [project, projectId, calculateProject, queryClient, toast]);
+  }, [project, projectId, queryClient, toast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading || !project?.calculationResult) {
     return (
