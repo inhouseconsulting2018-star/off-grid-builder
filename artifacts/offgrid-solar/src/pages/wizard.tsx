@@ -362,25 +362,42 @@ export default function Wizard() {
                       {/* Battery backup duration */}
                       <FormField control={form.control} name="backupHours" render={({ field }) => (
                         <FormItem className="space-y-2">
-                          <FormLabel>Battery Backup Duration</FormLabel>
-                          <FormDescription className="text-xs">How many hours should your battery keep you powered without sun?</FormDescription>
+                          <FormLabel>Battery Backup / Autonomy Duration</FormLabel>
+                          <FormDescription className="text-xs">
+                            {form.watch("systemType") === "off-grid"
+                              ? "Off-grid systems need 2–3 days minimum to ride through cloudy weather. 3–5 days is ideal for most climates."
+                              : "How long should your battery keep you powered during a grid outage?"}
+                          </FormDescription>
                           <FormControl>
                             <RadioGroup
                               onValueChange={(v) => field.onChange(parseInt(v))}
                               value={field.value.toString()}
                               className="grid grid-cols-2 sm:grid-cols-3 gap-3"
                             >
-                              {[
-                                { value: "0", label: "No Battery" },
-                                { value: "12", label: "12 Hours" },
-                                { value: "24", label: "24 Hours" },
-                                { value: "48", label: "48 Hours" },
-                                { value: "72", label: "72 Hours" },
-                                { value: "-1", label: "Custom" },
-                              ].map(opt => (
+                              {(form.watch("systemType") === "off-grid"
+                                ? [
+                                    { value: "0",   label: "No Battery" },
+                                    { value: "24",  label: "1 Day",    sub: "24 hrs — minimum" },
+                                    { value: "48",  label: "2 Days",   sub: "48 hrs — recommended" },
+                                    { value: "72",  label: "3 Days",   sub: "72 hrs — most reliable" },
+                                    { value: "120", label: "5 Days",   sub: "120 hrs — deep winter" },
+                                    { value: "-1",  label: "Custom" },
+                                  ]
+                                : [
+                                    { value: "0",  label: "No Battery" },
+                                    { value: "12", label: "12 Hours" },
+                                    { value: "24", label: "1 Day",  sub: "24 hrs" },
+                                    { value: "48", label: "2 Days", sub: "48 hrs" },
+                                    { value: "72", label: "3 Days", sub: "72 hrs" },
+                                    { value: "-1", label: "Custom" },
+                                  ]
+                              ).map(opt => (
                                 <FormItem key={opt.value} className="flex items-center space-x-3 space-y-0 border p-3 rounded-lg cursor-pointer hover:bg-accent [&:has([data-state=checked])]:border-primary [&:has([data-state=checked])]:bg-primary/5">
                                   <FormControl><RadioGroupItem value={opt.value} /></FormControl>
-                                  <FormLabel className="font-normal cursor-pointer text-sm">{opt.label}</FormLabel>
+                                  <div>
+                                    <FormLabel className="font-normal cursor-pointer text-sm">{opt.label}</FormLabel>
+                                    {"sub" in opt && opt.sub && <div className="text-xs text-muted-foreground">{opt.sub}</div>}
+                                  </div>
                                 </FormItem>
                               ))}
                             </RadioGroup>

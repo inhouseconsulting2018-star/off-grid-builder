@@ -586,6 +586,30 @@ components:
         usedBatteryEquipCostHigh:
           type: ["number", "null"]
           description: "Used battery equipment cost high bound — null if lithium"
+        batteryAutonomyDays:
+          type: number
+          description: "Battery autonomy in days (backupHours / 24). 0 if no battery."
+        batteryInverterEfficiencyPct:
+          type: number
+          description: "Inverter efficiency % used when sizing battery load (e.g. 95)"
+        batterySurgeReservePct:
+          type: number
+          description: "Motor-start surge headroom added to usable kWh (% of autonomy load)"
+        batteryWeatherReservePct:
+          type: number
+          description: "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)"
+        batteryEffectiveDodPct:
+          type: number
+          description: "Effective depth of discharge used in sizing (80 for LiFePO4, 50 for lead)"
+        batteryColdDeratingPct:
+          type: number
+          description: "Cold-climate bank upsize % applied for lead chemistry in snow areas (0 if N/A)"
+        batteryRawDailyLoadKwh:
+          type: number
+          description: "AC daily load before inverter-efficiency adjustment (kWh/day)"
+        batteryInverterAdjustedLoadKwh:
+          type: number
+          description: "Daily load the battery must supply after inverter-efficiency adjustment (kWh/day)"
         estimatedYearlySavings:
           type: number
         paybackYears:

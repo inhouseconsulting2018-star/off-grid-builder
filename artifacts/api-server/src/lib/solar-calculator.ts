@@ -46,11 +46,22 @@ const OFF_GRID_DESIGN_FACTOR = 1.15;
 const HYBRID_DESIGN_FACTOR = 1.08;
 
 /**
- * Off-grid battery autonomy reserve factor.
- * Battery bank is sized 15% larger than the raw load calculation to provide
- * headroom for partial cloudy days between full-sun recharge cycles.
+ * Motor-start surge reserve for off-grid and hybrid battery banks.
+ * AC motors (well pumps, compressors, refrigerators) draw 2–6× nameplate
+ * current for 50–300 ms on startup. Adding 10% to usable kWh ensures the
+ * battery doesn't hit the low-voltage cutoff during rapid multi-motor starts.
  */
-const OFF_GRID_BATTERY_RESERVE = 1.15;
+const SURGE_RESERVE_PCT = 10;
+
+/**
+ * Chemistry-specific weather reserve for off-grid systems.
+ * LiFePO4 can be discharged to 20% SOC safely, so a 20% weather buffer is
+ * enough. AGM / lead-acid hit their cycle-life limit at 50% DoD, so they
+ * already have less headroom and need a 25% weather buffer to ride through
+ * consecutive cloudy days without over-discharging.
+ */
+const OFFGRID_WEATHER_RESERVE_LIFEPO4 = 20; // %
+const OFFGRID_WEATHER_RESERVE_LEAD    = 25; // %
 
 /**
  * Cold-climate lead-acid / AGM temperature derating.
@@ -215,27 +226,78 @@ export function runCalculations(project: ProjectData, settings: Settings) {
       ? project.customBackupHours
       : Math.max(0, project.backupHours);
 
-  // Usable energy: the fraction of a day's load the battery must supply
-  let batteryUsableKwh = hasBattery ? dailyKwh * (backupHrs / 24) : 0;
+  // Autonomy in days (shown in report)
+  const batteryAutonomyDays = backupHrs / 24;
 
-  // Off-grid reserve: add 15% margin to ride through partial cloudy days
-  // without hitting the low-battery cutoff before the next sunny period.
-  // Grid-tied and hybrid can draw from the grid instead.
-  if (hasBattery && project.systemType === "off-grid") {
-    batteryUsableKwh *= OFF_GRID_BATTERY_RESERVE;
+  // Chemistry flag — needed for lead-specific derating below
+  const isLeadChemistry =
+    project.batteryChemistry === "lead-acid" ||
+    project.batteryChemistry === "agm";
+
+  // ── Step 1: Inverter-adjusted daily load ─────────────────────────────────
+  // Battery DC power flows through the inverter before it reaches AC loads.
+  // If inverter efficiency is 95%, the battery must supply 1/0.95 = 5.3% more
+  // than the AC daily load. We use the inverter loss from system settings.
+  // Grid-tied-only (no battery) systems skip this — losses already in lossMultiplier.
+  const inverterEfficiencyPct = hasBattery
+    ? Math.max(50, 100 - settings.inverterLossPct)
+    : 100;
+  const inverterEfficiency = inverterEfficiencyPct / 100;
+  const rawDailyLoadKwh = dailyKwh;
+  const inverterAdjustedDailyLoadKwh = hasBattery
+    ? rawDailyLoadKwh / inverterEfficiency
+    : rawDailyLoadKwh;
+
+  // ── Step 2: Energy needed for full autonomy period ───────────────────────
+  const rawAutonomyKwh = hasBattery
+    ? inverterAdjustedDailyLoadKwh * batteryAutonomyDays
+    : 0;
+
+  // ── Step 3: Startup surge reserve ────────────────────────────────────────
+  // AC motors (well pumps, HVAC compressors, refrigerators) draw 2–6× rated
+  // current for 50–300 ms on startup. A 10% surge reserve ensures the battery
+  // doesn't trip the low-voltage cutoff when multiple motors start together.
+  // Grid-tied systems can absorb surge from the grid; apply only to off-grid/hybrid.
+  const surgeReservePct =
+    hasBattery &&
+    (project.systemType === "off-grid" || project.systemType === "hybrid")
+      ? SURGE_RESERVE_PCT
+      : 0;
+  const afterSurgeKwh = rawAutonomyKwh * (1 + surgeReservePct / 100);
+
+  // ── Step 4: Weather reserve ───────────────────────────────────────────────
+  // Accounts for consecutive cloudy days when the array cannot fully recharge.
+  // Sized by chemistry:
+  //   LiFePO4 off-grid  — 20% (safe to discharge to 20% SOC; more headroom)
+  //   AGM/Lead off-grid  — 25% (shallower DoD → less buffer before cell damage)
+  //   Hybrid             — 10% (grid covers extended cloudy periods)
+  //   Grid-tied          —  5% (grid is primary backup)
+  let weatherReservePct: number;
+  if (!hasBattery) {
+    weatherReservePct = 0;
+  } else if (project.systemType === "off-grid") {
+    weatherReservePct = isLeadChemistry
+      ? OFFGRID_WEATHER_RESERVE_LEAD
+      : OFFGRID_WEATHER_RESERVE_LIFEPO4;
+  } else if (project.systemType === "hybrid") {
+    weatherReservePct = 10;
+  } else {
+    weatherReservePct = 5;
   }
+  const batteryUsableKwh = hasBattery
+    ? afterSurgeKwh * (1 + weatherReservePct / 100)
+    : 0;
 
-  // Raw bank size based on depth of discharge
+  // ── Step 5: Total bank from depth of discharge ───────────────────────────
+  // Usable kWh is only effectiveDod% of the nameplate capacity.
+  // Dividing gives the total nameplate (rated) bank size to purchase.
   let totalBatteryBankKwh = hasBattery
     ? batteryUsableKwh / (effectiveDod / 100)
     : 0;
 
-  // Cold-climate derating for lead-acid and AGM chemistries.
-  // These technologies lose 20–30% rated capacity at freezing temperatures.
-  // We oversize the bank by 25% to compensate when snowArea is active.
-  const isLeadChemistry =
-    project.batteryChemistry === "lead-acid" ||
-    project.batteryChemistry === "agm";
+  // ── Step 6: Cold-climate derating for lead-acid and AGM ──────────────────
+  // Lead-based chemistries lose 20–30% rated capacity at freezing temperatures.
+  // We oversize the bank by 25% when snowArea is true and chemistry is lead-based.
   const batteryTempDeratingPct =
     hasBattery && project.snowArea && isLeadChemistry ? 25 : 0;
   if (batteryTempDeratingPct > 0) {
@@ -428,9 +490,9 @@ export function runCalculations(project: ProjectData, settings: Settings) {
 
   // Off-grid generator guidance
   if (project.systemType === "off-grid" && !project.hasGenerator && !project.wantsGenerator) {
-    const autonomyDays = hasBattery ? (batteryUsableKwh / dailyKwh).toFixed(1) : "0";
+    const days = hasBattery ? batteryAutonomyDays.toFixed(1) : "0";
     notes.push(
-      `Off-grid system without a generator. Battery provides approximately ${autonomyDays} day(s) of autonomy. For reliable year-round operation, plan for extended cloudy periods (3–7 days in winter) and consider adding a backup generator.`
+      `Off-grid system without a generator. Battery bank sized for ${days} day(s) of autonomy (including inverter loss, surge reserve, and weather buffer). For reliable year-round operation, plan for extended cloudy periods (3–7 days in winter) and consider a backup generator.`
     );
   }
 
@@ -482,9 +544,13 @@ export function runCalculations(project: ProjectData, settings: Settings) {
   }
 
   // Off-grid with very short backup
-  if (project.systemType === "off-grid" && hasBattery && backupHrs < 24) {
+  if (project.systemType === "off-grid" && hasBattery && batteryAutonomyDays < 1) {
     notes.push(
-      `Battery autonomy is ${backupHrs}h — less than one full day. Off-grid systems are typically designed for 2–3 days of autonomy to ride through cloudy weather. Consider increasing backup hours or adding a generator.`
+      `Battery autonomy is ${backupHrs}h — less than one full day. Off-grid systems are typically designed for 2–3 days of autonomy to ride through consecutive cloudy days. Consider increasing to at least 48h (2 days) or adding a generator.`
+    );
+  } else if (project.systemType === "off-grid" && hasBattery && batteryAutonomyDays < 2) {
+    notes.push(
+      `Battery provides ${batteryAutonomyDays.toFixed(1)} day of autonomy. For most off-grid locations, 2–3 days is recommended to handle cloudy stretches in winter. Consider increasing to 48h (2 days) or more.`
     );
   }
 
@@ -549,6 +615,15 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     squareFeetRequired,
     offGridDesignFactor: round2(offGridDesignFactor),
     batteryTempDeratingPct,
+    // ── Battery sizing transparency fields ────────────────────────────────
+    batteryAutonomyDays: round2(batteryAutonomyDays),
+    batteryInverterEfficiencyPct: round2(inverterEfficiencyPct),
+    batterySurgeReservePct: surgeReservePct,
+    batteryWeatherReservePct: weatherReservePct,
+    batteryEffectiveDodPct: effectiveDod,
+    batteryColdDeratingPct: batteryTempDeratingPct,
+    batteryRawDailyLoadKwh: round2(rawDailyLoadKwh),
+    batteryInverterAdjustedLoadKwh: round2(inverterAdjustedDailyLoadKwh),
     notes,
   };
 }

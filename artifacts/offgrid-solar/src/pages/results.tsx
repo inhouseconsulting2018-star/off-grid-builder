@@ -471,24 +471,164 @@ export default function Results() {
                 <CardContent className="pt-5 pb-5 space-y-5">
 
                   {/* Key numbers row */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-center">
-                      <div className="text-2xl font-black text-primary">{usableKwh.toFixed(1)} kWh</div>
-                      <div className="text-xs text-muted-foreground mt-1">Usable storage capacity</div>
-                    </div>
-                    <div className="rounded-md bg-muted/50 border p-3 text-center">
-                      <div className="text-2xl font-black">{totalKwh.toFixed(1)} kWh</div>
-                      <div className="text-xs text-muted-foreground mt-1">Total bank size ({dod}% DoD)</div>
-                    </div>
-                    <div className="rounded-md bg-muted/50 border p-3 text-center">
-                      <div className="text-2xl font-black">{numUnits}</div>
-                      <div className="text-xs text-muted-foreground mt-1">Battery units (~{unitKwh} kWh each)</div>
-                    </div>
-                    <div className="rounded-md bg-muted/50 border p-3 text-center">
-                      <div className="text-2xl font-black">{dod}%</div>
-                      <div className="text-xs text-muted-foreground mt-1">Depth of discharge limit</div>
-                    </div>
-                  </div>
+                  {(() => {
+                    const autonomyDays = (calc as unknown as Record<string, unknown>).batteryAutonomyDays as number | undefined;
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="rounded-md bg-primary/5 border border-primary/20 p-3 text-center">
+                          <div className="text-2xl font-black text-primary">{usableKwh.toFixed(1)} kWh</div>
+                          <div className="text-xs text-muted-foreground mt-1">Usable storage capacity</div>
+                        </div>
+                        <div className="rounded-md bg-muted/50 border p-3 text-center">
+                          <div className="text-2xl font-black">{totalKwh.toFixed(1)} kWh</div>
+                          <div className="text-xs text-muted-foreground mt-1">Total bank size ({dod}% DoD)</div>
+                        </div>
+                        <div className="rounded-md bg-muted/50 border p-3 text-center">
+                          <div className="text-2xl font-black">{numUnits}</div>
+                          <div className="text-xs text-muted-foreground mt-1">Battery units (~{unitKwh} kWh each)</div>
+                        </div>
+                        <div className="rounded-md bg-muted/50 border p-3 text-center">
+                          <div className="text-2xl font-black">
+                            {autonomyDays != null
+                              ? autonomyDays >= 1
+                                ? `${autonomyDays.toFixed(1)}d`
+                                : `${Math.round(autonomyDays * 24)}h`
+                              : `${dod}%`}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {autonomyDays != null ? "Autonomy (days)" : "Depth of discharge"}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── Sizing assumptions breakdown ─────────────────────── */}
+                  {(() => {
+                    const a = calc as unknown as Record<string, unknown>;
+                    const autonomyDays   = a.batteryAutonomyDays         as number | undefined;
+                    const invEff         = a.batteryInverterEfficiencyPct as number | undefined;
+                    const surgeRes       = a.batterySurgeReservePct       as number | undefined;
+                    const weatherRes     = a.batteryWeatherReservePct     as number | undefined;
+                    const effectiveDodPct= a.batteryEffectiveDodPct       as number | undefined;
+                    const coldDer        = a.batteryColdDeratingPct       as number | undefined;
+                    const rawLoad        = a.batteryRawDailyLoadKwh       as number | undefined;
+                    const adjLoad        = a.batteryInverterAdjustedLoadKwh as number | undefined;
+                    if (autonomyDays == null || rawLoad == null) return null;
+                    const autonomyHrs    = Math.round(autonomyDays * 24);
+                    const autonomyLoad   = (adjLoad ?? rawLoad) * autonomyDays;
+                    const afterSurge     = autonomyLoad * (1 + (surgeRes ?? 0) / 100);
+                    return (
+                      <details className="group border rounded-lg overflow-hidden" open={false}>
+                        <summary className="flex items-center justify-between px-4 py-3 cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors select-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          <span>How We Sized This Bank</span>
+                          <span className="group-open:rotate-180 transition-transform duration-200">▾</span>
+                        </summary>
+                        <div className="px-4 py-3 space-y-0 text-xs divide-y">
+
+                          <div className="flex items-start justify-between gap-2 py-2">
+                            <div>
+                              <span className="font-semibold text-foreground">Autonomy target</span>
+                              <span className="ml-2 text-muted-foreground">Days of operation without solar recharge</span>
+                            </div>
+                            <div className="text-right shrink-0 font-mono font-semibold">
+                              {autonomyDays >= 1 ? `${autonomyDays.toFixed(1)} days` : `${autonomyHrs} hrs`}
+                              <div className="text-muted-foreground font-normal">{autonomyHrs} hrs total</div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start justify-between gap-2 py-2">
+                            <div>
+                              <span className="font-semibold text-foreground">Daily AC load</span>
+                              <span className="ml-2 text-muted-foreground">Average household demand</span>
+                            </div>
+                            <div className="text-right shrink-0 font-mono font-semibold">{rawLoad.toFixed(2)} kWh/day</div>
+                          </div>
+
+                          {invEff != null && invEff < 100 && (
+                            <div className="flex items-start justify-between gap-2 py-2">
+                              <div>
+                                <span className="font-semibold text-foreground">Inverter efficiency adjustment</span>
+                                <span className="ml-2 text-muted-foreground">Battery must supply more than the AC load — inverter converts DC→AC at {invEff}% efficiency</span>
+                              </div>
+                              <div className="text-right shrink-0 font-mono font-semibold">
+                                ÷ {invEff}%
+                                <div className="text-muted-foreground font-normal">{(adjLoad ?? rawLoad).toFixed(2)} kWh/day</div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-start justify-between gap-2 py-2">
+                            <div>
+                              <span className="font-semibold text-foreground">Autonomy load</span>
+                              <span className="ml-2 text-muted-foreground">Inverter-adjusted load × autonomy days</span>
+                            </div>
+                            <div className="text-right shrink-0 font-mono font-semibold">{autonomyLoad.toFixed(2)} kWh</div>
+                          </div>
+
+                          {(surgeRes ?? 0) > 0 && (
+                            <div className="flex items-start justify-between gap-2 py-2">
+                              <div>
+                                <span className="font-semibold text-foreground">Surge reserve</span>
+                                <span className="ml-2 text-muted-foreground">+{surgeRes}% for AC motor startups (well pumps, compressors, HVAC) that draw 2–6× nameplate current</span>
+                              </div>
+                              <div className="text-right shrink-0 font-mono font-semibold">
+                                +{surgeRes}%
+                                <div className="text-muted-foreground font-normal">{afterSurge.toFixed(2)} kWh</div>
+                              </div>
+                            </div>
+                          )}
+
+                          {(weatherRes ?? 0) > 0 && (
+                            <div className="flex items-start justify-between gap-2 py-2">
+                              <div>
+                                <span className="font-semibold text-foreground">Weather reserve</span>
+                                <span className="ml-2 text-muted-foreground">
+                                  +{weatherRes}% cloudy-day buffer
+                                  {chemistry === "agm" || chemistry === "lead-acid"
+                                    ? " (AGM/lead-acid gets extra reserve since shallower DoD leaves less headroom)"
+                                    : " (ensures battery doesn't hit cutoff during consecutive overcast days)"}
+                                </span>
+                              </div>
+                              <div className="text-right shrink-0 font-mono font-semibold">
+                                +{weatherRes}%
+                                <div className="text-muted-foreground font-normal">{usableKwh.toFixed(2)} kWh usable</div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-start justify-between gap-2 py-2">
+                            <div>
+                              <span className="font-semibold text-foreground">Depth of discharge (DoD)</span>
+                              <span className="ml-2 text-muted-foreground">
+                                {chemistry === "lifepo4"
+                                  ? "LiFePO4 can safely use 80% of rated capacity without accelerating degradation"
+                                  : "AGM/lead-acid limited to 50% DoD to preserve cycle life (750–1,200 cycles at 50% vs 300 at 80%)"}
+                              </span>
+                            </div>
+                            <div className="text-right shrink-0 font-mono font-semibold">
+                              ÷ {effectiveDodPct ?? dod}%
+                              <div className="text-muted-foreground font-normal">{totalKwh.toFixed(2)} kWh bank</div>
+                            </div>
+                          </div>
+
+                          {(coldDer ?? 0) > 0 && (
+                            <div className="flex items-start justify-between gap-2 py-2">
+                              <div>
+                                <span className="font-semibold text-foreground">Cold-climate derating</span>
+                                <span className="ml-2 text-muted-foreground">+{coldDer}% bank oversize — lead-acid/AGM loses 20–30% capacity at freezing temperatures</span>
+                              </div>
+                              <div className="text-right shrink-0 font-mono font-semibold text-amber-600">
+                                +{coldDer}%
+                                <div className="text-muted-foreground font-normal">{totalKwh.toFixed(2)} kWh final</div>
+                              </div>
+                            </div>
+                          )}
+
+                        </div>
+                      </details>
+                    );
+                  })()}
 
                   {/* Chemistry badge */}
                   <div className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold border ${chemColor[chemistry] ?? "text-muted-foreground bg-muted border-border"}`}>

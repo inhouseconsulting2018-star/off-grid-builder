@@ -144,6 +144,54 @@ export const ListProjectsResponseItem = zod.object({
         .number()
         .nullish()
         .describe("Used battery equipment cost high bound — null if lithium"),
+      batteryAutonomyDays: zod
+        .number()
+        .optional()
+        .describe(
+          "Battery autonomy in days (backupHours \/ 24). 0 if no battery.",
+        ),
+      batteryInverterEfficiencyPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Inverter efficiency % used when sizing battery load (e.g. 95)",
+        ),
+      batterySurgeReservePct: zod
+        .number()
+        .optional()
+        .describe(
+          "Motor-start surge headroom added to usable kWh (% of autonomy load)",
+        ),
+      batteryWeatherReservePct: zod
+        .number()
+        .optional()
+        .describe(
+          "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
+        ),
+      batteryEffectiveDodPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Effective depth of discharge used in sizing (80 for LiFePO4, 50 for lead)",
+        ),
+      batteryColdDeratingPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Cold-climate bank upsize % applied for lead chemistry in snow areas (0 if N\/A)",
+        ),
+      batteryRawDailyLoadKwh: zod
+        .number()
+        .optional()
+        .describe(
+          "AC daily load before inverter-efficiency adjustment (kWh\/day)",
+        ),
+      batteryInverterAdjustedLoadKwh: zod
+        .number()
+        .optional()
+        .describe(
+          "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
+        ),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -395,6 +443,54 @@ export const GetProjectResponse = zod.object({
         .number()
         .nullish()
         .describe("Used battery equipment cost high bound — null if lithium"),
+      batteryAutonomyDays: zod
+        .number()
+        .optional()
+        .describe(
+          "Battery autonomy in days (backupHours \/ 24). 0 if no battery.",
+        ),
+      batteryInverterEfficiencyPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Inverter efficiency % used when sizing battery load (e.g. 95)",
+        ),
+      batterySurgeReservePct: zod
+        .number()
+        .optional()
+        .describe(
+          "Motor-start surge headroom added to usable kWh (% of autonomy load)",
+        ),
+      batteryWeatherReservePct: zod
+        .number()
+        .optional()
+        .describe(
+          "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
+        ),
+      batteryEffectiveDodPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Effective depth of discharge used in sizing (80 for LiFePO4, 50 for lead)",
+        ),
+      batteryColdDeratingPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Cold-climate bank upsize % applied for lead chemistry in snow areas (0 if N\/A)",
+        ),
+      batteryRawDailyLoadKwh: zod
+        .number()
+        .optional()
+        .describe(
+          "AC daily load before inverter-efficiency adjustment (kWh\/day)",
+        ),
+      batteryInverterAdjustedLoadKwh: zod
+        .number()
+        .optional()
+        .describe(
+          "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
+        ),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -646,6 +742,54 @@ export const UpdateProjectResponse = zod.object({
         .number()
         .nullish()
         .describe("Used battery equipment cost high bound — null if lithium"),
+      batteryAutonomyDays: zod
+        .number()
+        .optional()
+        .describe(
+          "Battery autonomy in days (backupHours \/ 24). 0 if no battery.",
+        ),
+      batteryInverterEfficiencyPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Inverter efficiency % used when sizing battery load (e.g. 95)",
+        ),
+      batterySurgeReservePct: zod
+        .number()
+        .optional()
+        .describe(
+          "Motor-start surge headroom added to usable kWh (% of autonomy load)",
+        ),
+      batteryWeatherReservePct: zod
+        .number()
+        .optional()
+        .describe(
+          "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
+        ),
+      batteryEffectiveDodPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Effective depth of discharge used in sizing (80 for LiFePO4, 50 for lead)",
+        ),
+      batteryColdDeratingPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Cold-climate bank upsize % applied for lead chemistry in snow areas (0 if N\/A)",
+        ),
+      batteryRawDailyLoadKwh: zod
+        .number()
+        .optional()
+        .describe(
+          "AC daily load before inverter-efficiency adjustment (kWh\/day)",
+        ),
+      batteryInverterAdjustedLoadKwh: zod
+        .number()
+        .optional()
+        .describe(
+          "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
+        ),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -812,6 +956,48 @@ export const CalculateProjectResponse = zod.object({
     .number()
     .nullish()
     .describe("Used battery equipment cost high bound — null if lithium"),
+  batteryAutonomyDays: zod
+    .number()
+    .optional()
+    .describe("Battery autonomy in days (backupHours \/ 24). 0 if no battery."),
+  batteryInverterEfficiencyPct: zod
+    .number()
+    .optional()
+    .describe("Inverter efficiency % used when sizing battery load (e.g. 95)"),
+  batterySurgeReservePct: zod
+    .number()
+    .optional()
+    .describe(
+      "Motor-start surge headroom added to usable kWh (% of autonomy load)",
+    ),
+  batteryWeatherReservePct: zod
+    .number()
+    .optional()
+    .describe(
+      "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
+    ),
+  batteryEffectiveDodPct: zod
+    .number()
+    .optional()
+    .describe(
+      "Effective depth of discharge used in sizing (80 for LiFePO4, 50 for lead)",
+    ),
+  batteryColdDeratingPct: zod
+    .number()
+    .optional()
+    .describe(
+      "Cold-climate bank upsize % applied for lead chemistry in snow areas (0 if N\/A)",
+    ),
+  batteryRawDailyLoadKwh: zod
+    .number()
+    .optional()
+    .describe("AC daily load before inverter-efficiency adjustment (kWh\/day)"),
+  batteryInverterAdjustedLoadKwh: zod
+    .number()
+    .optional()
+    .describe(
+      "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
+    ),
   estimatedYearlySavings: zod.number(),
   paybackYears: zod.number().nullable(),
   recommendedPanelBrand: zod.string(),
@@ -1078,6 +1264,54 @@ export const GetProjectsSummaryResponse = zod.object({
             .nullish()
             .describe(
               "Used battery equipment cost high bound — null if lithium",
+            ),
+          batteryAutonomyDays: zod
+            .number()
+            .optional()
+            .describe(
+              "Battery autonomy in days (backupHours \/ 24). 0 if no battery.",
+            ),
+          batteryInverterEfficiencyPct: zod
+            .number()
+            .optional()
+            .describe(
+              "Inverter efficiency % used when sizing battery load (e.g. 95)",
+            ),
+          batterySurgeReservePct: zod
+            .number()
+            .optional()
+            .describe(
+              "Motor-start surge headroom added to usable kWh (% of autonomy load)",
+            ),
+          batteryWeatherReservePct: zod
+            .number()
+            .optional()
+            .describe(
+              "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
+            ),
+          batteryEffectiveDodPct: zod
+            .number()
+            .optional()
+            .describe(
+              "Effective depth of discharge used in sizing (80 for LiFePO4, 50 for lead)",
+            ),
+          batteryColdDeratingPct: zod
+            .number()
+            .optional()
+            .describe(
+              "Cold-climate bank upsize % applied for lead chemistry in snow areas (0 if N\/A)",
+            ),
+          batteryRawDailyLoadKwh: zod
+            .number()
+            .optional()
+            .describe(
+              "AC daily load before inverter-efficiency adjustment (kWh\/day)",
+            ),
+          batteryInverterAdjustedLoadKwh: zod
+            .number()
+            .optional()
+            .describe(
+              "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
             ),
           estimatedYearlySavings: zod.number(),
           paybackYears: zod.number().nullable(),

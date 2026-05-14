@@ -109,6 +109,22 @@ export interface CalculationResult {
    * @nullable
    */
   usedBatteryEquipCostHigh?: number | null;
+  /** Battery autonomy in days (backupHours / 24). 0 if no battery. */
+  batteryAutonomyDays?: number;
+  /** Inverter efficiency % used when sizing battery load (e.g. 95) */
+  batteryInverterEfficiencyPct?: number;
+  /** Motor-start surge headroom added to usable kWh (% of autonomy load) */
+  batterySurgeReservePct?: number;
+  /** Cloudy-day autonomy buffer added on top of surge-adjusted load (%) */
+  batteryWeatherReservePct?: number;
+  /** Effective depth of discharge used in sizing (80 for LiFePO4, 50 for lead) */
+  batteryEffectiveDodPct?: number;
+  /** Cold-climate bank upsize % applied for lead chemistry in snow areas (0 if N/A) */
+  batteryColdDeratingPct?: number;
+  /** AC daily load before inverter-efficiency adjustment (kWh/day) */
+  batteryRawDailyLoadKwh?: number;
+  /** Daily load the battery must supply after inverter-efficiency adjustment (kWh/day) */
+  batteryInverterAdjustedLoadKwh?: number;
   estimatedYearlySavings: number;
   /** @nullable */
   paybackYears: number | null;
