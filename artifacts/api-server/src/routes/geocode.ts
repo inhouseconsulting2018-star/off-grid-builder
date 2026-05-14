@@ -108,40 +108,62 @@ router.get("/geocode/suggest", async (req, res): Promise<void> => {
   }
 });
 
-// ── GET /api/geocode/coords?q=<full address string> ──────────────────────────
-// Returns { lat, lon } for map pin placement. Tries progressively simpler
-// queries so a partial address still gets a result.
+// ── GET /api/geocode/coords ───────────────────────────────────────────────────
+// Returns { lat, lon } for map pin placement.
+//
+// Strategy (most → least precise):
+//   1. Nominatim structured query  — street + city + state + postalcode
+//      Most accurate: each field is matched independently, avoids cross-state
+//      false matches (e.g. "Myers Dr" hitting the wrong state).
+//   2. Free-form full address       — "2365 Myers Dr, Santa Rosa, CA 95401, USA"
+//   3. Free-form city+state+zip     — "Santa Rosa, CA 95401, USA"
+//   4. Free-form city+state         — "Santa Rosa, CA, USA"
 
 router.get("/geocode/coords", async (req, res): Promise<void> => {
   const address = typeof req.query["address"] === "string" ? req.query["address"].trim() : "";
-  const city = typeof req.query["city"] === "string" ? req.query["city"].trim() : "";
-  const state = typeof req.query["state"] === "string" ? req.query["state"].trim() : "";
-  const zip = typeof req.query["zip"] === "string" ? req.query["zip"].trim() : "";
+  const city    = typeof req.query["city"]    === "string" ? req.query["city"].trim()    : "";
+  const state   = typeof req.query["state"]   === "string" ? req.query["state"].trim()   : "";
+  const zip     = typeof req.query["zip"]     === "string" ? req.query["zip"].trim()     : "";
 
   if (!city && !state) {
     res.status(400).json({ error: "Provide at least city and state" });
     return;
   }
 
-  // Progressive query fallback: full address → city+state+zip → city+state
-  const queries = [
-    address ? `${address}, ${city}, ${state} ${zip}, USA` : null,
-    city && state && zip ? `${city}, ${state} ${zip}, USA` : null,
-    city && state ? `${city}, ${state}, USA` : null,
-  ].filter((q): q is string => q !== null && q.trim().length > 0);
+  interface Row { lat?: string; lon?: string }
 
-  for (const q of queries) {
+  const trySearch = async (params: Record<string, string>): Promise<{ lat: number; lon: number } | null> => {
     try {
-      const raw = await nominatimSearch({ q, limit: "1" });
-      interface Row { lat?: string; lon?: string }
-      const rows = raw as Row[];
+      const rows = (await nominatimSearch(params)) as Row[];
       if (rows.length > 0 && rows[0].lat && rows[0].lon) {
-        res.json({ lat: parseFloat(rows[0].lat), lon: parseFloat(rows[0].lon) });
-        return;
+        return { lat: parseFloat(rows[0].lat), lon: parseFloat(rows[0].lon) };
       }
-    } catch {
-      // try next query
-    }
+    } catch { /* try next */ }
+    return null;
+  };
+
+  // 1. Structured query — most accurate, pins the result to the correct city/state
+  if (address && city && state) {
+    const result = await trySearch({
+      street: address,
+      city,
+      state,
+      ...(zip ? { postalcode: zip } : {}),
+      limit: "1",
+    });
+    if (result) { res.json(result); return; }
+  }
+
+  // 2–4. Progressive free-form fallbacks
+  const freeFormQueries = [
+    address && city && state ? `${address}, ${city}, ${state}${zip ? " " + zip : ""}, USA` : null,
+    city && state && zip     ? `${city}, ${state} ${zip}, USA`                              : null,
+    city && state            ? `${city}, ${state}, USA`                                     : null,
+  ].filter((q): q is string => Boolean(q));
+
+  for (const q of freeFormQueries) {
+    const result = await trySearch({ q, limit: "1" });
+    if (result) { res.json(result); return; }
   }
 
   logger.warn({ address, city, state }, "Geocode coords: no result from any query");

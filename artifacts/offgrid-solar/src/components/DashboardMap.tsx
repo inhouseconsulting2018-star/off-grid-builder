@@ -61,8 +61,12 @@ interface ProjectPin {
   fallback: boolean;
 }
 
+// Bump this version any time the geocoding strategy changes on the server,
+// so stale / wrong coordinates are automatically discarded.
+const CACHE_VERSION = "v2";
+
 function cacheKey(p: { address: string; city: string; state: string; zip: string }) {
-  return `geocode:${p.address}|${p.city}|${p.state}|${p.zip}`.toLowerCase();
+  return `geocode:${CACHE_VERSION}:${p.address}|${p.city}|${p.state}|${p.zip}`.toLowerCase();
 }
 
 function readCache(key: string): { lat: number; lng: number; fallback: boolean } | null {
