@@ -16,6 +16,8 @@ tags:
     description: Admin settings operations
   - name: calculations
     description: Solar calculation operations
+  - name: payments
+    description: Stripe payment operations
 
 paths:
   /healthz:
@@ -147,6 +149,31 @@ paths:
                 $ref: "#/components/schemas/CalculationResult"
         "404":
           description: Project not found
+
+  /projects/{id}/create-checkout-session:
+    post:
+      operationId: createProjectCheckoutSession
+      tags: [payments]
+      summary: Create a Stripe Checkout session to unlock the full solar report (one-time payment)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Checkout session URL to redirect the user to
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutSessionResult"
+        "400":
+          description: Invalid project ID or project already paid
+        "404":
+          description: Project not found
+        "500":
+          description: Stripe not configured (STRIPE_PRICE_ID missing)
 
   /proposals/estimate:
     post:
@@ -315,6 +342,13 @@ components:
           description: "Free-text description of where the array will be installed"
         calculationResult:
           $ref: "#/components/schemas/CalculationResult"
+        paidAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Timestamp when the project was unlocked via Stripe payment. Null = unpaid."
+        stripeSessionId:
+          type: ["string", "null"]
+          description: "Stripe Checkout Session ID associated with the successful payment."
         createdAt:
           type: string
           format: date-time
@@ -662,6 +696,15 @@ components:
         batteryTempDeratingPct:
           type: number
           description: "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied)."
+
+    CheckoutSessionResult:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: "Stripe-hosted Checkout URL to redirect the user to for payment."
 
     ProposalEstimateInput:
       type: object

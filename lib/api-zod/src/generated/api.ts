@@ -259,6 +259,18 @@ export const ListProjectsResponseItem = zod.object({
         ),
     })
     .optional(),
+  paidAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp when the project was unlocked via Stripe payment. Null = unpaid.",
+    ),
+  stripeSessionId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Stripe Checkout Session ID associated with the successful payment.",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -558,6 +570,18 @@ export const GetProjectResponse = zod.object({
         ),
     })
     .optional(),
+  paidAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp when the project was unlocked via Stripe payment. Null = unpaid.",
+    ),
+  stripeSessionId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Stripe Checkout Session ID associated with the successful payment.",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -857,6 +881,18 @@ export const UpdateProjectResponse = zod.object({
         ),
     })
     .optional(),
+  paidAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp when the project was unlocked via Stripe payment. Null = unpaid.",
+    ),
+  stripeSessionId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Stripe Checkout Session ID associated with the successful payment.",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1062,6 +1098,21 @@ export const CalculateProjectResponse = zod.object({
     .optional()
     .describe(
       "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied).",
+    ),
+});
+
+/**
+ * @summary Create a Stripe Checkout session to unlock the full solar report (one-time payment)
+ */
+export const CreateProjectCheckoutSessionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CreateProjectCheckoutSessionResponse = zod.object({
+  url: zod
+    .string()
+    .describe(
+      "Stripe-hosted Checkout URL to redirect the user to for payment.",
     ),
 });
 
@@ -1380,6 +1431,18 @@ export const GetProjectsSummaryResponse = zod.object({
             ),
         })
         .optional(),
+      paidAt: zod.coerce
+        .date()
+        .nullish()
+        .describe(
+          "Timestamp when the project was unlocked via Stripe payment. Null = unpaid.",
+        ),
+      stripeSessionId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Stripe Checkout Session ID associated with the successful payment.",
+        ),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),

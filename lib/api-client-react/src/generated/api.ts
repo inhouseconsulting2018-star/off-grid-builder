@@ -18,6 +18,7 @@ import type {
 
 import type {
   CalculationResult,
+  CheckoutSessionResult,
   HealthStatus,
   Project,
   ProjectInput,
@@ -615,6 +616,93 @@ export const useCalculateProject = <
   TContext
 > => {
   return useMutation(getCalculateProjectMutationOptions(options));
+};
+
+/**
+ * @summary Create a Stripe Checkout session to unlock the full solar report (one-time payment)
+ */
+export const getCreateProjectCheckoutSessionUrl = (id: number) => {
+  return `/api/projects/${id}/create-checkout-session`;
+};
+
+export const createProjectCheckoutSession = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CheckoutSessionResult> => {
+  return customFetch<CheckoutSessionResult>(
+    getCreateProjectCheckoutSessionUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getCreateProjectCheckoutSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProjectCheckoutSession>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createProjectCheckoutSession>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["createProjectCheckoutSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createProjectCheckoutSession>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return createProjectCheckoutSession(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateProjectCheckoutSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createProjectCheckoutSession>>
+>;
+
+export type CreateProjectCheckoutSessionMutationError = ErrorType<void>;
+
+/**
+ * @summary Create a Stripe Checkout session to unlock the full solar report (one-time payment)
+ */
+export const useCreateProjectCheckoutSession = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProjectCheckoutSession>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createProjectCheckoutSession>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getCreateProjectCheckoutSessionMutationOptions(options));
 };
 
 /**

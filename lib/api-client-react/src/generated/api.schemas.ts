@@ -212,6 +212,16 @@ export interface Project {
    */
   arrayLocationNote?: string | null;
   calculationResult?: CalculationResult;
+  /**
+   * Timestamp when the project was unlocked via Stripe payment. Null = unpaid.
+   * @nullable
+   */
+  paidAt?: string | null;
+  /**
+   * Stripe Checkout Session ID associated with the successful payment.
+   * @nullable
+   */
+  stripeSessionId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -396,6 +406,11 @@ export interface ProjectPatch {
   arrayLon?: number | null;
   /** @nullable */
   arrayLocationNote?: string | null;
+}
+
+export interface CheckoutSessionResult {
+  /** Stripe-hosted Checkout URL to redirect the user to for payment. */
+  url: string;
 }
 
 export interface ProposalEstimateInput {

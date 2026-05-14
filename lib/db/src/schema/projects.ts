@@ -32,6 +32,9 @@ export const projectsTable = pgTable("projects", {
   arrayLon: real("array_lon"),
   arrayLocationNote: text("array_location_note"),
   calculationResult: jsonb("calculation_result"),
+  // Stripe payment fields — null means unpaid, populated after successful Stripe Checkout
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  stripeSessionId: text("stripe_session_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

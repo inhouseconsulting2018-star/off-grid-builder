@@ -57,6 +57,16 @@ export interface Project {
    */
   arrayLocationNote?: string | null;
   calculationResult?: CalculationResult;
+  /**
+   * Timestamp when the project was unlocked via Stripe payment. Null = unpaid.
+   * @nullable
+   */
+  paidAt?: Date | null;
+  /**
+   * Stripe Checkout Session ID associated with the successful payment.
+   * @nullable
+   */
+  stripeSessionId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

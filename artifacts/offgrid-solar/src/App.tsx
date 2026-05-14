@@ -13,6 +13,8 @@ import EditProject from "@/pages/edit-project";
 import AIAssistant from "@/pages/ai-assistant";
 import SettingsPage from "@/pages/settings";
 import QuickProposal from "@/pages/quick-proposal";
+import PaymentSuccess from "@/pages/payment-success";
+import PaymentCancel from "@/pages/payment-cancel";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +30,8 @@ function Router() {
       <Route path="/projects/:id/edit" component={EditProject} />
       <Route path="/ai-assistant" component={AIAssistant} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/payment-success" component={PaymentSuccess} />
+      <Route path="/payment-cancel" component={PaymentCancel} />
       <Route component={NotFound} />
     </Switch>
   );

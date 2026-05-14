@@ -1,15 +1,15 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useParams, Link } from "wouter";
-import { useGetProject, useCalculateProject, getGetProjectQueryKey } from "@workspace/api-client-react";
+import { useGetProject, useCalculateProject, getGetProjectQueryKey, useCreateProjectCheckoutSession } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Loader2, Download, PlusCircle, AlertTriangle, Zap, Battery,
   DollarSign, Settings2, Edit, MapPin, Sun, FileText,
-  Info, Lightbulb, CheckCircle2, ClipboardList, LayoutGrid
+  Info, Lightbulb, CheckCircle2, ClipboardList, LayoutGrid, Lock
 } from "lucide-react";
-import { useEffect, useRef, Fragment } from "react";
+import { useEffect, useRef, Fragment, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ProjectMap } from "@/components/ProjectMap";
@@ -25,9 +25,33 @@ export default function Results() {
   const projectId = parseInt(id || "0", 10);
   const { data: project, isLoading, error } = useGetProject(projectId);
   const calculateProject = useCalculateProject();
+  const createCheckoutSession = useCreateProjectCheckoutSession();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const hasTriggeredCalc = useRef(false);
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
+  const handleUnlockReport = () => {
+    setIsRedirecting(true);
+    createCheckoutSession.mutate(
+      { id: projectId },
+      {
+        onSuccess: (data) => {
+          if (data.url) {
+            window.location.href = data.url;
+          }
+        },
+        onError: () => {
+          setIsRedirecting(false);
+          toast({
+            title: "Payment unavailable",
+            description: "Stripe is not yet configured. Please add STRIPE_PRICE_ID to complete setup.",
+            variant: "destructive",
+          });
+        },
+      }
+    );
+  };
 
   useEffect(() => {
     if (project && !project.calculationResult && !hasTriggeredCalc.current) {
@@ -146,6 +170,8 @@ export default function Results() {
 
   const systemTypeLabel = project.systemType.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join("-");
   const hasBattery = calc.batteryUsableKwh > 0;
+  // isPaid: true when the project has been unlocked via a successful Stripe payment
+  const isPaid = !!project.paidAt;
 
   const noteIcon = (type: string) => {
     if (type === "warning") return <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />;
@@ -206,10 +232,24 @@ export default function Results() {
                 Edit
               </Button>
             </Link>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
-              <Download className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Download </span>PDF
-            </Button>
+            {isPaid ? (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Download </span>PDF
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white border-0"
+                onClick={handleUnlockReport}
+                disabled={isRedirecting || createCheckoutSession.isPending}
+              >
+                {isRedirecting || createCheckoutSession.isPending
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Lock className="h-3.5 w-3.5" />}
+                Unlock Report
+              </Button>
+            )}
             <Link href="/wizard">
               <Button size="sm" className="gap-1.5">
                 <PlusCircle className="h-3.5 w-3.5" />
@@ -1019,7 +1059,44 @@ export default function Results() {
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <ClipboardList className="h-4 w-4 text-primary" /> Equipment List
           </h2>
-          <Card>
+
+          {/* Paywall gate — shown when project is unpaid */}
+          {!isPaid && (
+            <Card className="border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/20 mb-4">
+              <CardContent className="py-8 flex flex-col items-center text-center gap-4">
+                <div className="flex items-center justify-center w-14 h-14 rounded-full bg-amber-100 dark:bg-amber-900">
+                  <Lock className="h-6 w-6 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold mb-1">Unlock the Full Solar Report</h3>
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    Get the complete equipment bill of materials with real model numbers, 2024/2025
+                    pricing, and alternative options — plus the full downloadable PDF solar design report.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <div className="text-2xl font-extrabold text-amber-600">$49</div>
+                  <div className="text-sm text-muted-foreground">one-time · instant access · this project</div>
+                </div>
+                <Button
+                  size="lg"
+                  className="bg-amber-500 hover:bg-amber-600 text-white gap-2 px-8"
+                  onClick={handleUnlockReport}
+                  disabled={isRedirecting || createCheckoutSession.isPending}
+                >
+                  {isRedirecting || createCheckoutSession.isPending
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Lock className="h-4 w-4" />}
+                  Unlock Full Report — $49
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Secure payment via Stripe · test mode active (use card 4242 4242 4242 4242)
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className={!isPaid ? "opacity-40 pointer-events-none select-none blur-[2px]" : ""}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">
                 Bill of Materials — {systemTypeLabel} · {project.budgetTier.charAt(0).toUpperCase() + project.budgetTier.slice(1)} Tier
