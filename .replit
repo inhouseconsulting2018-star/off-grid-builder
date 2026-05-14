@@ -34,3 +34,8 @@ externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+STRIPE_PRICE_ID = "price_1TWzd0Lz28pl9FUiWdYYAu3d"
