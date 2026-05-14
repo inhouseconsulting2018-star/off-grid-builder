@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Loader2, Download, PlusCircle, AlertTriangle, Zap, Battery,
   DollarSign, Settings2, Edit, MapPin, Sun, FileText,
-  Info, Lightbulb, CheckCircle2, ClipboardList
+  Info, Lightbulb, CheckCircle2, ClipboardList, LayoutGrid
 } from "lucide-react";
 import { useEffect, useRef, Fragment } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -193,7 +193,13 @@ export default function Results() {
             </div>
           )}
           {/* Action buttons — compact icon+label on mobile, full on desktop */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            <Link href={`/results/${project.id}/placement`}>
+              <Button variant="outline" size="sm" className="gap-1.5 border-primary/40 text-primary hover:bg-primary/5">
+                <LayoutGrid className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Placement</span>
+              </Button>
+            </Link>
             <Link href={`/projects/${project.id}/edit`}>
               <Button variant="outline" size="sm" className="gap-1.5">
                 <Edit className="h-3.5 w-3.5" />

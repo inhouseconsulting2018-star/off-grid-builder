@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 import ProjectsDashboard from "@/pages/projects";
 import Wizard from "@/pages/wizard";
 import Results from "@/pages/results";
+import PlacementPage from "@/pages/placement";
 import EditProject from "@/pages/edit-project";
 import AIAssistant from "@/pages/ai-assistant";
 import SettingsPage from "@/pages/settings";
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/wizard" component={Wizard} />
       <Route path="/proposal" component={QuickProposal} />
       <Route path="/results/:id" component={Results} />
+      <Route path="/results/:id/placement" component={PlacementPage} />
       <Route path="/projects/:id/edit" component={EditProject} />
       <Route path="/ai-assistant" component={AIAssistant} />
       <Route path="/settings" component={SettingsPage} />
