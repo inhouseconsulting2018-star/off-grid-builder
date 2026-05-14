@@ -9,7 +9,7 @@ import {
   DollarSign, Settings2, Edit, MapPin, Sun, FileText,
   Info, Lightbulb, CheckCircle2, ClipboardList
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, Fragment } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ProjectMap } from "@/components/ProjectMap";
@@ -74,6 +74,11 @@ export default function Results() {
     inverterSizeKw: calc.inverterSizeKw,
     totalBatteryBankKwh: calc.totalBatteryBankKwh,
     batteryUsableKwh: calc.batteryUsableKwh,
+    batteryChemistry: project.batteryChemistry,
+    hasGenerator: project.hasGenerator,
+    generatorKw: project.generatorKw,
+    wantsGenerator: project.wantsGenerator,
+    snowArea: project.snowArea,
     recommendedPanelBrand: calc.recommendedPanelBrand,
     recommendedInverterBrand: calc.recommendedInverterBrand,
     recommendedBatteryBrand: calc.recommendedBatteryBrand,
@@ -1006,57 +1011,120 @@ export default function Results() {
         {/* ── Section 4: Equipment / BOM ─────────────────────────────── */}
         <section>
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-primary" /> Preliminary Equipment List
+            <ClipboardList className="h-4 w-4 text-primary" /> Equipment List
           </h2>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Bill of Materials — {systemTypeLabel} · {project.budgetTier.charAt(0).toUpperCase() + project.budgetTier.slice(1)} Tier</CardTitle>
-              <CardDescription>Preliminary quantities and price ranges. Final BOM requires licensed contractor review.</CardDescription>
+              <CardTitle className="text-base">
+                Bill of Materials — {systemTypeLabel} · {project.budgetTier.charAt(0).toUpperCase() + project.budgetTier.slice(1)} Tier
+              </CardTitle>
+              <CardDescription>
+                Real equipment models with 2024/2025 US market price ranges. Expand any row for alternative models.
+                Final BOM requires contractor review — prices vary by distributor and region.
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                      <th className="px-4 py-3 text-left">Category / Item</th>
-                      <th className="px-4 py-3 text-left hidden md:table-cell">Brand / Type</th>
-                      <th className="px-4 py-3 text-right">Qty</th>
-                      <th className="px-4 py-3 text-right">Est. Total</th>
+                      <th className="px-4 py-3 text-left">Category / Model</th>
+                      <th className="px-4 py-3 text-right hidden sm:table-cell">Qty</th>
+                      <th className="px-4 py-3 text-right hidden lg:table-cell">Unit Price</th>
+                      <th className="px-4 py-3 text-right">Total</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y">
+                  <tbody>
                     {bomCategories.map(cat => {
-                      const items = bom.filter(b => b.category === cat);
-                      return items.map((item, idx) => (
-                        <tr key={`${cat}-${idx}`} className="hover:bg-muted/20">
-                          <td className="px-4 py-3">
-                            {idx === 0 && (
-                              <div className="text-xs font-semibold uppercase tracking-wide text-primary mb-0.5">{cat}</div>
-                            )}
-                            <div className="font-medium">{item.item}</div>
-                            <div className="text-xs text-muted-foreground mt-0.5 md:hidden">
-                              {item.brandLink
-                                ? <a href={item.brandLink} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">{item.brand} →</a>
-                                : item.brand}
-                            </div>
-                            <div className="text-xs text-muted-foreground/80 mt-1 italic hidden sm:block">{item.reason}</div>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground hidden md:table-cell text-xs">
-                            {item.brandLink
-                              ? <a href={item.brandLink} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">{item.brand} →</a>
-                              : item.brand}
-                          </td>
-                          <td className="px-4 py-3 text-right text-xs whitespace-nowrap">{item.qty}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap">{item.totalPrice}</td>
-                        </tr>
+                      const catItems = bom.filter(b => b.category === cat);
+                      return catItems.map((bomItem, idx) => (
+                        <Fragment key={`${cat}-${idx}`}>
+                          {/* Category header row */}
+                          {idx === 0 && (
+                            <tr className="bg-muted/20 border-t">
+                              <td colSpan={4} className="px-4 pt-3 pb-1">
+                                <span className="text-xs font-bold uppercase tracking-widest text-primary">{cat}</span>
+                              </td>
+                            </tr>
+                          )}
+
+                          {/* Main equipment row */}
+                          <tr className="border-b border-muted/40 hover:bg-muted/10">
+                            <td className="px-4 pt-3 pb-2 align-top">
+                              {/* Generic description */}
+                              <div className="text-xs text-muted-foreground mb-0.5">{bomItem.item}</div>
+                              {/* Model name — prominent */}
+                              <div className="font-semibold text-sm leading-snug">
+                                {bomItem.brandLink
+                                  ? <a href={bomItem.brandLink} target="_blank" rel="noopener noreferrer"
+                                       className="hover:text-primary hover:underline">{bomItem.model}</a>
+                                  : bomItem.model}
+                              </div>
+                              {/* Brand */}
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {bomItem.brandLink
+                                  ? <a href={bomItem.brandLink} target="_blank" rel="noopener noreferrer"
+                                       className="text-primary/70 hover:text-primary hover:underline">{bomItem.brand} ↗</a>
+                                  : bomItem.brand}
+                              </div>
+                              {/* Specs */}
+                              {bomItem.specs && (
+                                <div className="text-xs text-muted-foreground/80 mt-1 font-mono leading-snug">{bomItem.specs}</div>
+                              )}
+                              {/* Reason (hidden on mobile to save space) */}
+                              <div className="text-xs text-muted-foreground/70 mt-1.5 italic hidden sm:block leading-relaxed">{bomItem.reason}</div>
+                              {/* Qty on mobile */}
+                              <div className="text-xs text-muted-foreground mt-1 sm:hidden">
+                                {bomItem.qty} · {bomItem.unitPrice} ea.
+                              </div>
+
+                              {/* Alternatives collapsible */}
+                              {bomItem.alternatives && bomItem.alternatives.length > 0 && (
+                                <details className="mt-2 group">
+                                  <summary className="text-xs text-primary cursor-pointer hover:underline select-none list-none flex items-center gap-1">
+                                    <span className="group-open:hidden">▶ {bomItem.alternatives.length} alternative{bomItem.alternatives.length > 1 ? "s" : ""}</span>
+                                    <span className="hidden group-open:inline">▼ Hide alternatives</span>
+                                  </summary>
+                                  <div className="mt-2 space-y-2 pl-2 border-l-2 border-primary/20">
+                                    {bomItem.alternatives.map((alt, ai) => (
+                                      <div key={ai} className="text-xs bg-muted/30 rounded p-2">
+                                        <div className="font-semibold text-foreground/90">
+                                          {alt.brandLink
+                                            ? <a href={alt.brandLink} target="_blank" rel="noopener noreferrer"
+                                                 className="hover:text-primary hover:underline">{alt.model}</a>
+                                            : alt.model}
+                                        </div>
+                                        <div className="text-muted-foreground">{alt.brand}</div>
+                                        <div className="font-mono text-muted-foreground/80 mt-0.5">{alt.specs}</div>
+                                        <div className="text-primary/80 font-semibold mt-0.5">
+                                          ${Math.round(alt.unitPriceLow).toLocaleString()} – ${Math.round(alt.unitPriceHigh).toLocaleString()}
+                                          {alt.unitPriceLow === bomItem.totalPriceLow ? "" : " ea."}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              )}
+                            </td>
+                            <td className="px-4 pt-3 pb-2 text-right text-xs text-muted-foreground align-top hidden sm:table-cell whitespace-nowrap">{bomItem.qty}</td>
+                            <td className="px-4 pt-3 pb-2 text-right text-xs text-muted-foreground align-top hidden lg:table-cell whitespace-nowrap">{bomItem.unitPrice}</td>
+                            <td className="px-4 pt-3 pb-2 text-right font-semibold text-sm align-top whitespace-nowrap">{bomItem.totalPrice}</td>
+                          </tr>
+                        </Fragment>
                       ));
                     })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 bg-muted/30 font-bold">
-                      <td className="px-4 py-3" colSpan={3}>Estimated Total Equipment Range</td>
-                      <td className="px-4 py-3 text-right text-primary">
-                        ${calc.diyEquipmentCostLow.toLocaleString()} – ${calc.diyEquipmentCostHigh.toLocaleString()}
+                      <td className="px-4 py-3 text-sm" colSpan={3}>
+                        Estimated Total Equipment
+                        <div className="text-xs font-normal text-muted-foreground">Equipment only · excludes installation labor · before 30% federal ITC</div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-primary whitespace-nowrap">
+                        {(() => {
+                          const bomTotal = bom.reduce((s, b) => ({ low: s.low + b.totalPriceLow, high: s.high + b.totalPriceHigh }), { low: 0, high: 0 });
+                          return `$${Math.round(bomTotal.low).toLocaleString()} – $${Math.round(bomTotal.high).toLocaleString()}`;
+                        })()}
                       </td>
                     </tr>
                   </tfoot>
