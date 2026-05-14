@@ -4,9 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldCheck, ZapOff, MapPin, BarChart3 } from "lucide-react";
+import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldCheck, ZapOff, MapPin, BarChart3, Map } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useRef, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +20,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
+import { DashboardMap } from "@/components/DashboardMap";
 
 const systemTypeBadge: Record<string, string> = {
   "off-grid": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
@@ -32,6 +34,8 @@ export default function ProjectsDashboard() {
   const deleteProject = useDeleteProject();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const mapSectionRef = useRef<HTMLDivElement>(null);
+  const [mapSelectedId, setMapSelectedId] = useState<number | null>(null);
 
   const handleDelete = (id: number) => {
     deleteProject.mutate({ id }, {
@@ -44,6 +48,11 @@ export default function ProjectsDashboard() {
         toast({ title: "Failed to delete project", variant: "destructive" });
       }
     });
+  };
+
+  const handleViewOnMap = (id: number) => {
+    setMapSelectedId(id);
+    mapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   return (
@@ -110,6 +119,33 @@ export default function ProjectsDashboard() {
           </div>
         ) : null}
 
+        {/* Projects Map */}
+        {!isProjectsLoading && projects && projects.length > 0 && (
+          <Card ref={mapSectionRef}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Map className="h-4 w-4 text-primary" />
+                  Project Locations
+                </CardTitle>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-orange-500" /> Off-Grid</span>
+                  <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-500" /> Grid-Tied</span>
+                  <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-purple-500" /> Hybrid</span>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <DashboardMap
+                projects={projects}
+                selectedId={mapSelectedId}
+                onPinClick={setMapSelectedId}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Project List */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Recent Designs</CardTitle>
@@ -127,8 +163,12 @@ export default function ProjectsDashboard() {
                   const adjKw = project.calculationResult?.adjustedArraySizeKw;
                   const grossKw = project.calculationResult?.arraySizeKw;
                   const displayKw = adjKw ?? grossKw;
+                  const isMapSelected = project.id === mapSelectedId;
                   return (
-                    <div key={project.id} className="flex flex-col sm:flex-row sm:items-center justify-between px-5 py-4 gap-3 hover:bg-muted/30 transition-colors">
+                    <div
+                      key={project.id}
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between px-5 py-4 gap-3 transition-colors ${isMapSelected ? "bg-primary/5 border-l-2 border-primary" : "hover:bg-muted/30"}`}
+                    >
                       <div className="space-y-1 flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Link href={`/results/${project.id}`}>
@@ -150,7 +190,7 @@ export default function ProjectsDashboard() {
                         </div>
                       </div>
 
-                      {/* Action buttons — icon-only on mobile */}
+                      {/* Action buttons */}
                       <div className="flex items-center gap-1.5 shrink-0">
                         <Link href={`/results/${project.id}`}>
                           <Button variant="outline" size="sm" className="hidden sm:flex gap-1.5">
@@ -160,11 +200,15 @@ export default function ProjectsDashboard() {
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
                         </Link>
-                        <Link href={`/results/${project.id}#map`}>
-                          <Button variant="outline" size="icon" className="h-8 w-8" title="View on map">
-                            <MapPin className="h-3.5 w-3.5" />
-                          </Button>
-                        </Link>
+                        <Button
+                          variant={isMapSelected ? "default" : "outline"}
+                          size="icon"
+                          className="h-8 w-8"
+                          title="View on map"
+                          onClick={() => handleViewOnMap(project.id)}
+                        >
+                          <MapPin className="h-3.5 w-3.5" />
+                        </Button>
                         <Link href={`/projects/${project.id}/edit`}>
                           <Button variant="outline" size="sm" className="hidden sm:flex gap-1.5">
                             <Edit className="h-3.5 w-3.5" /> Edit
