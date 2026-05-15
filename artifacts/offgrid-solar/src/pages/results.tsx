@@ -287,7 +287,7 @@ export default function Results() {
               </CardHeader>
               <CardContent className="px-4 pb-4">
                 <div className="text-3xl font-black text-primary">{calc.adjustedArraySizeKw.toFixed(2)} kW</div>
-                <div className="text-sm font-medium mt-1">{calc.numPanels} panels × ~{Math.round(calc.adjustedArraySizeKw * 1000 / calc.numPanels / 5) * 5}W</div>
+                <div className="text-sm font-medium mt-1">{calc.numPanels} panels{calc.numPanels > 0 ? ` × ~${Math.round(calc.adjustedArraySizeKw * 1000 / calc.numPanels / 5) * 5}W` : ""}</div>
                 <div className="text-xs text-muted-foreground">{calc.yearlyProductionKwh.toLocaleString()} kWh/yr est.</div>
               </CardContent>
             </Card>
@@ -360,7 +360,14 @@ export default function Results() {
                       ["Est. Yearly Savings", `$${calc.estimatedYearlySavings.toLocaleString()}`],
                       ...(pvCalc.pvwattsCapacityFactor != null ? [["System Efficiency", `${pvCalc.pvwattsCapacityFactor.toFixed(1)}% capacity factor`]] : []),
                       ...(calc.offGridDesignFactor != null && calc.offGridDesignFactor > 1 ? [["Design Margin", `+${((calc.offGridDesignFactor - 1) * 100).toFixed(0)}% (${project.systemType} reserve)`]] : []),
-                      ...(calc.paybackYears ? [["Est. Payback Period", `${calc.paybackYears.toFixed(1)} years`]] : []),
+                      ...(calc.paybackYears
+                        ? [[
+                            "Est. Payback Period",
+                            calc.paybackYears > 50
+                              ? "> 50 yrs (battery cost dominates)"
+                              : `${calc.paybackYears.toFixed(1)} years`,
+                          ]]
+                        : []),
                     ].map(([label, value]) => (
                       <tr key={label}>
                         <td className="py-2 text-muted-foreground font-medium w-1/2">{label}</td>
