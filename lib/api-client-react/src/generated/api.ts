@@ -535,6 +535,90 @@ export const useDeleteProject = <
 };
 
 /**
+ * @summary Geocode (or re-geocode) a project address and save lat/lon/accuracy
+ */
+export const getRegeocodeProjectUrl = (id: number) => {
+  return `/api/projects/${id}/regeocode`;
+};
+
+export const regeocodeProject = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Project> => {
+  return customFetch<Project>(getRegeocodeProjectUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRegeocodeProjectMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regeocodeProject>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof regeocodeProject>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["regeocodeProject"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof regeocodeProject>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return regeocodeProject(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegeocodeProjectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof regeocodeProject>>
+>;
+
+export type RegeocodeProjectMutationError = ErrorType<void>;
+
+/**
+ * @summary Geocode (or re-geocode) a project address and save lat/lon/accuracy
+ */
+export const useRegeocodeProject = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regeocodeProject>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof regeocodeProject>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRegeocodeProjectMutationOptions(options));
+};
+
+/**
  * @summary Run solar calculations for a project and persist results
  */
 export const getCalculateProjectUrl = (id: number) => {

@@ -56,6 +56,23 @@ export interface Project {
    * @nullable
    */
   arrayLocationNote?: string | null;
+  /**
+   * Geocoded latitude of the property address. Null until geocoding runs.
+   * @nullable
+   */
+  lat?: number | null;
+  /**
+   * Geocoded longitude of the property address. Null until geocoding runs.
+   * @nullable
+   */
+  lon?: number | null;
+  /**
+   * 'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates
+   * @nullable
+   */
+  locationAccuracy?: string | null;
+  /** When true the map uses lat/lon directly without re-geocoding. */
+  useManualCoords?: boolean;
   calculationResult?: CalculationResult;
   /**
    * Timestamp when the project was unlocked via Stripe payment. Null = unpaid.

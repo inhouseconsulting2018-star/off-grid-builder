@@ -415,6 +415,13 @@ export function runCalculations(project: ProjectData, settings: Settings) {
       ? (installedCostLow + installedCostHigh) / 2 / estimatedYearlySavings
       : null;
 
+  // ── Component-level cost estimates (informational breakdown) ─────────────
+  // These estimate what each major component contributes to the overall cost.
+  // They are separate from the bundled per-watt totals above and are used on
+  // the results page to show a line-item cost breakdown.
+  const inverterCostEstimate = round2(inverterSizeKw * (settings.inverterCostPerKw ?? 300));
+  const mountingCostEstimate = round2(numPanels * (settings.mountingCostPerPanel ?? 125));
+
   // ── Equipment recommendations ────────────────────────────────────────────
   const panelBrands: Record<string, string> = {
     economy: "Canadian Solar or Qcells",
@@ -624,6 +631,8 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     batteryColdDeratingPct: batteryTempDeratingPct,
     batteryRawDailyLoadKwh: round2(rawDailyLoadKwh),
     batteryInverterAdjustedLoadKwh: round2(inverterAdjustedDailyLoadKwh),
+    inverterCostEstimate,
+    mountingCostEstimate,
     notes,
   };
 }

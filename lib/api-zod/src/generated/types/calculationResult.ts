@@ -73,6 +73,10 @@ export interface CalculationResult {
   batteryRawDailyLoadKwh?: number;
   /** Daily load the battery must supply after inverter-efficiency adjustment (kWh/day) */
   batteryInverterAdjustedLoadKwh?: number;
+  /** Rough inverter equipment cost estimate: inverterSizeKw × inverterCostPerKw from settings */
+  inverterCostEstimate?: number;
+  /** Rough mounting/racking cost estimate: numPanels × mountingCostPerPanel from settings */
+  mountingCostEstimate?: number;
   estimatedYearlySavings: number;
   /** @nullable */
   paybackYears: number | null;

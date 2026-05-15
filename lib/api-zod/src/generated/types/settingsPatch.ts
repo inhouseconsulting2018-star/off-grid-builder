@@ -22,4 +22,8 @@ export interface SettingsPatch {
   midRangeInstalledPerWatt?: number;
   premiumDiyPerWatt?: number;
   premiumInstalledPerWatt?: number;
+  /** Inverter equipment cost per kW of capacity */
+  inverterCostPerKw?: number;
+  /** Mounting/racking hardware cost per panel */
+  mountingCostPerPanel?: number;
 }

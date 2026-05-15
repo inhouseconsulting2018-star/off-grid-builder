@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useUpdateProject, useGetProject, useCalculateProject, getGetProjectQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Save, ArrowLeft } from "lucide-react";
+import { Loader2, Save, ArrowLeft, MapPin, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
 
 const editSchema = z.object({
@@ -22,6 +22,9 @@ const editSchema = z.object({
   city: z.string().min(1, "City is required"),
   state: z.string().min(1, "State is required"),
   zip: z.string().min(1, "ZIP code is required"),
+  lat: z.coerce.number().nullable().optional(),
+  lon: z.coerce.number().nullable().optional(),
+  useManualCoords: z.boolean().default(false),
   installationType: z.enum(["roof", "ground", "pole", "carport"]),
   annualKwh: z.coerce.number().min(0),
   monthlyBill: z.coerce.number().min(0),
@@ -56,6 +59,34 @@ export default function EditProject() {
   const updateProject = useUpdateProject();
   const calculateProject = useCalculateProject();
 
+  const [isRegeocodeing, setIsRegeocodeing] = useState(false);
+
+  const handleRegeocode = async () => {
+    setIsRegeocodeing(true);
+    try {
+      const base = (import.meta.env.BASE_URL as string) ?? "/";
+      const res = await fetch(`${base}api/projects/${projectId}/regeocode`, { method: "POST" });
+      if (res.ok) {
+        const updated = await res.json() as { lat?: number; lon?: number; locationAccuracy?: string };
+        if (updated.lat != null) form.setValue("lat", updated.lat);
+        if (updated.lon != null) form.setValue("lon", updated.lon);
+        form.setValue("useManualCoords", false);
+        toast({
+          title: "Address geocoded",
+          description: `Location accuracy: ${updated.locationAccuracy === "exact" ? "Exact street address ✓" : updated.locationAccuracy === "zip" ? "ZIP code approximation" : "City/state approximation"}`,
+        });
+        queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+      } else {
+        const err = await res.json() as { error?: string };
+        toast({ title: "Geocode failed", description: err.error ?? "Could not find coordinates for this address.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Geocode error", description: "Network error. Try again.", variant: "destructive" });
+    } finally {
+      setIsRegeocodeing(false);
+    }
+  };
+
   const form = useForm<EditFormValues>({
     resolver: zodResolver(editSchema),
     defaultValues: {
@@ -64,6 +95,9 @@ export default function EditProject() {
       city: "",
       state: "",
       zip: "",
+      lat: null,
+      lon: null,
+      useManualCoords: false,
       installationType: "roof",
       annualKwh: 10000,
       monthlyBill: 150,
@@ -94,6 +128,9 @@ export default function EditProject() {
         city: project.city,
         state: project.state,
         zip: project.zip,
+        lat: project.lat ?? null,
+        lon: project.lon ?? null,
+        useManualCoords: project.useManualCoords ?? false,
         installationType: project.installationType,
         annualKwh: project.annualKwh,
         monthlyBill: project.monthlyBill,
@@ -467,6 +504,86 @@ export default function EditProject() {
                       </FormItem>
                     )} />
                   </div>
+                </div>
+                  );
+                })()}
+
+                {/* ── Section: GPS Coordinates ──────────────────── */}
+                {(() => {
+                  const useManual = form.watch("useManualCoords");
+                  return (
+                <div>
+                  <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-4 pb-2 border-b">GPS Coordinates</h3>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Coordinates are auto-detected from your address. Use the Re-geocode button if you recently changed the address, or enter coordinates manually for pinpoint accuracy.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3 mb-4">
+                    <Button type="button" variant="outline" size="sm" onClick={handleRegeocode} disabled={isRegeocodeing}>
+                      {isRegeocodeing
+                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Geocoding…</>
+                        : <><RefreshCw className="w-4 h-4 mr-2" /> Re-geocode Address</>}
+                    </Button>
+                    {project?.lat != null && (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {project.locationAccuracy === "exact"
+                          ? "Exact street address"
+                          : project.locationAccuracy === "zip" ? "ZIP code approximation"
+                          : project.locationAccuracy === "city" ? "City/state approximation"
+                          : project.locationAccuracy === "manual" ? "Manual coordinates"
+                          : "Coordinates saved"}
+                        {" "}({Number(project.lat).toFixed(5)}, {Number(project.lon).toFixed(5)})
+                      </span>
+                    )}
+                    {project?.lat == null && (
+                      <span className="text-xs text-amber-600">No coordinates saved yet — click Re-geocode to set them</span>
+                    )}
+                  </div>
+                  <FormField control={form.control} name="useManualCoords" render={({ field }) => (
+                    <FormItem className="flex items-start space-x-3 space-y-0 border p-3 rounded-lg mb-4">
+                      <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                      <div>
+                        <FormLabel className="font-normal cursor-pointer text-sm">Use manually entered coordinates</FormLabel>
+                        <FormDescription className="text-xs mt-0.5">When checked, the lat/lon below are used directly — the address won't be re-geocoded automatically.</FormDescription>
+                      </div>
+                    </FormItem>
+                  )} />
+                  {useManual && (
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="lat" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Latitude</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.00001"
+                              placeholder="e.g. 38.5501"
+                              value={field.value ?? ""}
+                              onChange={e => field.onChange(e.target.value === "" ? null : parseFloat(e.target.value))}
+                            />
+                          </FormControl>
+                          <FormDescription className="text-xs">Decimal degrees (e.g. 38.5501 for north)</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="lon" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Longitude</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.00001"
+                              placeholder="e.g. -121.3742"
+                              value={field.value ?? ""}
+                              onChange={e => field.onChange(e.target.value === "" ? null : parseFloat(e.target.value))}
+                            />
+                          </FormControl>
+                          <FormDescription className="text-xs">Decimal degrees (negative for west, e.g. -121.37)</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  )}
                 </div>
                   );
                 })()}

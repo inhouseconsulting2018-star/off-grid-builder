@@ -827,9 +827,16 @@ export default function Results() {
                       </div>
                     )}
                     {!hasBatteryCost && (
-                      <p className="text-xs text-muted-foreground mt-2">
-                        ${(calc.installedCostLow / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} – ${(calc.installedCostHigh / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} per watt installed
-                      </p>
+                      <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                        <p>${(calc.installedCostLow / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} – ${(calc.installedCostHigh / (calc.adjustedArraySizeKw * 1000)).toFixed(2)}/W (solar panels + inverter + racking + labor)</p>
+                        {(calc.inverterCostEstimate != null && calc.mountingCostEstimate != null) && (
+                          <div className="pt-1 border-t space-y-0.5">
+                            <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground mb-1">Est. component breakdown</p>
+                            <div className="flex justify-between"><span>Inverter (~{calc.inverterSizeKw.toFixed(1)} kW)</span><span>~${Math.round(calc.inverterCostEstimate).toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span>Mounting/racking ({calc.numPanels} panels)</span><span>~${Math.round(calc.mountingCostEstimate).toLocaleString()}</span></div>
+                          </div>
+                        )}
+                      </div>
                     )}
                     {calc.paybackYears && (
                       <div className="mt-3 pt-3 border-t flex justify-between text-sm">
@@ -875,9 +882,16 @@ export default function Results() {
                       </div>
                     )}
                     {!hasBatteryCost && (
-                      <p className="text-xs text-muted-foreground mt-2">
-                        ${(calc.diyEquipmentCostLow / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} – ${(calc.diyEquipmentCostHigh / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} per watt (equipment only)
-                      </p>
+                      <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                        <p>${(calc.diyEquipmentCostLow / (calc.adjustedArraySizeKw * 1000)).toFixed(2)} – ${(calc.diyEquipmentCostHigh / (calc.adjustedArraySizeKw * 1000)).toFixed(2)}/W (solar panels + inverter + racking, equipment only)</p>
+                        {(calc.inverterCostEstimate != null && calc.mountingCostEstimate != null) && (
+                          <div className="pt-1 border-t space-y-0.5">
+                            <p className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground mb-1">Est. component breakdown</p>
+                            <div className="flex justify-between"><span>Inverter (~{calc.inverterSizeKw.toFixed(1)} kW)</span><span>~${Math.round(calc.inverterCostEstimate).toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span>Mounting/racking ({calc.numPanels} panels)</span><span>~${Math.round(calc.mountingCostEstimate).toLocaleString()}</span></div>
+                          </div>
+                        )}
+                      </div>
                     )}
                     <div className="mt-3 pt-3 border-t">
                       <p className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-1.5">

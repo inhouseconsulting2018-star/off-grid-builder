@@ -14,40 +14,15 @@
  *     Returns autocomplete address suggestions (for address search UI).
  *
  *   GET /api/geocode/coords?q=<full address string>
- *     Returns { lat, lon } for a single address (for map pin placement).
+ *     Returns { lat, lon, accuracy } for a single address (for map pin placement).
+ *     accuracy: 'exact' | 'zip' | 'city'
  */
 
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger";
+import { nominatimSearch, geocodeAddress } from "../lib/geocode";
 
 const router: IRouter = Router();
-
-// ── Shared Nominatim fetch helper ─────────────────────────────────────────────
-// TODO: Replace body of this function with Google Maps / Mapbox SDK call
-// when upgrading providers. Keep the return shape identical.
-
-const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
-const NOMINATIM_HEADERS = {
-  "User-Agent": "OffGridSolarBuilder/2.0 (contact@offgridsolar.app)",
-  "Accept-Language": "en",
-};
-
-async function nominatimSearch(
-  params: Record<string, string>,
-): Promise<unknown[]> {
-  const url = new URL(`${NOMINATIM_BASE}/search`);
-  url.searchParams.set("format", "json");
-  url.searchParams.set("addressdetails", "1");
-  url.searchParams.set("countrycodes", "us");
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-
-  const res = await fetch(url.toString(), { headers: NOMINATIM_HEADERS });
-  if (!res.ok) {
-    logger.warn({ status: res.status }, "Nominatim request failed");
-    return [];
-  }
-  return res.json() as Promise<unknown[]>;
-}
 
 // ── GET /api/geocode/suggest?q=<query> ───────────────────────────────────────
 // Returns up to 6 structured address suggestions for the autocomplete UI.
@@ -109,15 +84,8 @@ router.get("/geocode/suggest", async (req, res): Promise<void> => {
 });
 
 // ── GET /api/geocode/coords ───────────────────────────────────────────────────
-// Returns { lat, lon } for map pin placement.
-//
-// Strategy (most → least precise):
-//   1. Nominatim structured query  — street + city + state + postalcode
-//      Most accurate: each field is matched independently, avoids cross-state
-//      false matches (e.g. "Myers Dr" hitting the wrong state).
-//   2. Free-form full address       — "2365 Myers Dr, Santa Rosa, CA 95401, USA"
-//   3. Free-form city+state+zip     — "Santa Rosa, CA 95401, USA"
-//   4. Free-form city+state         — "Santa Rosa, CA, USA"
+// Returns { lat, lon, accuracy } for map pin placement.
+// Uses the shared geocodeAddress helper from lib/geocode.ts.
 
 router.get("/geocode/coords", async (req, res): Promise<void> => {
   const address = typeof req.query["address"] === "string" ? req.query["address"].trim() : "";
@@ -130,40 +98,11 @@ router.get("/geocode/coords", async (req, res): Promise<void> => {
     return;
   }
 
-  interface Row { lat?: string; lon?: string }
+  const result = await geocodeAddress({ address, city, state, zip });
 
-  const trySearch = async (params: Record<string, string>): Promise<{ lat: number; lon: number } | null> => {
-    try {
-      const rows = (await nominatimSearch(params)) as Row[];
-      if (rows.length > 0 && rows[0].lat && rows[0].lon) {
-        return { lat: parseFloat(rows[0].lat), lon: parseFloat(rows[0].lon) };
-      }
-    } catch { /* try next */ }
-    return null;
-  };
-
-  // 1. Structured query — most accurate, pins the result to the correct city/state
-  if (address && city && state) {
-    const result = await trySearch({
-      street: address,
-      city,
-      state,
-      ...(zip ? { postalcode: zip } : {}),
-      limit: "1",
-    });
-    if (result) { res.json(result); return; }
-  }
-
-  // 2–4. Progressive free-form fallbacks
-  const freeFormQueries = [
-    address && city && state ? `${address}, ${city}, ${state}${zip ? " " + zip : ""}, USA` : null,
-    city && state && zip     ? `${city}, ${state} ${zip}, USA`                              : null,
-    city && state            ? `${city}, ${state}, USA`                                     : null,
-  ].filter((q): q is string => Boolean(q));
-
-  for (const q of freeFormQueries) {
-    const result = await trySearch({ q, limit: "1" });
-    if (result) { res.json(result); return; }
+  if (result) {
+    res.json(result); // { lat, lon, accuracy }
+    return;
   }
 
   logger.warn({ address, city, state }, "Geocode coords: no result from any query");

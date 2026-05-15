@@ -129,6 +129,31 @@ paths:
         "404":
           description: Not found
 
+  /projects/{id}/regeocode:
+    post:
+      operationId: regeocodeProject
+      tags: [projects]
+      summary: Geocode (or re-geocode) a project address and save lat/lon/accuracy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated project with geocode result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          description: Missing city/state or invalid ID
+        "404":
+          description: Project not found
+        "422":
+          description: Geocoding failed — address could not be located
+
   /projects/{id}/calculate:
     post:
       operationId: calculateProject
@@ -340,6 +365,18 @@ components:
         arrayLocationNote:
           type: ["string", "null"]
           description: "Free-text description of where the array will be installed"
+        lat:
+          type: ["number", "null"]
+          description: "Geocoded latitude of the property address. Null until geocoding runs."
+        lon:
+          type: ["number", "null"]
+          description: "Geocoded longitude of the property address. Null until geocoding runs."
+        locationAccuracy:
+          type: ["string", "null"]
+          description: "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates"
+        useManualCoords:
+          type: boolean
+          description: "When true the map uses lat/lon directly without re-geocoding."
         calculationResult:
           $ref: "#/components/schemas/CalculationResult"
         paidAt:
@@ -443,6 +480,18 @@ components:
           type: ["number", "null"]
         arrayLocationNote:
           type: ["string", "null"]
+        lat:
+          type: ["number", "null"]
+          description: "Geocoded latitude of the property address."
+        lon:
+          type: ["number", "null"]
+          description: "Geocoded longitude of the property address."
+        locationAccuracy:
+          type: ["string", "null"]
+          description: "'exact' | 'zip' | 'city' | 'manual'"
+        useManualCoords:
+          type: boolean
+          description: "When true the map uses lat/lon directly without re-geocoding."
 
     ProjectPatch:
       type: object
@@ -512,6 +561,18 @@ components:
           type: ["number", "null"]
         arrayLocationNote:
           type: ["string", "null"]
+        lat:
+          type: ["number", "null"]
+          description: "Geocoded latitude of the property address."
+        lon:
+          type: ["number", "null"]
+          description: "Geocoded longitude of the property address."
+        locationAccuracy:
+          type: ["string", "null"]
+          description: "'exact' | 'zip' | 'city' | 'manual'"
+        useManualCoords:
+          type: boolean
+          description: "When true the map uses lat/lon directly without re-geocoding."
 
     CalculationResult:
       type: object
@@ -644,6 +705,12 @@ components:
         batteryInverterAdjustedLoadKwh:
           type: number
           description: "Daily load the battery must supply after inverter-efficiency adjustment (kWh/day)"
+        inverterCostEstimate:
+          type: number
+          description: "Rough inverter equipment cost estimate: inverterSizeKw × inverterCostPerKw from settings"
+        mountingCostEstimate:
+          type: number
+          description: "Rough mounting/racking cost estimate: numPanels × mountingCostPerPanel from settings"
         estimatedYearlySavings:
           type: number
         paybackYears:
@@ -857,6 +924,8 @@ components:
         - midRangeInstalledPerWatt
         - premiumDiyPerWatt
         - premiumInstalledPerWatt
+        - inverterCostPerKw
+        - mountingCostPerPanel
       properties:
         id:
           type: integer
@@ -890,6 +959,12 @@ components:
           type: number
         premiumInstalledPerWatt:
           type: number
+        inverterCostPerKw:
+          type: number
+          description: "Inverter equipment cost per kW of capacity (used in component cost breakdown)"
+        mountingCostPerPanel:
+          type: number
+          description: "Mounting/racking hardware cost per panel (used in component cost breakdown)"
 
     SettingsPatch:
       type: object
@@ -924,3 +999,9 @@ components:
           type: number
         premiumInstalledPerWatt:
           type: number
+        inverterCostPerKw:
+          type: number
+          description: "Inverter equipment cost per kW of capacity"
+        mountingCostPerPanel:
+          type: number
+          description: "Mounting/racking hardware cost per panel"

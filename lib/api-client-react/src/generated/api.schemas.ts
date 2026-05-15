@@ -125,6 +125,10 @@ export interface CalculationResult {
   batteryRawDailyLoadKwh?: number;
   /** Daily load the battery must supply after inverter-efficiency adjustment (kWh/day) */
   batteryInverterAdjustedLoadKwh?: number;
+  /** Rough inverter equipment cost estimate: inverterSizeKw × inverterCostPerKw from settings */
+  inverterCostEstimate?: number;
+  /** Rough mounting/racking cost estimate: numPanels × mountingCostPerPanel from settings */
+  mountingCostEstimate?: number;
   estimatedYearlySavings: number;
   /** @nullable */
   paybackYears: number | null;
@@ -211,6 +215,23 @@ export interface Project {
    * @nullable
    */
   arrayLocationNote?: string | null;
+  /**
+   * Geocoded latitude of the property address. Null until geocoding runs.
+   * @nullable
+   */
+  lat?: number | null;
+  /**
+   * Geocoded longitude of the property address. Null until geocoding runs.
+   * @nullable
+   */
+  lon?: number | null;
+  /**
+   * 'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates
+   * @nullable
+   */
+  locationAccuracy?: string | null;
+  /** When true the map uses lat/lon directly without re-geocoding. */
+  useManualCoords?: boolean;
   calculationResult?: CalculationResult;
   /**
    * Timestamp when the project was unlocked via Stripe payment. Null = unpaid.
@@ -315,6 +336,23 @@ export interface ProjectInput {
   arrayLon?: number | null;
   /** @nullable */
   arrayLocationNote?: string | null;
+  /**
+   * Geocoded latitude of the property address.
+   * @nullable
+   */
+  lat?: number | null;
+  /**
+   * Geocoded longitude of the property address.
+   * @nullable
+   */
+  lon?: number | null;
+  /**
+   * 'exact' | 'zip' | 'city' | 'manual'
+   * @nullable
+   */
+  locationAccuracy?: string | null;
+  /** When true the map uses lat/lon directly without re-geocoding. */
+  useManualCoords?: boolean;
 }
 
 export type ProjectPatchInstallationType =
@@ -406,6 +444,23 @@ export interface ProjectPatch {
   arrayLon?: number | null;
   /** @nullable */
   arrayLocationNote?: string | null;
+  /**
+   * Geocoded latitude of the property address.
+   * @nullable
+   */
+  lat?: number | null;
+  /**
+   * Geocoded longitude of the property address.
+   * @nullable
+   */
+  lon?: number | null;
+  /**
+   * 'exact' | 'zip' | 'city' | 'manual'
+   * @nullable
+   */
+  locationAccuracy?: string | null;
+  /** When true the map uses lat/lon directly without re-geocoding. */
+  useManualCoords?: boolean;
 }
 
 export interface CheckoutSessionResult {
@@ -480,6 +535,10 @@ export interface Settings {
   midRangeInstalledPerWatt: number;
   premiumDiyPerWatt: number;
   premiumInstalledPerWatt: number;
+  /** Inverter equipment cost per kW of capacity (used in component cost breakdown) */
+  inverterCostPerKw: number;
+  /** Mounting/racking hardware cost per panel (used in component cost breakdown) */
+  mountingCostPerPanel: number;
 }
 
 export interface SettingsPatch {
@@ -498,4 +557,8 @@ export interface SettingsPatch {
   midRangeInstalledPerWatt?: number;
   premiumDiyPerWatt?: number;
   premiumInstalledPerWatt?: number;
+  /** Inverter equipment cost per kW of capacity */
+  inverterCostPerKw?: number;
+  /** Mounting/racking hardware cost per panel */
+  mountingCostPerPanel?: number;
 }

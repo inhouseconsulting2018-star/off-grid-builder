@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 
@@ -40,6 +40,14 @@ export interface DashboardProject {
   state: string;
   zip: string;
   systemType: string;
+  /** Saved geocoded latitude — use first before calling geocode API */
+  lat?: number | null;
+  /** Saved geocoded longitude — use first before calling geocode API */
+  lon?: number | null;
+  /** Geocode accuracy: 'exact' | 'zip' | 'city' | 'manual' */
+  locationAccuracy?: string | null;
+  /** When true, use lat/lon directly without re-geocoding */
+  useManualCoords?: boolean | null;
   calculationResult?: {
     adjustedArraySizeKw?: number;
     arraySizeKw?: number;
@@ -58,31 +66,34 @@ interface ProjectPin {
   batteryKwh?: number;
   lat: number;
   lng: number;
+  /** false = exact geocode or manual, true = approximate (city/state fallback) */
   fallback: boolean;
+  /** Human-readable accuracy label for popup */
+  accuracyLabel?: string;
 }
 
 // Bump this version any time the geocoding strategy changes on the server,
 // so stale / wrong coordinates are automatically discarded.
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 
 function cacheKey(p: { address: string; city: string; state: string; zip: string }) {
   return `geocode:${CACHE_VERSION}:${p.address}|${p.city}|${p.state}|${p.zip}`.toLowerCase();
 }
 
-function readCache(key: string): { lat: number; lng: number; fallback: boolean } | null {
+function readCache(key: string): { lat: number; lng: number; fallback: boolean; accuracyLabel?: string } | null {
   try {
     const v = sessionStorage.getItem(key);
-    return v ? (JSON.parse(v) as { lat: number; lng: number; fallback: boolean }) : null;
+    return v ? (JSON.parse(v) as { lat: number; lng: number; fallback: boolean; accuracyLabel?: string }) : null;
   } catch { return null; }
 }
 
-function writeCache(key: string, val: { lat: number; lng: number; fallback: boolean }) {
+function writeCache(key: string, val: { lat: number; lng: number; fallback: boolean; accuracyLabel?: string }) {
   try { sessionStorage.setItem(key, JSON.stringify(val)); } catch { /* storage full */ }
 }
 
 async function geocodeOne(
   p: { address: string; city: string; state: string; zip: string }
-): Promise<{ lat: number; lng: number; fallback: boolean } | null> {
+): Promise<{ lat: number; lng: number; fallback: boolean; accuracyLabel?: string } | null> {
   const key = cacheKey(p);
   const cached = readCache(key);
   if (cached) return cached;
@@ -92,9 +103,12 @@ async function geocodeOne(
     const base = (import.meta.env.BASE_URL as string) ?? "/";
     const res = await fetch(`${base}api/geocode/coords?${params.toString()}`);
     if (res.ok) {
-      const data = await res.json() as { lat?: number; lon?: number };
+      const data = await res.json() as { lat?: number; lon?: number; accuracy?: string };
       if (typeof data.lat === "number" && typeof data.lon === "number") {
-        const result = { lat: data.lat, lng: data.lon, fallback: false };
+        const accuracyLabel = data.accuracy === "exact" ? "Exact street address"
+          : data.accuracy === "zip" ? "ZIP code approximation"
+          : "City/state approximation";
+        const result = { lat: data.lat, lng: data.lon, fallback: data.accuracy !== "exact", accuracyLabel };
         writeCache(key, result);
         return result;
       }
@@ -103,7 +117,7 @@ async function geocodeOne(
 
   const center = STATE_CENTERS[p.state?.toUpperCase()];
   if (center) {
-    const result = { lat: center[0], lng: center[1], fallback: true };
+    const result = { lat: center[0], lng: center[1], fallback: true, accuracyLabel: "State center fallback" };
     writeCache(key, result);
     return result;
   }
@@ -172,13 +186,31 @@ export function DashboardMap({ projects, selectedId, onPinClick }: DashboardMapP
       for (let i = 0; i < projects.length; i++) {
         if (cancelled) return;
         const p = projects[i];
-        // Only delay when result is NOT cached (avoid hammering Nominatim)
-        const key = cacheKey(p);
-        const isCached = readCache(key) !== null;
-        if (!isCached && i > 0) await new Promise(r => setTimeout(r, 350));
-        if (cancelled) return;
 
-        const coords = await geocodeOne(p);
+        let coords: { lat: number; lng: number; fallback: boolean; accuracyLabel?: string } | null = null;
+
+        // ── Use saved coordinates first — skip geocode API call if available ──
+        if (typeof p.lat === "number" && typeof p.lon === "number" && p.lat !== 0 && p.lon !== 0) {
+          const accuracyLabel = p.locationAccuracy === "exact" || p.useManualCoords
+            ? (p.useManualCoords ? "Manual GPS coordinates" : "Exact street address")
+            : p.locationAccuracy === "zip" ? "ZIP code approximation"
+            : p.locationAccuracy === "city" ? "City/state approximation"
+            : "Saved coordinates";
+          coords = {
+            lat: p.lat,
+            lng: p.lon,
+            fallback: p.locationAccuracy === "city" || (!!p.locationAccuracy && p.locationAccuracy !== "exact" && !p.useManualCoords),
+            accuracyLabel,
+          };
+        } else {
+          // No saved coords — geocode via API (rate-limited)
+          const key = cacheKey(p);
+          const isCached = readCache(key) !== null;
+          if (!isCached && i > 0) await new Promise(r => setTimeout(r, 350));
+          if (cancelled) return;
+          coords = await geocodeOne(p);
+        }
+
         if (!cancelled && coords) {
           const pin: ProjectPin = {
             id: p.id, name: p.name, address: p.address, city: p.city, state: p.state,
@@ -278,7 +310,12 @@ export function DashboardMap({ projects, selectedId, onPinClick }: DashboardMapP
                     )}
                     {pin.fallback && (
                       <div style={{ fontSize: 11, color: "#d97706", marginTop: 2 }}>
-                        ⚠ Approximate location ({pin.city}, {pin.state})
+                        ⚠ Approximate location — {pin.accuracyLabel ?? pin.city + ", " + pin.state}
+                      </div>
+                    )}
+                    {!pin.fallback && pin.accuracyLabel && (
+                      <div style={{ fontSize: 11, color: "#16a34a", marginTop: 2 }}>
+                        ✓ {pin.accuracyLabel}
                       </div>
                     )}
                     <a

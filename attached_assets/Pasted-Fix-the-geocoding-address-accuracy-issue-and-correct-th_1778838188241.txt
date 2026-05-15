@@ -1,0 +1,111 @@
+Fix the geocoding/address accuracy issue and correct the solar cost calculation model.
+
+Known problem:
+For the project address “2365 Myers Dr, Santa Rosa, CA 95403”, the map pin is showing downtown Santa Rosa instead of the actual property location. This likely means the app is falling back to city/ZIP center instead of using exact street-level geocoding.
+
+Do these tasks:
+
+1. Fix address geocoding accuracy
+- Update the geocoding logic so it always attempts full street-address geocoding first.
+- Use the full saved address string:
+  street address + city + state + ZIP
+- Example test address:
+  2365 Myers Dr, Santa Rosa, CA 95403
+- Do not geocode only “Santa Rosa CA” or only ZIP code unless the full address fails.
+- Store latitude and longitude on the project after a successful geocode.
+- Show geocode accuracy/source in the project:
+  Exact street address
+  ZIP fallback
+  City fallback
+  Manual coordinates
+- If the geocoder only returns city center, warn the user:
+  “Exact property location could not be verified. Showing approximate city/ZIP location.”
+
+2. Add manual GPS override
+Add fields on the project edit page:
+- latitude
+- longitude
+- “Use manual coordinates” toggle
+If manual coordinates are entered, use those coordinates for the map marker instead of geocoding.
+
+3. Fix dashboard/map marker logic
+- The map should use saved project latitude/longitude first.
+- Only geocode again if coordinates are missing.
+- Never overwrite exact saved coordinates with city fallback coordinates.
+- Add a “Re-geocode Address” button.
+
+4. Improve address validation
+- Make street address, city, state, and ZIP separate fields.
+- Also keep fullAddress.
+- Validate that fullAddress includes street + city + state + ZIP before trying exact geocode.
+- If exact geocode fails, keep project saved but mark locationAccuracy = approximate.
+
+5. Correct cost calculation model
+Fix any wording or formulas that say cost is charged per kWh for equipment/material.
+Solar equipment/material should not be priced per kWh of annual usage.
+
+Use this structure instead:
+
+Solar array equipment cost:
+- based on system size in watts
+- formula: solarArrayWatts × equipmentCostPerWatt
+
+Installed solar cost:
+- based on system size in watts
+- formula: solarArrayWatts × installedCostPerWatt
+
+Battery cost:
+- based on usable/total battery kWh
+- formula: batteryBankKwh × batteryCostPerKwh
+
+Inverter cost:
+- based on inverter size in kW
+- formula: inverterKw × inverterCostPerKw
+
+Mounting cost:
+- based on number of panels or watts
+- formula: panelCount × mountingCostPerPanel
+
+6. Update default cost assumptions
+Add editable admin assumptions:
+- economySolarEquipmentCostPerWatt = 1.25
+- midSolarEquipmentCostPerWatt = 1.75
+- premiumSolarEquipmentCostPerWatt = 2.25
+- economyInstalledCostPerWatt = 2.75
+- midInstalledCostPerWatt = 3.25
+- premiumInstalledCostPerWatt = 4.00
+- batteryCostPerKwh = 450
+- inverterCostPerKw = 300
+- mountingCostPerPanel = 125
+
+7. Update labels throughout the app
+Replace confusing wording:
+- Do not say “cost per kWh” for equipment.
+- Use “cost per watt of solar capacity” for panels/system equipment.
+- Use “cost per kWh of battery storage” only for batteries.
+- Use “utility rate per kWh” only for electric bill/savings/payback.
+
+8. Recalculate cost report
+Results page should show:
+- solar array equipment cost
+- battery cost
+- inverter cost
+- mounting cost
+- estimated DIY total
+- estimated installed total
+- utility savings based on utility rate per kWh
+- payback based on installed total / annual savings
+
+9. Add test cases
+Test these:
+- 2365 Myers Dr, Santa Rosa, CA 95403 should not default to downtown unless exact geocode fails.
+- Projects with exact lat/lng should place marker correctly.
+- Projects with manual coordinates should place marker correctly.
+- Cost labels should clearly distinguish watts vs kWh.
+- No calculation should multiply annual kWh directly by solar equipment cost per watt.
+
+10. Final QA
+Run full app QA after changes.
+Fix all errors.
+Do not break existing project save/edit/report/map functionality.
+Keep fallback geocoding active, but clearly label it approximate.

@@ -19,6 +19,9 @@ export const settingsTable = pgTable("settings", {
   midRangeInstalledPerWatt: real("mid_range_installed_per_watt").notNull().default(3.25),
   premiumDiyPerWatt: real("premium_diy_per_watt").notNull().default(2.25),
   premiumInstalledPerWatt: real("premium_installed_per_watt").notNull().default(4.0),
+  // Component-level cost estimates (used for line-item cost breakdown)
+  inverterCostPerKw: real("inverter_cost_per_kw").notNull().default(300),
+  mountingCostPerPanel: real("mounting_cost_per_panel").notNull().default(125),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 

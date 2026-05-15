@@ -31,6 +31,14 @@ export const projectsTable = pgTable("projects", {
   arrayLat: real("array_lat"),
   arrayLon: real("array_lon"),
   arrayLocationNote: text("array_location_note"),
+  // Saved geocode result for the main property location
+  lat: real("lat"),
+  lon: real("lon"),
+  // 'exact' = street-level geocode, 'zip' = ZIP centroid fallback,
+  // 'city' = city centroid fallback, 'manual' = user-entered coordinates
+  locationAccuracy: text("location_accuracy"),
+  // When true the map uses lat/lon directly without re-geocoding
+  useManualCoords: boolean("use_manual_coords").notNull().default(false),
   calculationResult: jsonb("calculation_result"),
   // Stripe payment fields — null means unpaid, populated after successful Stripe Checkout
   paidAt: timestamp("paid_at", { withTimezone: true }),

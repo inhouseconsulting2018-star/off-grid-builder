@@ -51,4 +51,21 @@ export interface ProjectPatch {
   arrayLon?: number | null;
   /** @nullable */
   arrayLocationNote?: string | null;
+  /**
+   * Geocoded latitude of the property address.
+   * @nullable
+   */
+  lat?: number | null;
+  /**
+   * Geocoded longitude of the property address.
+   * @nullable
+   */
+  lon?: number | null;
+  /**
+   * 'exact' | 'zip' | 'city' | 'manual'
+   * @nullable
+   */
+  locationAccuracy?: string | null;
+  /** When true the map uses lat/lon directly without re-geocoding. */
+  useManualCoords?: boolean;
 }

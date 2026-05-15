@@ -3,7 +3,7 @@ import { useGetSettings, useUpdateSettings, getGetSettingsQueryKey } from "@work
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -28,6 +28,8 @@ const settingsSchema = z.object({
   midRangeInstalledPerWatt: z.coerce.number().min(0.1),
   premiumDiyPerWatt: z.coerce.number().min(0.1),
   premiumInstalledPerWatt: z.coerce.number().min(0.1),
+  inverterCostPerKw: z.coerce.number().min(0),
+  mountingCostPerPanel: z.coerce.number().min(0),
 });
 
 type SettingsFormValues = z.infer<typeof settingsSchema>;
@@ -56,12 +58,18 @@ export default function SettingsPage() {
       midRangeInstalledPerWatt: 3.5,
       premiumDiyPerWatt: 2.5,
       premiumInstalledPerWatt: 4.5,
+      inverterCostPerKw: 300,
+      mountingCostPerPanel: 125,
     }
   });
 
   useEffect(() => {
     if (settings) {
-      form.reset(settings);
+      form.reset({
+        ...settings,
+        inverterCostPerKw: settings.inverterCostPerKw ?? 300,
+        mountingCostPerPanel: settings.mountingCostPerPanel ?? 125,
+      });
     }
   }, [settings, form]);
 
@@ -179,36 +187,61 @@ export default function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Pricing Tiers ($/Watt)</CardTitle>
-                <CardDescription>Used to estimate project costs</CardDescription>
+                <CardDescription>Used to estimate solar array project costs by budget tier</CardDescription>
               </CardHeader>
               <CardContent className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
                 <div className="space-y-4">
                   <h4 className="font-semibold text-sm">Economy</h4>
                   <FormField control={form.control} name="economyDiyPerWatt" render={({ field }) => (
-                    <FormItem><FormLabel>DIY Price</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>DIY ($/W)</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={form.control} name="economyInstalledPerWatt" render={({ field }) => (
-                    <FormItem><FormLabel>Installed Price</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Installed ($/W)</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                 </div>
                 <div className="space-y-4">
                   <h4 className="font-semibold text-sm">Mid-Range</h4>
                   <FormField control={form.control} name="midRangeDiyPerWatt" render={({ field }) => (
-                    <FormItem><FormLabel>DIY Price</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>DIY ($/W)</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={form.control} name="midRangeInstalledPerWatt" render={({ field }) => (
-                    <FormItem><FormLabel>Installed Price</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Installed ($/W)</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                 </div>
                 <div className="space-y-4">
                   <h4 className="font-semibold text-sm">Premium</h4>
                   <FormField control={form.control} name="premiumDiyPerWatt" render={({ field }) => (
-                    <FormItem><FormLabel>DIY Price</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>DIY ($/W)</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={form.control} name="premiumInstalledPerWatt" render={({ field }) => (
-                    <FormItem><FormLabel>Installed Price</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
+                    <FormItem><FormLabel>Installed ($/W)</FormLabel><FormControl><Input type="number" step="0.1" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Component Cost Estimates</CardTitle>
+                <CardDescription>Used to generate per-component cost breakdowns on the results page</CardDescription>
+              </CardHeader>
+              <CardContent className="grid sm:grid-cols-2 gap-4">
+                <FormField control={form.control} name="inverterCostPerKw" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Inverter Cost ($/kW)</FormLabel>
+                    <FormControl><Input type="number" step="10" {...field} /></FormControl>
+                    <FormDescription className="text-xs">Cost per kW of inverter capacity. Multiplied by the inverter size to estimate inverter line item.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="mountingCostPerPanel" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Mounting Cost ($/panel)</FormLabel>
+                    <FormControl><Input type="number" step="5" {...field} /></FormControl>
+                    <FormDescription className="text-xs">Racking and mounting hardware cost per panel. Multiplied by panel count to estimate mounting line item.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )} />
               </CardContent>
             </Card>
 

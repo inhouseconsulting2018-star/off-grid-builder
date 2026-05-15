@@ -62,6 +62,28 @@ export const ListProjectsResponseItem = zod.object({
     .string()
     .nullish()
     .describe("Free-text description of where the array will be installed"),
+  lat: zod
+    .number()
+    .nullish()
+    .describe(
+      "Geocoded latitude of the property address. Null until geocoding runs.",
+    ),
+  lon: zod
+    .number()
+    .nullish()
+    .describe(
+      "Geocoded longitude of the property address. Null until geocoding runs.",
+    ),
+  locationAccuracy: zod
+    .string()
+    .nullish()
+    .describe(
+      "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+    ),
+  useManualCoords: zod
+    .boolean()
+    .optional()
+    .describe("When true the map uses lat\/lon directly without re-geocoding."),
   calculationResult: zod
     .object({
       dailyKwh: zod.number(),
@@ -191,6 +213,18 @@ export const ListProjectsResponseItem = zod.object({
         .optional()
         .describe(
           "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
+        ),
+      inverterCostEstimate: zod
+        .number()
+        .optional()
+        .describe(
+          "Rough inverter equipment cost estimate: inverterSizeKw × inverterCostPerKw from settings",
+        ),
+      mountingCostEstimate: zod
+        .number()
+        .optional()
+        .describe(
+          "Rough mounting\/racking cost estimate: numPanels × mountingCostPerPanel from settings",
         ),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
@@ -320,6 +354,22 @@ export const CreateProjectBody = zod.object({
   arrayLat: zod.number().nullish(),
   arrayLon: zod.number().nullish(),
   arrayLocationNote: zod.string().nullish(),
+  lat: zod
+    .number()
+    .nullish()
+    .describe("Geocoded latitude of the property address."),
+  lon: zod
+    .number()
+    .nullish()
+    .describe("Geocoded longitude of the property address."),
+  locationAccuracy: zod
+    .string()
+    .nullish()
+    .describe("'exact' | 'zip' | 'city' | 'manual'"),
+  useManualCoords: zod
+    .boolean()
+    .optional()
+    .describe("When true the map uses lat\/lon directly without re-geocoding."),
 });
 
 /**
@@ -373,6 +423,28 @@ export const GetProjectResponse = zod.object({
     .string()
     .nullish()
     .describe("Free-text description of where the array will be installed"),
+  lat: zod
+    .number()
+    .nullish()
+    .describe(
+      "Geocoded latitude of the property address. Null until geocoding runs.",
+    ),
+  lon: zod
+    .number()
+    .nullish()
+    .describe(
+      "Geocoded longitude of the property address. Null until geocoding runs.",
+    ),
+  locationAccuracy: zod
+    .string()
+    .nullish()
+    .describe(
+      "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+    ),
+  useManualCoords: zod
+    .boolean()
+    .optional()
+    .describe("When true the map uses lat\/lon directly without re-geocoding."),
   calculationResult: zod
     .object({
       dailyKwh: zod.number(),
@@ -502,6 +574,18 @@ export const GetProjectResponse = zod.object({
         .optional()
         .describe(
           "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
+        ),
+      inverterCostEstimate: zod
+        .number()
+        .optional()
+        .describe(
+          "Rough inverter equipment cost estimate: inverterSizeKw × inverterCostPerKw from settings",
+        ),
+      mountingCostEstimate: zod
+        .number()
+        .optional()
+        .describe(
+          "Rough mounting\/racking cost estimate: numPanels × mountingCostPerPanel from settings",
         ),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
@@ -638,6 +722,22 @@ export const UpdateProjectBody = zod.object({
   arrayLat: zod.number().nullish(),
   arrayLon: zod.number().nullish(),
   arrayLocationNote: zod.string().nullish(),
+  lat: zod
+    .number()
+    .nullish()
+    .describe("Geocoded latitude of the property address."),
+  lon: zod
+    .number()
+    .nullish()
+    .describe("Geocoded longitude of the property address."),
+  locationAccuracy: zod
+    .string()
+    .nullish()
+    .describe("'exact' | 'zip' | 'city' | 'manual'"),
+  useManualCoords: zod
+    .boolean()
+    .optional()
+    .describe("When true the map uses lat\/lon directly without re-geocoding."),
 });
 
 export const UpdateProjectResponse = zod.object({
@@ -684,6 +784,28 @@ export const UpdateProjectResponse = zod.object({
     .string()
     .nullish()
     .describe("Free-text description of where the array will be installed"),
+  lat: zod
+    .number()
+    .nullish()
+    .describe(
+      "Geocoded latitude of the property address. Null until geocoding runs.",
+    ),
+  lon: zod
+    .number()
+    .nullish()
+    .describe(
+      "Geocoded longitude of the property address. Null until geocoding runs.",
+    ),
+  locationAccuracy: zod
+    .string()
+    .nullish()
+    .describe(
+      "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+    ),
+  useManualCoords: zod
+    .boolean()
+    .optional()
+    .describe("When true the map uses lat\/lon directly without re-geocoding."),
   calculationResult: zod
     .object({
       dailyKwh: zod.number(),
@@ -814,6 +936,18 @@ export const UpdateProjectResponse = zod.object({
         .describe(
           "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
         ),
+      inverterCostEstimate: zod
+        .number()
+        .optional()
+        .describe(
+          "Rough inverter equipment cost estimate: inverterSizeKw × inverterCostPerKw from settings",
+        ),
+      mountingCostEstimate: zod
+        .number()
+        .optional()
+        .describe(
+          "Rough mounting\/racking cost estimate: numPanels × mountingCostPerPanel from settings",
+        ),
       estimatedYearlySavings: zod.number(),
       paybackYears: zod.number().nullable(),
       recommendedPanelBrand: zod.string(),
@@ -902,6 +1036,304 @@ export const UpdateProjectResponse = zod.object({
  */
 export const DeleteProjectParams = zod.object({
   id: zod.coerce.number(),
+});
+
+/**
+ * @summary Geocode (or re-geocode) a project address and save lat/lon/accuracy
+ */
+export const RegeocodeProjectParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RegeocodeProjectResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  address: zod.string(),
+  city: zod.string(),
+  state: zod.string(),
+  zip: zod.string(),
+  installationType: zod.enum(["roof", "ground", "pole", "carport"]),
+  systemType: zod.enum(["off-grid", "grid-tied", "hybrid"]),
+  annualKwh: zod.number(),
+  monthlyBill: zod.number(),
+  utilityRatePerKwh: zod.number(),
+  backupHours: zod.number(),
+  customBackupHours: zod.number().nullable(),
+  batteryChemistry: zod
+    .enum(["lifepo4", "agm", "lead-acid", "none"])
+    .optional(),
+  hasGenerator: zod.boolean().optional(),
+  generatorKw: zod.number().nullish(),
+  wantsGenerator: zod.boolean().optional(),
+  shadeLevel: zod.enum(["none", "light", "medium", "heavy"]),
+  roofPitch: zod.string(),
+  roofDirection: zod.string(),
+  availableSqft: zod.number(),
+  snowArea: zod.boolean(),
+  highWindArea: zod.boolean(),
+  budgetTier: zod.enum(["economy", "mid-range", "premium", "custom"]),
+  customBudget: zod.number().nullable(),
+  arrayLat: zod
+    .number()
+    .nullish()
+    .describe(
+      "Latitude of the solar array (if different from property address)",
+    ),
+  arrayLon: zod
+    .number()
+    .nullish()
+    .describe(
+      "Longitude of the solar array (if different from property address)",
+    ),
+  arrayLocationNote: zod
+    .string()
+    .nullish()
+    .describe("Free-text description of where the array will be installed"),
+  lat: zod
+    .number()
+    .nullish()
+    .describe(
+      "Geocoded latitude of the property address. Null until geocoding runs.",
+    ),
+  lon: zod
+    .number()
+    .nullish()
+    .describe(
+      "Geocoded longitude of the property address. Null until geocoding runs.",
+    ),
+  locationAccuracy: zod
+    .string()
+    .nullish()
+    .describe(
+      "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+    ),
+  useManualCoords: zod
+    .boolean()
+    .optional()
+    .describe("When true the map uses lat\/lon directly without re-geocoding."),
+  calculationResult: zod
+    .object({
+      dailyKwh: zod.number(),
+      peakSunHours: zod.number(),
+      arraySizeKw: zod.number(),
+      numPanels: zod.number(),
+      adjustedArraySizeKw: zod.number(),
+      inverterSizeKw: zod.number(),
+      batteryUsableKwh: zod.number(),
+      totalBatteryBankKwh: zod.number(),
+      yearlyProductionKwh: zod.number(),
+      totalSystemLossPct: zod.number(),
+      inverterLossPct: zod.number(),
+      wireLossPct: zod.number(),
+      shadeLossPct: zod.number(),
+      tempLossPct: zod.number(),
+      dirtLossPct: zod.number(),
+      batteryLossPct: zod.number(),
+      diyEquipmentCostLow: zod.number(),
+      diyEquipmentCostHigh: zod.number(),
+      installedCostLow: zod.number(),
+      installedCostHigh: zod.number(),
+      solarArrayDiyCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Solar array only (panels + inverter + racking), DIY equipment cost — low bound",
+        ),
+      solarArrayDiyCostHigh: zod
+        .number()
+        .optional()
+        .describe(
+          "Solar array only (panels + inverter + racking), DIY equipment cost — high bound",
+        ),
+      solarArrayInstalledCostLow: zod
+        .number()
+        .optional()
+        .describe("Solar array only, fully installed cost — low bound"),
+      solarArrayInstalledCostHigh: zod
+        .number()
+        .optional()
+        .describe("Solar array only, fully installed cost — high bound"),
+      batteryDiyCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Battery bank equipment cost only (excludes installation labor) — low bound",
+        ),
+      batteryDiyCostHigh: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment cost only — high bound"),
+      batteryInstalledCostLow: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment + installation labor — low bound"),
+      batteryInstalledCostHigh: zod
+        .number()
+        .optional()
+        .describe("Battery bank equipment + installation labor — high bound"),
+      usedSolarEquipCostLow: zod
+        .number()
+        .optional()
+        .describe(
+          "Used\/refurbished panels + inverter — low estimate (~40% of new)",
+        ),
+      usedSolarEquipCostHigh: zod
+        .number()
+        .optional()
+        .describe(
+          "Used\/refurbished panels + inverter — high estimate (~55% of new)",
+        ),
+      usedBatteryEquipCostLow: zod
+        .number()
+        .nullish()
+        .describe(
+          "Used battery equipment cost — null if lithium (not recommended used)",
+        ),
+      usedBatteryEquipCostHigh: zod
+        .number()
+        .nullish()
+        .describe("Used battery equipment cost high bound — null if lithium"),
+      batteryAutonomyDays: zod
+        .number()
+        .optional()
+        .describe(
+          "Battery autonomy in days (backupHours \/ 24). 0 if no battery.",
+        ),
+      batteryInverterEfficiencyPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Inverter efficiency % used when sizing battery load (e.g. 95)",
+        ),
+      batterySurgeReservePct: zod
+        .number()
+        .optional()
+        .describe(
+          "Motor-start surge headroom added to usable kWh (% of autonomy load)",
+        ),
+      batteryWeatherReservePct: zod
+        .number()
+        .optional()
+        .describe(
+          "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
+        ),
+      batteryEffectiveDodPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Effective depth of discharge used in sizing (80 for LiFePO4, 50 for lead)",
+        ),
+      batteryColdDeratingPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Cold-climate bank upsize % applied for lead chemistry in snow areas (0 if N\/A)",
+        ),
+      batteryRawDailyLoadKwh: zod
+        .number()
+        .optional()
+        .describe(
+          "AC daily load before inverter-efficiency adjustment (kWh\/day)",
+        ),
+      batteryInverterAdjustedLoadKwh: zod
+        .number()
+        .optional()
+        .describe(
+          "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
+        ),
+      inverterCostEstimate: zod
+        .number()
+        .optional()
+        .describe(
+          "Rough inverter equipment cost estimate: inverterSizeKw × inverterCostPerKw from settings",
+        ),
+      mountingCostEstimate: zod
+        .number()
+        .optional()
+        .describe(
+          "Rough mounting\/racking cost estimate: numPanels × mountingCostPerPanel from settings",
+        ),
+      estimatedYearlySavings: zod.number(),
+      paybackYears: zod.number().nullable(),
+      recommendedPanelBrand: zod.string(),
+      recommendedInverterBrand: zod.string(),
+      recommendedBatteryBrand: zod.string(),
+      recommendedMountingBrand: zod.string(),
+      notes: zod.array(zod.string()),
+      pvwattsMonthlyKwh: zod
+        .array(zod.number())
+        .nullish()
+        .describe(
+          "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
+        ),
+      pvwattsSolradMonthly: zod
+        .array(zod.number())
+        .nullish()
+        .describe(
+          "12-element array of monthly average daily solar irradiance (kWh\/m²\/day) from PVWatts.",
+        ),
+      pvwattsAnnualKwh: zod
+        .number()
+        .nullish()
+        .describe(
+          "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
+        ),
+      pvwattsSolradAnnual: zod
+        .number()
+        .nullish()
+        .describe(
+          "Annual average daily solar irradiance (kWh\/m²\/day) = real peak sun hours from PVWatts.",
+        ),
+      pvwattsCapacityFactor: zod
+        .number()
+        .nullish()
+        .describe("System capacity factor (%) from PVWatts."),
+      pvwattsSource: zod
+        .string()
+        .nullish()
+        .describe(
+          "Either 'pvwatts' (real data) or 'fallback' (state estimate). Null for legacy records.",
+        ),
+      misMatchLossPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Panel-to-panel mismatch and manufacturing tolerance loss (%). Typically 2%.",
+        ),
+      squareFeetRequired: zod
+        .number()
+        .optional()
+        .describe(
+          "Total panel footprint required including racking clearance (sqft).",
+        ),
+      offGridDesignFactor: zod
+        .number()
+        .optional()
+        .describe(
+          "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
+        ),
+      batteryTempDeratingPct: zod
+        .number()
+        .optional()
+        .describe(
+          "Extra battery bank capacity added for cold-climate temperature derating (0 if not applied).",
+        ),
+    })
+    .optional(),
+  paidAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Timestamp when the project was unlocked via Stripe payment. Null = unpaid.",
+    ),
+  stripeSessionId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Stripe Checkout Session ID associated with the successful payment.",
+    ),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
 });
 
 /**
@@ -1033,6 +1465,18 @@ export const CalculateProjectResponse = zod.object({
     .optional()
     .describe(
       "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
+    ),
+  inverterCostEstimate: zod
+    .number()
+    .optional()
+    .describe(
+      "Rough inverter equipment cost estimate: inverterSizeKw × inverterCostPerKw from settings",
+    ),
+  mountingCostEstimate: zod
+    .number()
+    .optional()
+    .describe(
+      "Rough mounting\/racking cost estimate: numPanels × mountingCostPerPanel from settings",
     ),
   estimatedYearlySavings: zod.number(),
   paybackYears: zod.number().nullable(),
@@ -1228,6 +1672,30 @@ export const GetProjectsSummaryResponse = zod.object({
         .string()
         .nullish()
         .describe("Free-text description of where the array will be installed"),
+      lat: zod
+        .number()
+        .nullish()
+        .describe(
+          "Geocoded latitude of the property address. Null until geocoding runs.",
+        ),
+      lon: zod
+        .number()
+        .nullish()
+        .describe(
+          "Geocoded longitude of the property address. Null until geocoding runs.",
+        ),
+      locationAccuracy: zod
+        .string()
+        .nullish()
+        .describe(
+          "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+        ),
+      useManualCoords: zod
+        .boolean()
+        .optional()
+        .describe(
+          "When true the map uses lat\/lon directly without re-geocoding.",
+        ),
       calculationResult: zod
         .object({
           dailyKwh: zod.number(),
@@ -1364,6 +1832,18 @@ export const GetProjectsSummaryResponse = zod.object({
             .describe(
               "Daily load the battery must supply after inverter-efficiency adjustment (kWh\/day)",
             ),
+          inverterCostEstimate: zod
+            .number()
+            .optional()
+            .describe(
+              "Rough inverter equipment cost estimate: inverterSizeKw × inverterCostPerKw from settings",
+            ),
+          mountingCostEstimate: zod
+            .number()
+            .optional()
+            .describe(
+              "Rough mounting\/racking cost estimate: numPanels × mountingCostPerPanel from settings",
+            ),
           estimatedYearlySavings: zod.number(),
           paybackYears: zod.number().nullable(),
           recommendedPanelBrand: zod.string(),
@@ -1469,6 +1949,16 @@ export const GetSettingsResponse = zod.object({
   midRangeInstalledPerWatt: zod.number(),
   premiumDiyPerWatt: zod.number(),
   premiumInstalledPerWatt: zod.number(),
+  inverterCostPerKw: zod
+    .number()
+    .describe(
+      "Inverter equipment cost per kW of capacity (used in component cost breakdown)",
+    ),
+  mountingCostPerPanel: zod
+    .number()
+    .describe(
+      "Mounting\/racking hardware cost per panel (used in component cost breakdown)",
+    ),
 });
 
 /**
@@ -1490,6 +1980,14 @@ export const UpdateSettingsBody = zod.object({
   midRangeInstalledPerWatt: zod.number().optional(),
   premiumDiyPerWatt: zod.number().optional(),
   premiumInstalledPerWatt: zod.number().optional(),
+  inverterCostPerKw: zod
+    .number()
+    .optional()
+    .describe("Inverter equipment cost per kW of capacity"),
+  mountingCostPerPanel: zod
+    .number()
+    .optional()
+    .describe("Mounting\/racking hardware cost per panel"),
 });
 
 export const UpdateSettingsResponse = zod.object({
@@ -1509,4 +2007,14 @@ export const UpdateSettingsResponse = zod.object({
   midRangeInstalledPerWatt: zod.number(),
   premiumDiyPerWatt: zod.number(),
   premiumInstalledPerWatt: zod.number(),
+  inverterCostPerKw: zod
+    .number()
+    .describe(
+      "Inverter equipment cost per kW of capacity (used in component cost breakdown)",
+    ),
+  mountingCostPerPanel: zod
+    .number()
+    .describe(
+      "Mounting\/racking hardware cost per panel (used in component cost breakdown)",
+    ),
 });
