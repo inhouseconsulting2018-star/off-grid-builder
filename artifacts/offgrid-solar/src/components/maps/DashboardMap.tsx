@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
+import { geocodeAddress } from "@/services/geocodingService";
 
 const iconUrl = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png";
 const iconRetinaUrl = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png";
@@ -99,20 +100,13 @@ async function geocodeOne(
   if (cached) return cached;
 
   try {
-    const params = new URLSearchParams({ address: p.address, city: p.city, state: p.state, zip: p.zip });
-    const base = (import.meta.env.BASE_URL as string) ?? "/";
-    const res = await fetch(`${base}api/geocode/coords?${params.toString()}`);
-    if (res.ok) {
-      const data = await res.json() as { lat?: number; lon?: number; accuracy?: string };
-      if (typeof data.lat === "number" && typeof data.lon === "number") {
-        const accuracyLabel = data.accuracy === "exact" ? "Exact street address"
-          : data.accuracy === "zip" ? "ZIP code approximation"
-          : "City/state approximation";
-        const result = { lat: data.lat, lng: data.lon, fallback: data.accuracy !== "exact", accuracyLabel };
-        writeCache(key, result);
-        return result;
-      }
-    }
+    const data = await geocodeAddress(p);
+    const accuracyLabel = data.accuracy === "exact" ? "Exact street address"
+      : data.accuracy === "zip" ? "ZIP code approximation"
+      : "City/state approximation";
+    const result = { lat: data.lat, lng: data.lon, fallback: data.accuracy !== "exact", accuracyLabel };
+    writeCache(key, result);
+    return result;
   } catch { /* fall through */ }
 
   const center = STATE_CENTERS[p.state?.toUpperCase()];

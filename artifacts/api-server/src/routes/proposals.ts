@@ -9,7 +9,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { fetchPVWatts } from "../lib/pvwatts";
+import { fetchPVWatts } from "../services/solar/pvwattsService";
 import {
   runProposalCalc,
   verifyTestScenario,
@@ -20,8 +20,8 @@ import {
   EFFICIENCY_FACTOR,
   PANEL_CATALOG,
   BATTERY_CATALOG,
-} from "../lib/proposal-calculator";
-import { logger } from "../lib/logger";
+} from "../services/proposals/proposalCalculator";
+import { logger } from "../utils/logger";
 
 const router: IRouter = Router();
 

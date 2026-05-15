@@ -12,9 +12,9 @@ import {
 import { useEffect, useRef, Fragment, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { ProjectMap } from "@/components/ProjectMap";
-import { generateBom } from "@/lib/bom";
-import { generateDesignNotes } from "@/lib/design-notes";
+import { ProjectMap } from "@/components/maps/ProjectMap";
+import { generateBom } from "@/utils/bom";
+import { generateDesignNotes } from "@/utils/design-notes";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine,
@@ -147,10 +147,11 @@ export default function Results() {
   };
 
   const hasPVWatts = pvCalc.pvwattsSource === "pvwatts" && Array.isArray(pvCalc.pvwattsMonthlyKwh);
+  const hasMonthlyProduction = Array.isArray(pvCalc.pvwattsMonthlyKwh);
 
   const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-  const monthlyChartData = hasPVWatts
+  const monthlyChartData = hasMonthlyProduction
     ? (pvCalc.pvwattsMonthlyKwh as number[]).map((kwh, i) => ({
         month: MONTH_NAMES[i],
         kwh,
@@ -381,13 +382,17 @@ export default function Results() {
           </div>
         </section>
 
-        {/* ── Monthly Production Chart (PVWatts) ────────────────────── */}
+        {/* ── Monthly Production Chart ──────────────────────────────── */}
         {monthlyChartData && (
           <section>
             <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
               <Sun className="h-4 w-4 text-primary" /> Monthly Solar Production
-              <span className="ml-1 text-xs font-normal normal-case tracking-normal text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                NREL PVWatts v8
+              <span className={`ml-1 text-xs font-normal normal-case tracking-normal border px-2 py-0.5 rounded-full ${
+                hasPVWatts
+                  ? "text-green-700 bg-green-50 border-green-200"
+                  : "text-amber-700 bg-amber-50 border-amber-200"
+              }`}>
+                {hasPVWatts ? "NREL PVWatts v8" : "State seasonal estimate"}
               </span>
             </h2>
             <Card>
@@ -403,7 +408,9 @@ export default function Results() {
                     <div className="text-xs text-muted-foreground mt-0.5">Peak Sun Hrs/day</div>
                   </div>
                   <div className="rounded-md bg-muted/50 border p-3 text-center">
-                    <div className="text-xl font-black">{pvCalc.pvwattsCapacityFactor?.toFixed(1)}%</div>
+                    <div className="text-xl font-black">
+                      {pvCalc.pvwattsCapacityFactor != null ? `${pvCalc.pvwattsCapacityFactor.toFixed(1)}%` : "Est."}
+                    </div>
                     <div className="text-xs text-muted-foreground mt-0.5">Capacity Factor</div>
                   </div>
                 </div>
@@ -640,12 +647,9 @@ export default function Results() {
                           {(weatherRes ?? 0) > 0 && (
                             <div className="flex items-start justify-between gap-2 py-2">
                               <div>
-                                <span className="font-semibold text-foreground">Weather reserve</span>
+                                <span className="font-semibold text-foreground">Energy reserve</span>
                                 <span className="ml-2 text-muted-foreground">
-                                  +{weatherRes}% cloudy-day buffer
-                                  {chemistry === "agm" || chemistry === "lead-acid"
-                                    ? " (AGM/lead-acid gets extra reserve since shallower DoD leaves less headroom)"
-                                    : " (ensures battery doesn't hit cutoff during consecutive overcast days)"}
+                                  +{weatherRes}% margin for inverter idle draw, battery aging, forecast misses, and small load growth
                                 </span>
                               </div>
                               <div className="text-right shrink-0 font-mono font-semibold">

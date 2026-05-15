@@ -14,9 +14,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCreateProject, useCalculateProject } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+import { geocodeAddress } from "@/services/geocodingService";
 import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, CheckCircle2 } from "lucide-react";
-
-const BASE_URL = (import.meta.env.BASE_URL as string) ?? "/";
 
 const wizardSchema = z.object({
   name: z.string().min(1, "Project name is required"),
@@ -125,19 +124,15 @@ export default function Wizard() {
       // If user entered a separate array address, geocode it now
       if (data.separateArrayAddress && data.arrayAddress && data.arrayCity && data.arrayState) {
         try {
-          const params = new URLSearchParams({
+          const coords = await geocodeAddress({
             address: data.arrayAddress,
             city: data.arrayCity,
             state: data.arrayState,
             zip: data.arrayZip ?? "",
           });
-          const res = await fetch(`${BASE_URL}api/geocode/coords?${params}`);
-          if (res.ok) {
-            const coords = await res.json() as { lat?: number; lon?: number };
-            if (typeof coords.lat === "number" && typeof coords.lon === "number") {
-              arrayLat = coords.lat;
-              arrayLon = coords.lon;
-            }
+          if (typeof coords.lat === "number" && typeof coords.lon === "number") {
+            arrayLat = coords.lat;
+            arrayLon = coords.lon;
           }
         } catch { /* ignore geocode errors — PVWatts will fall back to property address */ }
       }

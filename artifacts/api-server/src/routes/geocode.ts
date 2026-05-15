@@ -19,8 +19,8 @@
  */
 
 import { Router, type IRouter } from "express";
-import { logger } from "../lib/logger";
-import { nominatimSearch, geocodeAddress } from "../lib/geocode";
+import { nominatimSearch, geocodeAddress } from "../services/geocoding/geocodingService";
+import { logger } from "../utils/logger";
 
 const router: IRouter = Router();
 

@@ -1,4 +1,5 @@
 import type { Settings } from "@workspace/db";
+import { fetchPVWatts } from "./pvwattsService";
 
 // ─── State peak sun hours (annual average, optimally-tilted surface) ──────────
 // Source: NREL PVWatts state-level averages. PVWatts overrides these at runtime.
@@ -13,6 +14,10 @@ const STATE_PEAK_SUN_HOURS: Record<string, number> = {
   WV: 4.5,
 };
 const DEFAULT_PEAK_SUN_HOURS = 4.7;
+const MONTHLY_PRODUCTION_WEIGHTS = [
+  0.055, 0.065, 0.085, 0.095, 0.105, 0.11,
+  0.11, 0.105, 0.09, 0.075, 0.055, 0.05,
+];
 
 // ─── Engineering constants ────────────────────────────────────────────────────
 
@@ -31,12 +36,16 @@ const MISMATCH_LOSS_PCT = 2.0;
 const SQFT_PER_PANEL = 23;
 
 /**
- * Off-grid array design margin.
- * Off-grid must work during the worst winter month. Winter PSH is typically
- * 60–80% of the annual average. Sizing 15% above the annual-average-derived
- * array covers this production deficit and maintains battery float in winter.
+ * Off-grid winter design factor.
+ *
+ * Annual average peak-sun-hours are fine for grid-tied annual bill offset, but
+ * off-grid systems must survive the weak month, not the average month. In many
+ * US climates the winter design month has roughly 55–70% of annual-average sun.
+ * Snow-country sites use the low end. This is intentionally conservative but
+ * still suitable for preliminary residential sizing.
  */
-const OFF_GRID_DESIGN_FACTOR = 1.15;
+const OFF_GRID_WINTER_PSH_FACTOR = 0.65;
+const OFF_GRID_SNOW_WINTER_PSH_FACTOR = 0.55;
 
 /**
  * Hybrid array design margin.
@@ -46,22 +55,22 @@ const OFF_GRID_DESIGN_FACTOR = 1.15;
 const HYBRID_DESIGN_FACTOR = 1.08;
 
 /**
- * Motor-start surge reserve for off-grid and hybrid battery banks.
+ * Motor-start surge reserve for off-grid and hybrid inverter power.
  * AC motors (well pumps, compressors, refrigerators) draw 2–6× nameplate
- * current for 50–300 ms on startup. Adding 10% to usable kWh ensures the
- * battery doesn't hit the low-voltage cutoff during rapid multi-motor starts.
+ * current for 50–300 ms on startup. Surge is a power requirement, not an
+ * energy requirement, so it belongs in inverter sizing rather than kWh storage.
  */
-const SURGE_RESERVE_PCT = 10;
+const INVERTER_SURGE_POWER_RESERVE = 1.25;
 
 /**
- * Chemistry-specific weather reserve for off-grid systems.
- * LiFePO4 can be discharged to 20% SOC safely, so a 20% weather buffer is
- * enough. AGM / lead-acid hit their cycle-life limit at 50% DoD, so they
- * already have less headroom and need a 25% weather buffer to ride through
- * consecutive cloudy days without over-discharging.
+ * Battery energy reserve.
+ *
+ * The requested backupHours/customBackupHours already represent autonomy
+ * duration. Add only a modest engineering margin for inverter idle draw,
+ * forecast misses, and small load growth. Avoid adding extra "cloudy day"
+ * buffers on top of user-selected autonomy because that double-counts storage.
  */
-const OFFGRID_WEATHER_RESERVE_LIFEPO4 = 20; // %
-const OFFGRID_WEATHER_RESERVE_LEAD    = 25; // %
+const BATTERY_ENERGY_RESERVE_PCT = 10;
 
 /**
  * Cold-climate lead-acid / AGM temperature derating.
@@ -86,9 +95,28 @@ function nextStandardInverterKw(kw: number): number {
   return found ?? Math.ceil(kw / 5) * 5;
 }
 
+function clampLossPct(lossPct: number): number {
+  return Math.min(Math.max(lossPct, 0), 95);
+}
+
+function toMultiplier(lossPct: number): number {
+  return 1 - clampLossPct(lossPct) / 100;
+}
+
+function batteryRoundTripLossPct(chemistry?: string | null): number {
+  const normalized = chemistry?.toLowerCase();
+  if (normalized === "agm") return 18;
+  if (normalized === "lead-acid") return 20;
+  if (normalized === "none") return 0;
+  // Modern LiFePO4 systems commonly land around 90-95% round-trip efficiency.
+  return 8;
+}
+
 // ─── Project data interface ───────────────────────────────────────────────────
 
 export interface ProjectData {
+  address?: string;
+  city?: string;
   annualKwh: number;
   systemType: string;
   shadeLevel: string;
@@ -104,8 +132,15 @@ export interface ProjectData {
   budgetTier: string;
   utilityRatePerKwh: number;
   state: string;
+  zip?: string;
   installationType: string;
+  roofPitch?: string;
+  roofDirection?: string;
+  arrayLat?: number | null;
+  arrayLon?: number | null;
 }
+
+export type CalculationResult = ReturnType<typeof runCalculations>;
 
 // ─── Main calculation function ────────────────────────────────────────────────
 
@@ -137,8 +172,21 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     project.backupHours > 0 ||
     (project.backupHours === -1 && (project.customBackupHours ?? 0) > 0);
 
-  // Battery round-trip loss only applies when energy flows through the battery
-  const batteryLossPct = hasBattery ? settings.batteryRoundTripLossPct : 0;
+  // Battery round-trip loss only affects energy intentionally cycled through storage.
+  // Off-grid loads normally flow through the battery/inverter path, while hybrid
+  // systems usually cycle only a minority of annual production. Grid-tied systems
+  // without batteries have no storage throughput loss.
+  const chemistryBatteryLossPct = Math.max(
+    settings.batteryRoundTripLossPct,
+    batteryRoundTripLossPct(project.batteryChemistry),
+  );
+  const batteryThroughputFraction =
+    hasBattery && project.systemType === "off-grid"
+      ? 1
+      : hasBattery && project.systemType === "hybrid"
+      ? 0.25
+      : 0;
+  const batteryLossPct = chemistryBatteryLossPct * batteryThroughputFraction;
 
   // Chemistry-specific depth of discharge (DoD %)
   // LiFePO4 tolerates 80% DoD routinely; lead-based chemistries degrade faster
@@ -154,66 +202,81 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     : settings.batteryDod;
 
   // ── System loss model ─────────────────────────────────────────────────────
-  // Losses are additive for design purposes (multiplicative chain differs by
-  // <2% at typical loss levels, acceptable for sizing estimates).
+  // PV production losses are separated from battery storage losses. That avoids
+  // penalizing grid-tied or lightly-cycling hybrid systems as if every annual kWh
+  // passed through a battery.
   //
-  // DC-side losses (before inverter):
-  //   shade, temperature, soiling, panel mismatch
-  // AC-side losses (after inverter):
-  //   inverter conversion, wiring resistance
-  // Storage losses (when energy cycles through battery):
-  //   battery round-trip efficiency
-  const totalSystemLossPct =
+  // PV AC production formula:
+  //   annualKwh = arrayDcKw × designPsh × 365 × pvLossMultiplier × storageMultiplier
+  //
+  // PV loss terms are additive for preliminary design. For typical residential
+  // values the difference from a full multiplicative chain is small compared with
+  // weather, usage, and site-survey uncertainty.
+  const pvProductionLossPct =
     settings.inverterLossPct +  // DC→AC conversion, typically 4–6%
     settings.wireLossPct +       // Conductor resistance, typically 2–3%
     shadeLossPct +               // Obstruction shading
     settings.tempLossPct +       // Temperature coefficient (hot panels produce less)
     settings.dirtLossPct +       // Soiling — dust, pollen, bird droppings
-    MISMATCH_LOSS_PCT +          // String mismatch and manufacturing tolerance
-    batteryLossPct;              // Battery charge/discharge round-trip
+    MISMATCH_LOSS_PCT;           // String mismatch and manufacturing tolerance
 
-  const lossMultiplier = 1 - totalSystemLossPct / 100;
+  const totalSystemLossPct = pvProductionLossPct + batteryLossPct;
+  const pvLossMultiplier = toMultiplier(pvProductionLossPct);
+  const storageLossMultiplier = toMultiplier(batteryLossPct);
+  const annualEnergyLossMultiplier = pvLossMultiplier * storageLossMultiplier;
 
   // ── Daily demand ────────────────────────────────────────────────────────
   const dailyKwh = project.annualKwh / 365;
 
   // ── Array sizing ─────────────────────────────────────────────────────────
-  // Gross array: DC kW required to deliver daily demand at 100% efficiency
-  const arraySizeKw = dailyKwh / peakSunHours;
+  // Grid-tied/hybrid annual bill offset uses annual-average PSH.
+  // Off-grid uses winter design PSH because it has no utility to cover the weak
+  // month. This usually produces a much larger and more realistic off-grid array.
+  const winterPshFactor =
+    project.snowArea ? OFF_GRID_SNOW_WINTER_PSH_FACTOR : OFF_GRID_WINTER_PSH_FACTOR;
+  const designPeakSunHours =
+    project.systemType === "off-grid"
+      ? Math.max(2.0, peakSunHours * winterPshFactor)
+      : peakSunHours;
+
+  // Gross array: DC kW required before losses at the design PSH.
+  const arraySizeKw = dailyKwh / designPeakSunHours;
 
   // Design factor:
-  //   Off-grid — size 15% larger to handle winter production deficit and
-  //               maintain battery float without a grid backup.
-  //   Hybrid   — size 8% larger for resiliency and self-consumption.
-  //   Grid-tied — no extra margin; grid covers shortfalls.
-  const offGridDesignFactor =
-    project.systemType === "off-grid"
-      ? OFF_GRID_DESIGN_FACTOR
-      : project.systemType === "hybrid"
+  //   Off-grid  — winter PSH already handles seasonal energy shortfall.
+  //   Hybrid    — modest oversize for self-consumption and resilience.
+  //   Grid-tied — no intentional oversize beyond rounding to whole panels.
+  const designFactor =
+    project.systemType === "hybrid"
       ? HYBRID_DESIGN_FACTOR
       : 1.0;
 
-  // Adjusted array: oversized to compensate for losses and design margin
-  const adjustedArraySizeKw = (arraySizeKw / lossMultiplier) * offGridDesignFactor;
+  // Adjusted array: oversized to compensate for production and storage losses.
+  const adjustedArraySizeKw =
+    (arraySizeKw / annualEnergyLossMultiplier) * designFactor;
 
   // ── Panel count and footprint ────────────────────────────────────────────
   const numPanels = Math.ceil((adjustedArraySizeKw * 1000) / panelW);
   const squareFeetRequired = numPanels * SQFT_PER_PANEL;
 
   // ── Inverter sizing ───────────────────────────────────────────────────────
-  // Grid-tied: inverter sized 1:1 to DC array (DC:AC ≈ 1.05).
-  //   String inverters match the array closely; microinverters track each panel.
-  //   A slight 5% oversize allows real-world DC clipping headroom.
+  // Grid-tied: AC inverter can be smaller than DC array. Residential DC:AC
+  // ratios of ~1.15–1.30 are common and reduce cost with limited annual clipping.
   //
-  // Off-grid / hybrid: sized for peak AC surge loads, not array output.
-  //   Must handle motor starts (2–6× nameplate), water pumps, compressors.
-  //   Rule of thumb: 1.25× adjusted array size, minimum 3.0 kW.
-  //   Result is rounded UP to the next standard unit stocked by distributors.
+  // Off-grid/hybrid: inverter is sized from estimated AC load power, not array
+  // size. Without a load schedule, estimate peak continuous load from average
+  // daily energy, then add motor-start reserve for pumps/compressors/fridges.
   let targetInverterKw: number;
   if (project.systemType === "grid-tied") {
-    targetInverterKw = adjustedArraySizeKw * 1.05;
+    targetInverterKw = Math.max(adjustedArraySizeKw / 1.2, 2.5);
   } else {
-    targetInverterKw = Math.max(adjustedArraySizeKw * 1.25, 3.0);
+    const averageLoadKw = dailyKwh / 24;
+    const peakLoadFactor = project.systemType === "off-grid" ? 4.5 : 3.5;
+    const minimumInverterKw = project.systemType === "off-grid" ? 5.0 : 3.8;
+    targetInverterKw = Math.max(
+      averageLoadKw * peakLoadFactor * INVERTER_SURGE_POWER_RESERVE,
+      minimumInverterKw,
+    );
   }
   const inverterSizeKw = nextStandardInverterKw(targetInverterKw);
 
@@ -234,11 +297,10 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     project.batteryChemistry === "lead-acid" ||
     project.batteryChemistry === "agm";
 
-  // ── Step 1: Inverter-adjusted daily load ─────────────────────────────────
-  // Battery DC power flows through the inverter before it reaches AC loads.
-  // If inverter efficiency is 95%, the battery must supply 1/0.95 = 5.3% more
-  // than the AC daily load. We use the inverter loss from system settings.
-  // Grid-tied-only (no battery) systems skip this — losses already in lossMultiplier.
+  // ── Step 1: Inverter-adjusted backup load ────────────────────────────────
+  // Battery nameplate capacity is DC-side storage, while home loads are AC.
+  // Required DC energy = AC load ÷ inverter efficiency. Battery round-trip loss
+  // is handled in array energy sizing above, not in storage nameplate sizing.
   const inverterEfficiencyPct = hasBattery
     ? Math.max(50, 100 - settings.inverterLossPct)
     : 100;
@@ -253,39 +315,13 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     ? inverterAdjustedDailyLoadKwh * batteryAutonomyDays
     : 0;
 
-  // ── Step 3: Startup surge reserve ────────────────────────────────────────
-  // AC motors (well pumps, HVAC compressors, refrigerators) draw 2–6× rated
-  // current for 50–300 ms on startup. A 10% surge reserve ensures the battery
-  // doesn't trip the low-voltage cutoff when multiple motors start together.
-  // Grid-tied systems can absorb surge from the grid; apply only to off-grid/hybrid.
-  const surgeReservePct =
-    hasBattery &&
-    (project.systemType === "off-grid" || project.systemType === "hybrid")
-      ? SURGE_RESERVE_PCT
-      : 0;
-  const afterSurgeKwh = rawAutonomyKwh * (1 + surgeReservePct / 100);
-
-  // ── Step 4: Weather reserve ───────────────────────────────────────────────
-  // Accounts for consecutive cloudy days when the array cannot fully recharge.
-  // Sized by chemistry:
-  //   LiFePO4 off-grid  — 20% (safe to discharge to 20% SOC; more headroom)
-  //   AGM/Lead off-grid  — 25% (shallower DoD → less buffer before cell damage)
-  //   Hybrid             — 10% (grid covers extended cloudy periods)
-  //   Grid-tied          —  5% (grid is primary backup)
-  let weatherReservePct: number;
-  if (!hasBattery) {
-    weatherReservePct = 0;
-  } else if (project.systemType === "off-grid") {
-    weatherReservePct = isLeadChemistry
-      ? OFFGRID_WEATHER_RESERVE_LEAD
-      : OFFGRID_WEATHER_RESERVE_LIFEPO4;
-  } else if (project.systemType === "hybrid") {
-    weatherReservePct = 10;
-  } else {
-    weatherReservePct = 5;
-  }
+  // ── Step 3: Energy reserve ───────────────────────────────────────────────
+  // Adds a modest margin for inverter idle draw, battery aging, and small load
+  // changes. Surge is not included here because surge is a power event handled
+  // by inverter sizing.
+  const energyReservePct = hasBattery ? BATTERY_ENERGY_RESERVE_PCT : 0;
   const batteryUsableKwh = hasBattery
-    ? afterSurgeKwh * (1 + weatherReservePct / 100)
+    ? rawAutonomyKwh * (1 + energyReservePct / 100)
     : 0;
 
   // ── Step 5: Total bank from depth of discharge ───────────────────────────
@@ -306,18 +342,21 @@ export function runCalculations(project: ProjectData, settings: Settings) {
 
   // ── Annual production estimate (state-based fallback) ───────────────────
   // PVWatts replaces this in the route handler with real TMY-simulated data.
-  // Math: adjustedArraySizeKw × peakSunHours × 365 × lossMultiplier
-  //     = (arraySizeKw / lossMultiplier × designFactor) × PSH × 365 × lossMultiplier
-  //     = arraySizeKw × PSH × 365 × designFactor
-  //     = dailyKwh × 365 × designFactor = annualKwh × designFactor
-  const yearlyProductionKwh = adjustedArraySizeKw * peakSunHours * 365 * lossMultiplier;
+  // Math:
+  //   adjustedArraySizeKw × annualAveragePSH × 365 × annualEnergyLossMultiplier
+  //
+  // Off-grid systems may produce more than annual load in sunny months because
+  // they are sized from winter PSH. Payback uses bill-offset savings only.
+  const yearlyProductionKwh =
+    adjustedArraySizeKw * peakSunHours * 365 * annualEnergyLossMultiplier;
 
   // ── Financial estimates ───────────────────────────────────────────────────
   const utilityRate =
     project.utilityRatePerKwh > 0
       ? project.utilityRatePerKwh
       : settings.defaultUtilityRate;
-  const estimatedYearlySavings = yearlyProductionKwh * utilityRate;
+  const billOffsetKwh = Math.min(yearlyProductionKwh, project.annualKwh);
+  const estimatedYearlySavings = billOffsetKwh * utilityRate;
 
   const systemWatts = adjustedArraySizeKw * 1000;
 
@@ -571,13 +610,14 @@ export function runCalculations(project: ProjectData, settings: Settings) {
   // Off-grid design margin note
   if (project.systemType === "off-grid") {
     notes.push(
-      `Off-grid design margin of ${((offGridDesignFactor - 1) * 100).toFixed(0)}% applied to array size to compensate for reduced winter production (shorter days, lower sun angle). This helps maintain battery charge through winter months.`
+      `Off-grid array sized from winter design sun (${designPeakSunHours.toFixed(1)} PSH, ${Math.round(winterPshFactor * 100)}% of annual average) rather than annual-average sun. This is more realistic for year-round standalone operation.`
     );
   }
 
   return {
     dailyKwh: round2(dailyKwh),
     peakSunHours: round2(peakSunHours),
+    designPeakSunHours: round2(designPeakSunHours),
     arraySizeKw: round2(arraySizeKw),
     numPanels,
     adjustedArraySizeKw: round2(adjustedArraySizeKw),
@@ -586,6 +626,7 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     totalBatteryBankKwh: round2(totalBatteryBankKwh),
     yearlyProductionKwh: round2(yearlyProductionKwh),
     totalSystemLossPct: round2(totalSystemLossPct),
+    pvProductionLossPct: round2(pvProductionLossPct),
     inverterLossPct: settings.inverterLossPct,
     wireLossPct: settings.wireLossPct,
     shadeLossPct,
@@ -620,13 +661,15 @@ export function runCalculations(project: ProjectData, settings: Settings) {
       : "No battery selected",
     recommendedMountingBrand: mountingBrands[project.installationType] ?? "IronRidge",
     squareFeetRequired,
-    offGridDesignFactor: round2(offGridDesignFactor),
+    offGridDesignFactor: round2(designFactor),
+    winterPshFactor: project.systemType === "off-grid" ? round2(winterPshFactor) : null,
     batteryTempDeratingPct,
     // ── Battery sizing transparency fields ────────────────────────────────
     batteryAutonomyDays: round2(batteryAutonomyDays),
     batteryInverterEfficiencyPct: round2(inverterEfficiencyPct),
-    batterySurgeReservePct: surgeReservePct,
-    batteryWeatherReservePct: weatherReservePct,
+    batterySurgeReservePct: 0,
+    batteryWeatherReservePct: energyReservePct,
+    batteryEnergyReservePct: energyReservePct,
     batteryEffectiveDodPct: effectiveDod,
     batteryColdDeratingPct: batteryTempDeratingPct,
     batteryRawDailyLoadKwh: round2(rawDailyLoadKwh),
@@ -639,4 +682,91 @@ export function runCalculations(project: ProjectData, settings: Settings) {
 
 function round2(n: number) {
   return Math.round(n * 100) / 100;
+}
+
+function pvWattsLosses(calcResult: CalculationResult): number {
+  // PVWatts already models cell temperature from weather data and has its own
+  // inverter model, so pass site/BOS losses only.
+  return (
+    calcResult.shadeLossPct +
+    calcResult.wireLossPct +
+    calcResult.dirtLossPct +
+    (calcResult.misMatchLossPct ?? MISMATCH_LOSS_PCT)
+  );
+}
+
+function withFallbackPvwattsFields(calcResult: CalculationResult) {
+  const monthly = MONTHLY_PRODUCTION_WEIGHTS.map((weight) =>
+    Math.round(calcResult.yearlyProductionKwh * weight),
+  );
+  const monthlyTotal = monthly.reduce((sum, value) => sum + value, 0);
+  if (monthly.length === 12 && monthlyTotal !== calcResult.yearlyProductionKwh) {
+    monthly[11] += Math.round(calcResult.yearlyProductionKwh - monthlyTotal);
+  }
+
+  return {
+    ...calcResult,
+    pvwattsMonthlyKwh: monthly,
+    pvwattsSolradMonthly: null,
+    pvwattsAnnualKwh: calcResult.yearlyProductionKwh,
+    pvwattsSolradAnnual: calcResult.peakSunHours,
+    pvwattsCapacityFactor: null,
+    pvwattsSource: "fallback" as const,
+  };
+}
+
+function withPvwattsResult(
+  calcResult: CalculationResult,
+  project: ProjectData,
+  settings: Settings,
+  pvwatts: NonNullable<Awaited<ReturnType<typeof fetchPVWatts>>>,
+) {
+  const utilityRate =
+    project.utilityRatePerKwh > 0 ? project.utilityRatePerKwh : settings.defaultUtilityRate;
+  const estimatedYearlySavings =
+    round2(Math.min(pvwatts.acAnnual, project.annualKwh) * utilityRate);
+  const averageInstalledCost =
+    (calcResult.installedCostLow + calcResult.installedCostHigh) / 2;
+  const paybackYears =
+    project.systemType !== "off-grid" && estimatedYearlySavings > 0
+      ? round2(averageInstalledCost / estimatedYearlySavings)
+      : null;
+
+  return {
+    ...calcResult,
+    yearlyProductionKwh: pvwatts.acAnnual,
+    peakSunHours: pvwatts.solradAnnual,
+    estimatedYearlySavings,
+    paybackYears,
+    pvwattsMonthlyKwh: pvwatts.acMonthly,
+    pvwattsSolradMonthly: pvwatts.solradMonthly,
+    pvwattsAnnualKwh: pvwatts.acAnnual,
+    pvwattsSolradAnnual: pvwatts.solradAnnual,
+    pvwattsCapacityFactor: pvwatts.capacityFactor,
+    pvwattsSource: pvwatts.source,
+  };
+}
+
+export async function runCalculationsWithPVWatts(
+  project: ProjectData,
+  settings: Settings,
+) {
+  const calcResult = runCalculations(project, settings);
+  const pvwatts = await fetchPVWatts({
+    systemCapacityKw: calcResult.adjustedArraySizeKw,
+    losses: pvWattsLosses(calcResult),
+    installationType: project.installationType,
+    roofPitch: project.roofPitch ?? "20",
+    roofDirection: project.roofDirection ?? "South",
+    address: project.address ?? "",
+    city: project.city ?? "",
+    state: project.state,
+    zip: project.zip ?? "",
+    arrayLat: project.arrayLat,
+    arrayLon: project.arrayLon,
+  });
+
+  return pvwatts
+    ? withPvwattsResult(calcResult, project, settings, pvwatts)
+    : withFallbackPvwattsFields(calcResult);
 }

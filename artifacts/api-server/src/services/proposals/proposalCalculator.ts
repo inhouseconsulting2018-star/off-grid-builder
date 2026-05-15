@@ -7,18 +7,19 @@
  * for preliminary estimates and should be refined during final system design.
  *
  * Formulas:
- *   Required Size (kW) = Annual kWh ÷ (PSH × 365 × efficiency)
+ *   Required Size (kW) = Annual kWh ÷ (PSH × 365 × AC derate)
  *   Panel Count        = ceil(Required kW × 1000 ÷ panel wattage)
  *   Final Size (kW)    = Panel Count × panel wattage ÷ 1000
- *   Annual Production  = Final Size × PSH × 365 × efficiency
- *   Battery Total (kWh) = Target usable kWh ÷ (DoD% ÷ 100)
+ *   Annual Production  = Final Size × PSH × 365 × AC derate
+ *   Battery Usable     = max(10 kWh, 50% of average daily use)
+ *   Battery Total      = Usable kWh ÷ (DoD% ÷ 100)
  */
 
 // ─── Core constants ───────────────────────────────────────────────────────────
 
-export const EFFICIENCY_FACTOR = 0.78;     // system derate: inverter + wiring + temp losses
+export const EFFICIENCY_FACTOR = 0.86;     // AC derate: PVWatts default-style 14% total losses
 export const DAYS_PER_YEAR = 365;
-export const DEFAULT_PEAK_SUN_HOURS = 5.5; // California / national fallback
+export const DEFAULT_PEAK_SUN_HOURS = 4.7; // national fallback when state is unknown
 
 // State-level peak sun hour estimates (annual average, optimally-tilted surface)
 // Source: NREL PVWatts state averages. Overridden at runtime by live PVWatts data.
@@ -245,8 +246,13 @@ export const DEFAULT_BATTERY_TYPE = "lifepo4";
 // ─── Core formula functions ────────────────────────────────────────────────────
 
 /**
- * Required system size (kW) before rounding to whole panels.
- * Formula: annualKwh ÷ (PSH × 365 × efficiency)
+ * Required DC array size (kW) before rounding to whole panels.
+ *
+ * Formula:
+ *   requiredDcKw = annualLoadKwh ÷ (peakSunHours × 365 × acDerate)
+ *
+ * acDerate defaults to 0.86, matching a common residential PVWatts-style loss
+ * stack near 14% total losses (inverter, wiring, soiling, mismatch, temperature).
  */
 export function calcRequiredSystemKw(
   annualKwh: number,
@@ -274,8 +280,12 @@ export function calcFinalSystemKw(panelCount: number, panelW: number): number {
 
 /**
  * Estimated annual AC production (kWh/yr).
- * For bifacial panels, bifacial gain increases effective production.
- * Formula: finalKw × PSH × 365 × efficiency × (1 + bifacialGainPct/100)
+ *
+ * Formula:
+ *   annualAcKwh = finalDcKw × peakSunHours × 365 × acDerate × bifacialMultiplier
+ *
+ * Bifacial gain is a planning estimate and should be validated against mounting
+ * height, ground reflectivity, and rear-side shading before final design.
  */
 export function calcAnnualProduction(
   finalKw: number,
@@ -297,30 +307,30 @@ export interface BatteryResult extends BatterySpec {
 }
 
 /**
- * Battery recommendation.
+ * Battery recommendation for the quick proposal.
  *
- * Usable capacity target is determined by annual usage:
- *   ≥ 12,000 kWh/yr  →  20 kWh usable
- *   < 12,000 kWh/yr  →  10 kWh usable
+ * The quick proposal has no detailed backup-load schedule, so it assumes a
+ * typical residential backup panel serving essential loads at roughly 50% of
+ * the home's average daily energy. A 10 kWh minimum keeps the recommendation in
+ * the range of a real single-home battery product instead of suggesting tiny
+ * banks that would not carry normal overnight loads.
  *
- * Total rated capacity = usable ÷ (DoD% ÷ 100)
- *   → LiFePO4 (80% DoD): 20 kWh usable → 25.0 kWh total
- *   → AGM (50% DoD):     20 kWh usable → 40.0 kWh total
- *   → Gel (60% DoD):     20 kWh usable → 33.3 kWh total
+ * Formula:
+ *   averageDailyKwh = annualKwh ÷ 365
+ *   usableKwh       = max(10, averageDailyKwh × 0.50)
+ *   totalKwh        = usableKwh ÷ (DoD% ÷ 100)
  *
- * This ensures all battery types deliver the same usable energy,
- * even though their total capacity differs significantly.
+ * Detailed off-grid/autonomy sizing lives in the full project calculation
+ * engine, where backup hours and chemistry-specific DoD are known.
  */
 export function calcBatteryRecommendation(
   annualKwh: number,
   batteryTypeKey: string = DEFAULT_BATTERY_TYPE,
 ): BatteryResult {
   const spec = BATTERY_CATALOG[batteryTypeKey] ?? BATTERY_CATALOG[DEFAULT_BATTERY_TYPE]!;
-  const usableKwh = annualKwh >= 12000 ? 20 : 10;
-  const rule =
-    annualKwh >= 12000
-      ? "Annual usage ≥ 12,000 kWh → 20 kWh usable target"
-      : "Annual usage < 12,000 kWh → 10 kWh usable target";
+  const averageDailyKwh = annualKwh / DAYS_PER_YEAR;
+  const usableKwh = Math.round(Math.max(10, averageDailyKwh * 0.5) * 10) / 10;
+  const rule = "Essential-load backup estimate: max(10 kWh, 50% of average daily use)";
 
   // Total rated capacity needed to provide usableKwh at this battery's DoD
   const totalKwh = Math.round((usableKwh / (spec.dodPct / 100)) * 10) / 10;
@@ -390,15 +400,15 @@ export function runProposalCalc(
 // ─── Spec test scenario ────────────────────────────────────────────────────────
 
 /**
- * TEST SCENARIO (spec §9) — run with explicit 440W/5.5PSH for spec compliance.
+ * TEST SCENARIO — run with explicit 440W/5.5PSH formula inputs.
  * Note: spec was written assuming 440W panels. None of our catalog types is 440W,
  * so verification uses the raw formula functions directly.
  *
  * Expected:
- *   Required  ≈ 7.66 kW    Panels  = 18
- *   Final     ≈ 7.92 kW    Annual  ≈ 12,407 kWh
- *   Monthly   ≈ 1,034 kWh  Offset  ≈ 103%
- *   Battery   = 20 kWh usable (usage ≥ 12,000)
+ *   Required  ≈ 6.95 kW    Panels  = 16
+ *   Final     ≈ 7.04 kW    Annual  ≈ 12,154 kWh
+ *   Monthly   ≈ 1,013 kWh  Offset  ≈ 101%
+ *   Battery   ≈ 16.4 kWh usable
  */
 export const TEST_SCENARIO = {
   address: "7408 Mamba Ct",
@@ -410,13 +420,13 @@ export const TEST_SCENARIO = {
   efficiency: EFFICIENCY_FACTOR,
   panelW: 440, // spec value — not in catalog
   expected: {
-    requiredSystemKw: 7.66,
-    panelCount: 18,
-    finalSystemKw: 7.92,
-    estimatedAnnualKwh: 12407,
-    estimatedMonthlyKwh: 1034,
-    offsetPct: 103,
-    batteryUsableKwh: 20,
+    requiredSystemKw: 6.95,
+    panelCount: 16,
+    finalSystemKw: 7.04,
+    estimatedAnnualKwh: 12154,
+    estimatedMonthlyKwh: 1013,
+    offsetPct: 101,
+    batteryUsableKwh: 16.4,
   },
 } as const;
 

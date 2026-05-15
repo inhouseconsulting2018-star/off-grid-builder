@@ -4,9 +4,9 @@ import pinoHttp from "pino-http";
 import { eq } from "drizzle-orm";
 import { db, projectsTable } from "@workspace/db";
 import router from "./routes";
-import { logger } from "./lib/logger";
-import { WebhookHandlers } from "./lib/webhookHandlers";
-import { constructStripeEvent } from "./lib/stripeClient";
+import { logger } from "./utils/logger";
+import { WebhookHandlers } from "./services/payments/webhookHandlers";
+import { constructStripeEvent } from "./services/payments/stripeClient";
 
 const app: Express = express();
 

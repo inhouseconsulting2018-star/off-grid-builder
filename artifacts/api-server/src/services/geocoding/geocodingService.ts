@@ -8,7 +8,7 @@
  * (e.g. Google Maps, Mapbox) without touching routes.
  */
 
-import { logger } from "./logger";
+import { logger } from "../../utils/logger";
 
 const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
 const NOMINATIM_HEADERS = {

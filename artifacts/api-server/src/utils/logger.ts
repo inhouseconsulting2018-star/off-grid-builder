@@ -1,9 +1,10 @@
 import pino from "pino";
+import { env } from "../config/env";
 
-const isProduction = process.env.NODE_ENV === "production";
+const isProduction = env.nodeEnv === "production";
 
 export const logger = pino({
-  level: process.env.LOG_LEVEL ?? "info",
+  level: env.logLevel,
   redact: [
     "req.headers.authorization",
     "req.headers.cookie",

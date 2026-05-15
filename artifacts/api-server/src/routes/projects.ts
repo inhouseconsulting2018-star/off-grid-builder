@@ -9,10 +9,9 @@ import {
   DeleteProjectParams,
   CalculateProjectParams,
 } from "@workspace/api-zod";
-import { runCalculations } from "../lib/solar-calculator";
-import { fetchPVWatts } from "../lib/pvwatts";
-import { geocodeAddress } from "../lib/geocode";
-import { logger } from "../lib/logger";
+import { geocodeAddress } from "../services/geocoding/geocodingService";
+import { runCalculationsWithPVWatts } from "../services/solar/calculationEngine";
+import { logger } from "../utils/logger";
 
 const router: IRouter = Router();
 
@@ -268,8 +267,10 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
     return;
   }
 
-  const calcResult = runCalculations(
+  const finalResult = await runCalculationsWithPVWatts(
     {
+      address: project.address,
+      city: project.city,
       annualKwh: project.annualKwh,
       systemType: project.systemType,
       shadeLevel: project.shadeLevel,
@@ -285,54 +286,15 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
       budgetTier: project.budgetTier,
       utilityRatePerKwh: project.utilityRatePerKwh,
       state: project.state,
+      zip: project.zip,
       installationType: project.installationType,
+      roofPitch: project.roofPitch,
+      roofDirection: project.roofDirection,
+      arrayLat: project.arrayLat,
+      arrayLon: project.arrayLon,
     },
     settingsRow,
   );
-
-  // Attempt PVWatts API enrichment — falls back gracefully if key missing or request fails
-  const pvwatts = await fetchPVWatts({
-    systemCapacityKw: calcResult.adjustedArraySizeKw,
-    losses: calcResult.shadeLossPct + calcResult.wireLossPct + calcResult.dirtLossPct,
-    installationType: project.installationType,
-    roofPitch: project.roofPitch,
-    roofDirection: project.roofDirection,
-    address: project.address,
-    city: project.city,
-    state: project.state,
-    zip: project.zip,
-    arrayLat: project.arrayLat,
-    arrayLon: project.arrayLon,
-  });
-
-  // Merge PVWatts data — if available, use real production figures; else mark as fallback
-  const finalResult = pvwatts
-    ? {
-        ...calcResult,
-        // Override yearly production and peak sun hours with real PVWatts figures
-        yearlyProductionKwh: pvwatts.acAnnual,
-        peakSunHours: pvwatts.solradAnnual,
-        // Recalculate yearly savings with real production
-        estimatedYearlySavings: Math.round(pvwatts.acAnnual * (
-          project.utilityRatePerKwh > 0 ? project.utilityRatePerKwh : settingsRow.defaultUtilityRate
-        ) * 100) / 100,
-        // PVWatts-specific fields
-        pvwattsMonthlyKwh: pvwatts.acMonthly,
-        pvwattsSolradMonthly: pvwatts.solradMonthly,
-        pvwattsAnnualKwh: pvwatts.acAnnual,
-        pvwattsSolradAnnual: pvwatts.solradAnnual,
-        pvwattsCapacityFactor: pvwatts.capacityFactor,
-        pvwattsSource: "pvwatts" as const,
-      }
-    : {
-        ...calcResult,
-        pvwattsMonthlyKwh: null,
-        pvwattsSolradMonthly: null,
-        pvwattsAnnualKwh: null,
-        pvwattsSolradAnnual: null,
-        pvwattsCapacityFactor: null,
-        pvwattsSource: "fallback" as const,
-      };
 
   await db
     .update(projectsTable)

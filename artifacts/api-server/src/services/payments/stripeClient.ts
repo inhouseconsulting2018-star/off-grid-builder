@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import { StripeSync } from 'stripe-replit-sync';
+import { env, requireEnv } from "../../config/env";
 
 /**
  * Fetches Stripe credentials from the Replit connection API.
@@ -10,11 +11,11 @@ import { StripeSync } from 'stripe-replit-sync';
  * In production: uses the live keys (when deployed).
  */
 async function getStripeCredentials(): Promise<{ secretKey: string; publishableKey?: string }> {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? "repl " + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-      ? "depl " + process.env.WEB_REPL_RENEWAL
+  const hostname = env.replitConnectorsHostname;
+  const xReplitToken = env.replitIdentity
+    ? "repl " + env.replitIdentity
+    : env.webReplRenewal
+      ? "depl " + env.webReplRenewal
       : null;
 
   if (!hostname || !xReplitToken) {
@@ -24,8 +25,7 @@ async function getStripeCredentials(): Promise<{ secretKey: string; publishableK
     );
   }
 
-  const isProduction = process.env.REPLIT_DEPLOYMENT === "1";
-  const targetEnvironment = isProduction ? "production" : "development";
+  const targetEnvironment = env.isReplitDeployment ? "production" : "development";
 
   const url = new URL(`https://${hostname}/api/v2/connection`);
   url.searchParams.set("include_secrets", "true");
@@ -91,11 +91,7 @@ export async function constructStripeEvent(payload: Buffer, _signature: string):
  * Not cached — fetches credentials on every call so rotated keys are picked up.
  */
 export async function getStripeSync(): Promise<StripeSync> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error('DATABASE_URL environment variable is required');
-  }
-
+  const databaseUrl = requireEnv("databaseUrl");
   const { secretKey } = await getStripeCredentials();
   return new StripeSync({
     poolConfig: { connectionString: databaseUrl, max: 2 },

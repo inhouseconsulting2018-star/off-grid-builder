@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
+import { geocodeAddress as fetchGeocodeAddress } from "@/services/geocodingService";
 
 const iconUrl = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png";
 const iconRetinaUrl = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png";
@@ -67,15 +68,8 @@ const STATE_CENTERS: Record<string, GeoCoords> = {
  */
 async function geocodeAddress(address: string, city: string, state: string, zip: string): Promise<GeoCoords | null> {
   try {
-    const params = new URLSearchParams({ address, city, state, zip });
-    const base = (import.meta.env.BASE_URL as string) ?? "/";
-    const url = `${base}api/geocode/coords?${params.toString()}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json() as { lat?: number; lon?: number };
-    if (typeof data.lat === "number" && typeof data.lon === "number") {
-      return { lat: data.lat, lng: data.lon };
-    }
+    const data = await fetchGeocodeAddress({ address, city, state, zip });
+    return { lat: data.lat, lng: data.lon };
   } catch { /* fall through to state centroid fallback */ }
   return null;
 }

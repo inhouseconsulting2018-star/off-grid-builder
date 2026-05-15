@@ -1,6 +1,7 @@
 import { runMigrations } from "stripe-replit-sync";
 import app from "./app";
-import { logger } from "./lib/logger";
+import { env, requireEnv } from "./config/env";
+import { logger } from "./utils/logger";
 
 /**
  * Attempt to create the stripe.* schema tables via stripe-replit-sync.
@@ -8,7 +9,7 @@ import { logger } from "./lib/logger";
  * still starts and the checkout route still works via getUncachableStripeClient().
  */
 async function initStripeSchema() {
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = env.databaseUrl;
   if (!databaseUrl) return;
 
   try {
@@ -19,11 +20,7 @@ async function initStripeSchema() {
   }
 }
 
-const rawPort = process.env["PORT"];
-
-if (!rawPort) {
-  throw new Error("PORT environment variable is required but was not provided.");
-}
+const rawPort = requireEnv("port");
 
 const port = Number(rawPort);
 

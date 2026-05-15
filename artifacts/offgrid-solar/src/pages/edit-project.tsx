@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, ArrowLeft, MapPin, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
+import { regeocodeProject } from "@/services/projectService";
 
 const editSchema = z.object({
   name: z.string().min(1, "Project name is required"),
@@ -64,22 +65,15 @@ export default function EditProject() {
   const handleRegeocode = async () => {
     setIsRegeocodeing(true);
     try {
-      const base = (import.meta.env.BASE_URL as string) ?? "/";
-      const res = await fetch(`${base}api/projects/${projectId}/regeocode`, { method: "POST" });
-      if (res.ok) {
-        const updated = await res.json() as { lat?: number; lon?: number; locationAccuracy?: string };
-        if (updated.lat != null) form.setValue("lat", updated.lat);
-        if (updated.lon != null) form.setValue("lon", updated.lon);
-        form.setValue("useManualCoords", false);
-        toast({
-          title: "Address geocoded",
-          description: `Location accuracy: ${updated.locationAccuracy === "exact" ? "Exact street address ✓" : updated.locationAccuracy === "zip" ? "ZIP code approximation" : "City/state approximation"}`,
-        });
-        queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
-      } else {
-        const err = await res.json() as { error?: string };
-        toast({ title: "Geocode failed", description: err.error ?? "Could not find coordinates for this address.", variant: "destructive" });
-      }
+      const updated = await regeocodeProject(projectId);
+      if (updated.lat != null) form.setValue("lat", updated.lat);
+      if (updated.lon != null) form.setValue("lon", updated.lon);
+      form.setValue("useManualCoords", false);
+      toast({
+        title: "Address geocoded",
+        description: `Location accuracy: ${updated.locationAccuracy === "exact" ? "Exact street address ✓" : updated.locationAccuracy === "zip" ? "ZIP code approximation" : "City/state approximation"}`,
+      });
+      queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
     } catch {
       toast({ title: "Geocode error", description: "Network error. Try again.", variant: "destructive" });
     } finally {

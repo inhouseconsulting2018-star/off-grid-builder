@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, projectsTable } from "@workspace/db";
-import { getUncachableStripeClient } from "../lib/stripeClient";
+import { env } from "../config/env";
+import { getUncachableStripeClient } from "../services/payments/stripeClient";
 
 const router: IRouter = Router();
 
@@ -42,7 +43,7 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   // STRIPE_PRICE_ID: set this env var to your one-time price ID.
   // Create the price by running: pnpm --filter @workspace/scripts run seed-stripe
   // Then copy the printed price ID and set STRIPE_PRICE_ID=price_xxx in Secrets.
-  const priceId = process.env.STRIPE_PRICE_ID;
+  const priceId = env.stripePriceId;
   if (!priceId) {
     res.status(500).json({
       error: "STRIPE_PRICE_ID is not configured. Run the seed script and set the env var.",

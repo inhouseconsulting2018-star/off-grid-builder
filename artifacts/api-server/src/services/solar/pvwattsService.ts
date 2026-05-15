@@ -1,4 +1,6 @@
-import { logger } from "./logger";
+import { env } from "../../config/env";
+import { geocodeAddress } from "../geocoding/geocodingService";
+import { logger } from "../../utils/logger";
 
 export interface PVWattsParams {
   systemCapacityKw: number;
@@ -53,34 +55,6 @@ const STATE_CENTROIDS: Record<string, { lat: number; lon: number }> = {
   WI: { lat: 44.3, lon: -89.6 },  WY: { lat: 43.0, lon: -107.6 },
 };
 
-/** Geocode ZIP/address to lat/lon via Nominatim. Returns null on failure. */
-async function geocode(zip: string, city: string, state: string): Promise<{ lat: number; lon: number } | null> {
-  // Try ZIP code first (most precise), then city+state
-  const queries = zip ? [`${zip}, US`, `${city}, ${state}, US`] : [`${city}, ${state}, US`];
-
-  for (const q of queries) {
-    try {
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6_000);
-      const resp = await fetch(url, {
-        signal: controller.signal,
-        headers: { "User-Agent": "OffGridSolarBuilder/1.0" },
-      });
-      clearTimeout(timeout);
-
-      if (!resp.ok) continue;
-      const data = await resp.json() as Array<{ lat: string; lon: string }>;
-      if (data.length > 0) {
-        return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-      }
-    } catch {
-      // continue to next query or fall through to state centroid
-    }
-  }
-  return null;
-}
-
 /** Map roof pitch string to tilt angle in degrees */
 function pitchToTilt(pitch: string): number {
   if (!pitch) return 20;
@@ -124,7 +98,7 @@ function installToArrayType(installationType: string, roofPitch: string): number
  * Returns null if the API key is missing or the call fails — callers fall back to state estimates.
  */
 export async function fetchPVWatts(params: PVWattsParams): Promise<PVWattsResult | null> {
-  const apiKey = process.env["PVWATTS_API_KEY"];
+  const apiKey = env.pvwattsApiKey;
   if (!apiKey) {
     logger.info("PVWatts API key not configured — using state-based fallback");
     return null;
@@ -137,7 +111,13 @@ export async function fetchPVWatts(params: PVWattsParams): Promise<PVWattsResult
       ? { lat: params.arrayLat, lon: params.arrayLon }
       : null;
   if (!coords) {
-    coords = await geocode(params.zip, params.city, params.state);
+    const result = await geocodeAddress({
+      address: params.address,
+      city: params.city,
+      state: params.state,
+      zip: params.zip,
+    });
+    coords = result ? { lat: result.lat, lon: result.lon } : null;
   }
   if (!coords) {
     const centroid = STATE_CENTROIDS[params.state?.toUpperCase()];

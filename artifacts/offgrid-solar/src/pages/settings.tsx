@@ -49,7 +49,7 @@ export default function SettingsPage() {
       wireLossPct: 2,
       dirtLossPct: 3,
       tempLossPct: 10,
-      batteryRoundTripLossPct: 5,
+      batteryRoundTripLossPct: 8,
       batteryDod: 80,
       defaultUtilityRate: 0.15,
       economyDiyPerWatt: 1.5,

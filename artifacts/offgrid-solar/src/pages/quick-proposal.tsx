@@ -23,6 +23,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { suggestAddresses } from "@/services/geocodingService";
+import { createProposalEstimate, getProposalEquipment } from "@/services/proposalService";
 import {
   Sun, MapPin, Zap, BarChart3, ArrowRight, ArrowLeft, Loader2,
   CheckCircle2, Battery, Download, RotateCcw, FlaskConical,
@@ -192,17 +194,6 @@ const COST_TIER_COLOR: Record<CostTier, string> = {
   premium: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
   ultra_premium: "bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
 };
-
-// ─── Address autocomplete (calls backend proxy) ────────────────────────────────
-
-async function suggestAddresses(query: string): Promise<AddressSuggestion[]> {
-  if (query.trim().length < 5) return [];
-  const base = (import.meta.env.BASE_URL as string) ?? "/";
-  const resp = await fetch(`${base}api/geocode/suggest?q=${encodeURIComponent(query)}`);
-  if (!resp.ok) return [];
-  const data = await resp.json() as { suggestions?: AddressSuggestion[] };
-  return data.suggestions ?? [];
-}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -388,9 +379,7 @@ export default function QuickProposal() {
 
   // Load equipment catalog from backend (provider-agnostic — all data is server-side)
   useEffect(() => {
-    const base = (import.meta.env.BASE_URL as string) ?? "/";
-    fetch(`${base}api/proposals/equipment`)
-      .then((r) => r.json())
+    getProposalEquipment<EquipmentCatalog>()
       .then((data: EquipmentCatalog) => {
         setEquipment(data);
         usageForm.setValue("panelType", data.defaults.panelType);
@@ -464,7 +453,6 @@ export default function QuickProposal() {
     if (!addressData) return;
     setLoading(true);
     try {
-      const base = (import.meta.env.BASE_URL as string) ?? "/";
       const body = {
         address: addressData.address,
         city: addressData.city,
@@ -474,18 +462,9 @@ export default function QuickProposal() {
         monthlyKwh: values.usageMode === "monthly" ? (values.monthlyKwh ?? null) : null,
         panelType: values.panelType,
         batteryType: values.batteryType,
-        efficiencyFactor: 0.78,
+        efficiencyFactor: 0.86,
       };
-      const resp = await fetch(`${base}api/proposals/estimate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? "Estimate failed");
-      }
-      setEstimate(await resp.json() as ProposalEstimate);
+      setEstimate(await createProposalEstimate<ProposalEstimate>(body));
       setStep(3);
     } catch (err) {
       toast({
@@ -958,12 +937,12 @@ export default function QuickProposal() {
               </CardHeader>
               <CardContent className="space-y-3 text-xs text-muted-foreground font-mono">
                 <div className="space-y-1.5 rounded-md bg-muted px-4 py-3 border">
-                  <p><span className="text-foreground font-semibold">Required Size</span> = Usage ÷ (PSH × 365 × 0.78)</p>
-                  <p className="pl-4 text-foreground">= {estimate.annualKwhUsage.toLocaleString()} ÷ ({estimate.peakSunHours} × 365 × 0.78) = <strong>{estimate.requiredSystemKw.toFixed(2)} kW</strong></p>
+                  <p><span className="text-foreground font-semibold">Required Size</span> = Usage ÷ (PSH × 365 × 0.86)</p>
+                  <p className="pl-4 text-foreground">= {estimate.annualKwhUsage.toLocaleString()} ÷ ({estimate.peakSunHours} × 365 × 0.86) = <strong>{estimate.requiredSystemKw.toFixed(2)} kW</strong></p>
                   <p><span className="text-foreground font-semibold">Panel Count</span> = ceil(Required kW × 1000 ÷ {estimate.panel.wattage}W)</p>
                   <p className="pl-4 text-foreground">= ceil({estimate.requiredSystemKw.toFixed(2)} × 1000 ÷ {estimate.panel.wattage}) = <strong>{estimate.panelCount} panels</strong></p>
                   <p><span className="text-foreground font-semibold">Final Size</span> = {estimate.panelCount} × {estimate.panel.wattage}W ÷ 1000 = <strong>{estimate.finalSystemKw.toFixed(2)} kW</strong></p>
-                  <p><span className="text-foreground font-semibold">Annual Production</span> = {estimate.finalSystemKw.toFixed(2)} × {estimate.peakSunHours} × 365 × 0.78{estimate.panel.bifacial ? ` × ${(1 + estimate.panel.bifacialGainPct / 100).toFixed(2)} (bifacial)` : ""} = <strong>{estimate.estimatedAnnualKwh.toLocaleString()} kWh</strong></p>
+                  <p><span className="text-foreground font-semibold">Annual Production</span> = {estimate.finalSystemKw.toFixed(2)} × {estimate.peakSunHours} × 365 × 0.86{estimate.panel.bifacial ? ` × ${(1 + estimate.panel.bifacialGainPct / 100).toFixed(2)} (bifacial)` : ""} = <strong>{estimate.estimatedAnnualKwh.toLocaleString()} kWh</strong></p>
                   <p><span className="text-foreground font-semibold">Battery Total</span> = {estimate.battery.usableKwh} kWh usable ÷ {estimate.battery.dodPct}% DoD = <strong>{estimate.battery.totalKwh} kWh rated</strong></p>
                 </div>
               </CardContent>
@@ -1004,10 +983,10 @@ export default function QuickProposal() {
                     </thead>
                     <tbody className="divide-y text-xs">
                       {[
-                        ["Required size", "≈ 7.66 kW", `${estimate.specVerification.requiredSystemKw.toFixed(2)} kW`, Math.abs(estimate.specVerification.requiredSystemKw - 7.66) < 0.05],
+                        ["Required size", "≈ 6.95 kW", `${estimate.specVerification.requiredSystemKw.toFixed(2)} kW`, Math.abs(estimate.specVerification.requiredSystemKw - 6.95) < 0.05],
                         ["Panel count (440W)", "18", `${estimate.specVerification.panelCount}`, estimate.specVerification.panelCount === 18],
                         ["Final system size", "≈ 7.92 kW", `${estimate.specVerification.finalSystemKw.toFixed(2)} kW`, Math.abs(estimate.specVerification.finalSystemKw - 7.92) < 0.05],
-                        ["Annual production", "≈ 12,407 kWh", `${estimate.specVerification.estimatedAnnualKwh.toLocaleString()} kWh`, Math.abs(estimate.specVerification.estimatedAnnualKwh - 12407) < 50],
+                        ["Annual production", "≈ 12,154 kWh", `${estimate.specVerification.estimatedAnnualKwh.toLocaleString()} kWh`, Math.abs(estimate.specVerification.estimatedAnnualKwh - 12154) < 50],
                         ["Monthly production", "≈ 1,034 kWh", `${estimate.specVerification.estimatedMonthlyKwh.toLocaleString()} kWh`, Math.abs(estimate.specVerification.estimatedMonthlyKwh - 1034) < 5],
                         ["Offset", "≈ 103%", `${estimate.specVerification.offsetPct}%`, estimate.specVerification.offsetPct >= 102 && estimate.specVerification.offsetPct <= 104],
                         ["Battery (usable)", "20 kWh", `${estimate.specVerification.batteryUsableKwh} kWh`, estimate.specVerification.batteryUsableKwh === 20],

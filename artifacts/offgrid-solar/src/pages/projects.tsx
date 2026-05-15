@@ -20,7 +20,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
-import { DashboardMap } from "@/components/DashboardMap";
+import { DashboardMap } from "@/components/maps/DashboardMap";
 
 const systemTypeBadge: Record<string, string> = {
   "off-grid": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
