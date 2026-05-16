@@ -75,6 +75,18 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # Security overrides for transitive vulnerabilities reported by GitHub/Replit.
+  # After changing these, refresh pnpm-lock.yaml with:
+  #   pnpm install --lockfile-only
+  "picomatch@2": "2.3.2"
+  "picomatch@4": "4.0.4"
+  "path-to-regexp@8": "8.4.2"
+  fast-uri: "3.1.2"
+  lodash: "4.18.1"
+  yaml: "2.9.0"
+  "brace-expansion@2": "2.0.3"
+  postcss: "8.5.14"
+
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"
