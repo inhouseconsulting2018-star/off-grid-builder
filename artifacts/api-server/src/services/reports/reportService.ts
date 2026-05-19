@@ -31,15 +31,9 @@ export function buildPreview(project: Project) {
       ? {
           adjustedArraySizeKw: calc.adjustedArraySizeKw,
           numPanels: calc.numPanels,
-          yearlyProductionKwh: calc.yearlyProductionKwh,
           estimatedYearlySavings: calc.estimatedYearlySavings,
           installedCostLow: calc.installedCostLow,
           installedCostHigh: calc.installedCostHigh,
-          diyEquipmentCostLow: calc.diyEquipmentCostLow,
-          diyEquipmentCostHigh: calc.diyEquipmentCostHigh,
-          paybackYears: calc.paybackYears,
-          peakSunHours: calc.peakSunHours,
-          pvwattsSource: calc.pvwattsSource,
           productionEstimateLabel: calc.productionEstimateLabel,
         }
       : null,
