@@ -1,15 +1,16 @@
 # Branch Policy: launch-mvp
 
-## Purpose
+  ## Purpose
 
-This branch (`launch-mvp`) is the stable launch baseline tagged as `v0.1-launch-candidate`.
+  This branch (`launch-mvp`) is the stable launch baseline tagged as `v0.1-launch-candidate`.
 
-## Rules
+  ## Rules
 
-- **Bug fixes only.** No new features may be merged into this branch.
-- All bug fixes must be reviewed before merging.
-- Any fix applied here should also be applied to `main` to keep branches in sync.
+  - **Bug fixes only.** No new features may be merged into this branch.
+  - All bug fixes must be reviewed before merging.
+  - Any fix applied here should also be applied to `main` to keep branches in sync.
 
-## Version Tag
+  ## Version Tag
 
-This branch is tagged `v0.1-launch-candidate` at the point it was branched from `main`.
+  This branch is tagged `v0.1-launch-candidate` at the point it was branched from `main`.
+  
