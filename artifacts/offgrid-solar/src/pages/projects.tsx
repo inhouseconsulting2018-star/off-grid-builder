@@ -1,11 +1,10 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useListProjects, useGetProjectsSummary, useDeleteProject, getListProjectsQueryKey, getGetProjectsSummaryQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldCheck, ZapOff, MapPin, BarChart3, Map } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useRef, useState } from "react";
 import {
@@ -21,6 +20,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import { DashboardMap } from "@/components/maps/DashboardMap";
+import { deleteSessionProject, listSessionProjects } from "@/services/projectService";
+import { removeProjectRef } from "@/services/projectAccess";
 
 const systemTypeBadge: Record<string, string> = {
   "off-grid": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
@@ -29,25 +30,23 @@ const systemTypeBadge: Record<string, string> = {
 };
 
 export default function ProjectsDashboard() {
-  const { data: projects, isLoading: isProjectsLoading } = useListProjects();
-  const { data: summary, isLoading: isSummaryLoading } = useGetProjectsSummary();
-  const deleteProject = useDeleteProject();
+  const { data: projects, isLoading: isProjectsLoading } = useQuery({
+    queryKey: ["session-projects"],
+    queryFn: () => listSessionProjects<any>(),
+  });
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const mapSectionRef = useRef<HTMLDivElement>(null);
   const [mapSelectedId, setMapSelectedId] = useState<number | null>(null);
 
   const handleDelete = (id: number) => {
-    deleteProject.mutate({ id }, {
-      onSuccess: () => {
+    deleteSessionProject(id)
+      .then(() => {
+        removeProjectRef(id);
         toast({ title: "Project deleted" });
-        queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetProjectsSummaryQueryKey() });
-      },
-      onError: () => {
-        toast({ title: "Failed to delete project", variant: "destructive" });
-      }
-    });
+        queryClient.invalidateQueries({ queryKey: ["session-projects"] });
+      })
+      .catch(() => toast({ title: "Failed to delete project", variant: "destructive" }));
   };
 
   const handleViewOnMap = (id: number) => {
@@ -72,13 +71,7 @@ export default function ProjectsDashboard() {
         </div>
 
         {/* Stats Grid — 2 cols on mobile, 4 on desktop */}
-        {isSummaryLoading ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[1, 2, 3, 4].map(i => (
-              <Card key={i} className="animate-pulse bg-muted h-24" />
-            ))}
-          </div>
-        ) : summary ? (
+        {projects ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
@@ -86,7 +79,7 @@ export default function ProjectsDashboard() {
                 <BarChart3 className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold">{summary.totalProjects}</div>
+                <div className="text-2xl font-bold">{projects.length}</div>
               </CardContent>
             </Card>
             <Card>
@@ -95,7 +88,7 @@ export default function ProjectsDashboard() {
                 <Zap className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold">{summary.totalSystemKw.toFixed(1)} kW</div>
+                <div className="text-2xl font-bold">{projects.reduce((sum: number, p: any) => sum + (p.preview?.adjustedArraySizeKw ?? 0), 0).toFixed(1)} kW</div>
               </CardContent>
             </Card>
             <Card>
@@ -104,7 +97,7 @@ export default function ProjectsDashboard() {
                 <ZapOff className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold">{summary.offGridCount}</div>
+                <div className="text-2xl font-bold">{projects.filter((p: any) => p.systemType === "off-grid").length}</div>
               </CardContent>
             </Card>
             <Card>
@@ -113,7 +106,7 @@ export default function ProjectsDashboard() {
                 <ShieldCheck className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold">{summary.gridTiedCount}</div>
+                <div className="text-2xl font-bold">{projects.filter((p: any) => p.systemType === "grid-tied").length}</div>
               </CardContent>
             </Card>
           </div>
@@ -160,8 +153,8 @@ export default function ProjectsDashboard() {
             ) : projects && projects.length > 0 ? (
               <div className="divide-y">
                 {projects.map(project => {
-                  const adjKw = project.calculationResult?.adjustedArraySizeKw;
-                  const grossKw = project.calculationResult?.arraySizeKw;
+                  const adjKw = project.preview?.adjustedArraySizeKw;
+                  const grossKw = undefined;
                   const displayKw = adjKw ?? grossKw;
                   const isMapSelected = project.id === mapSelectedId;
                   return (

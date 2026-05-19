@@ -10,12 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useUpdateProject, useGetProject, useCalculateProject, getGetProjectQueryKey } from "@workspace/api-client-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, ArrowLeft, MapPin, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
-import { regeocodeProject } from "@/services/projectService";
+import { calculateSessionProject, getEditableProject, regeocodeProject, updateSessionProject } from "@/services/projectService";
 
 const editSchema = z.object({
   name: z.string().min(1, "Project name is required"),
@@ -56,9 +55,11 @@ export default function EditProject() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: project, isLoading: isLoadingProject } = useGetProject(projectId);
-  const updateProject = useUpdateProject();
-  const calculateProject = useCalculateProject();
+  const { data: project, isLoading: isLoadingProject } = useQuery({
+    queryKey: ["editable-project", projectId],
+    queryFn: () => getEditableProject<any>(projectId),
+    enabled: projectId > 0,
+  });
 
   const [isRegeocodeing, setIsRegeocodeing] = useState(false);
 
@@ -73,7 +74,7 @@ export default function EditProject() {
         title: "Address geocoded",
         description: `Location accuracy: ${updated.locationAccuracy === "exact" ? "Exact street address ✓" : updated.locationAccuracy === "zip" ? "ZIP code approximation" : "City/state approximation"}`,
       });
-      queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+      queryClient.invalidateQueries({ queryKey: ["editable-project", projectId] });
     } catch {
       toast({ title: "Geocode error", description: "Network error. Try again.", variant: "destructive" });
     } finally {
@@ -150,9 +151,9 @@ export default function EditProject() {
 
   const onSubmit = async (data: EditFormValues) => {
     try {
-      await updateProject.mutateAsync({ id: projectId, data });
-      await calculateProject.mutateAsync({ id: projectId });
-      queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+      await updateSessionProject(projectId, data);
+      await calculateSessionProject(projectId);
+      queryClient.invalidateQueries({ queryKey: ["editable-project", projectId] });
       toast({ title: "Project updated", description: "Design has been recalculated." });
       setLocation(`/results/${projectId}`);
     } catch {
@@ -170,7 +171,7 @@ export default function EditProject() {
     );
   }
 
-  const isBusy = updateProject.isPending || calculateProject.isPending;
+  const isBusy = false;
 
   return (
     <AppLayout>

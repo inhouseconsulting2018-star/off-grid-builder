@@ -1,8 +1,11 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { desc, eq, isNotNull } from "drizzle-orm";
 import { db, projectsTable } from "@workspace/db";
 import { env } from "../config/env";
 import { getUncachableStripeClient } from "../services/payments/stripeClient";
+import { deliverReportEmail } from "../services/reports/reportDeliveryService";
+import { requireAdmin } from "../middlewares/adminAuth";
+import { getAuthorizedProject } from "../services/projects/projectAccess";
 
 const router: IRouter = Router();
 
@@ -24,16 +27,9 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
     return;
   }
 
-  // Verify project exists
-  const [project] = await db
-    .select({ id: projectsTable.id, paidAt: projectsTable.paidAt })
-    .from(projectsTable)
-    .where(eq(projectsTable.id, projectId));
-
-  if (!project) {
-    res.status(404).json({ error: "Project not found" });
-    return;
-  }
+  const project = await getAuthorizedProject(req, projectId);
+  if (project === null) { res.status(404).json({ error: "Project not found" }); return; }
+  if (project === "forbidden") { res.status(403).json({ error: "Invalid project access token" }); return; }
 
   if (project.paidAt) {
     res.status(400).json({ error: "Project is already unlocked" });
@@ -56,21 +52,105 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   // Build success/cancel URLs — works in both dev (proxied) and production
   const host = req.get("host") ?? "localhost";
   const protocol = req.protocol;
-  const successUrl = `${protocol}://${host}/payment-success?projectId=${projectId}&session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = `${protocol}://${host}/payment-cancel?projectId=${projectId}`;
+  const successUrl = `${protocol}://${host}/payment-success?projectId=${projectId}&accessToken=${encodeURIComponent(project.accessToken)}&session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = `${protocol}://${host}/payment-cancel?projectId=${projectId}&accessToken=${encodeURIComponent(project.accessToken)}`;
 
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
     line_items: [{ price: priceId, quantity: 1 }],
     // "payment" mode = one-time purchase (not a subscription)
     mode: "payment",
+    customer_creation: "if_required",
     success_url: successUrl,
     cancel_url: cancelUrl,
     // Embed projectId in metadata so the webhook knows which project to unlock
-    metadata: { projectId: String(projectId) },
+    metadata: {
+      projectId: String(projectId),
+      reportType: "solar-design-report",
+    },
   });
 
   res.json({ url: session.url });
+});
+
+/**
+ * POST /api/projects/:id/email-report
+ *
+ * Records report delivery for paid projects. In production this is where an
+ * SMTP/transactional-email provider can attach the branded PDF or include the
+ * secure report link. For now the app records the delivery event and exposes it
+ * in admin purchases.
+ */
+router.post("/projects/:id/email-report", async (req, res): Promise<void> => {
+  const projectId = parseInt(req.params.id, 10);
+  if (isNaN(projectId)) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+
+  const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ error: "A valid email is required" });
+    return;
+  }
+
+  const project = await getAuthorizedProject(req, projectId);
+  if (project === null) { res.status(404).json({ error: "Project not found" }); return; }
+  if (project === "forbidden") { res.status(403).json({ error: "Invalid project access token" }); return; }
+
+  if (!project.paidAt) {
+    res.status(402).json({ error: "Unlock this report before emailing it" });
+    return;
+  }
+
+  const host = req.get("host") ?? "localhost";
+  const reportUrl = `${req.protocol}://${host}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken)}`;
+  const deliveryStatus = await deliverReportEmail({
+    projectId,
+    email,
+    reportUrl,
+    projectName: project.name,
+  });
+  const deliveredAt = deliveryStatus === "sent" ? new Date() : null;
+  const [updated] = await db
+    .update(projectsTable)
+    .set({
+      purchaserEmail: email,
+      reportDeliveryStatus: deliveryStatus,
+      reportDeliveredAt: deliveredAt,
+    })
+    .where(eq(projectsTable.id, projectId))
+    .returning();
+
+  res.json({
+    ok: true,
+    projectId: updated.id,
+    email,
+    reportDeliveryStatus: updated.reportDeliveryStatus,
+    reportDeliveredAt: updated.reportDeliveredAt,
+  });
+});
+
+router.get("/admin/purchases", requireAdmin, async (_req, res): Promise<void> => {
+  const purchases = await db
+    .select({
+      projectId: projectsTable.id,
+      projectName: projectsTable.name,
+      purchaserEmail: projectsTable.purchaserEmail,
+      paidAt: projectsTable.paidAt,
+      stripeSessionId: projectsTable.stripeSessionId,
+      reportDeliveryStatus: projectsTable.reportDeliveryStatus,
+      reportDeliveredAt: projectsTable.reportDeliveredAt,
+      systemType: projectsTable.systemType,
+      installationType: projectsTable.installationType,
+      city: projectsTable.city,
+      state: projectsTable.state,
+    })
+    .from(projectsTable)
+    .where(isNotNull(projectsTable.paidAt))
+    .orderBy(desc(projectsTable.paidAt));
+
+  res.json({ purchases });
 });
 
 export default router;

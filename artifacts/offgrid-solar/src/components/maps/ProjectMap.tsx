@@ -343,14 +343,6 @@ export function ProjectMap({
 
   const defaultZoom = status === "fallback" ? 10 : 17;
 
-  const popupLines = [
-    `<strong>${projectName}</strong>`,
-    `${address}, ${city}, ${state} ${zip}`,
-    `System: ${systemType}`,
-    arraySizeKw ? `Array: ${arraySizeKw.toFixed(2)} kW` : null,
-    batteryUsableKwh && batteryUsableKwh > 0 ? `Battery: ${batteryUsableKwh.toFixed(1)} kWh` : null,
-  ].filter(Boolean).join("<br/>");
-
   return (
     <div className="space-y-3">
       {/* Controls */}
@@ -403,7 +395,13 @@ export function ProjectMap({
           <SunPathOverlay coords={coords} visible={showSunPath} />
           <Marker position={[coords.lat, coords.lng]}>
             <Popup>
-              <div style={{ lineHeight: 1.6, minWidth: 180 }} dangerouslySetInnerHTML={{ __html: popupLines }} />
+              <div style={{ lineHeight: 1.6, minWidth: 180 }}>
+                <strong>{projectName}</strong><br />
+                {address}, {city}, {state} {zip}<br />
+                System: {systemType}<br />
+                {arraySizeKw ? <>Array: {arraySizeKw.toFixed(2)} kW<br /></> : null}
+                {batteryUsableKwh && batteryUsableKwh > 0 ? <>Battery: {batteryUsableKwh.toFixed(1)} kWh</> : null}
+              </div>
             </Popup>
           </Marker>
           {typeof arrayLat === "number" && typeof arrayLon === "number" && (

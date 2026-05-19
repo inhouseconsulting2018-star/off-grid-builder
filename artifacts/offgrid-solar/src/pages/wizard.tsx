@@ -12,7 +12,9 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useCreateProject, useCalculateProject } from "@workspace/api-client-react";
+import { useCreateProject } from "@workspace/api-client-react";
+import { saveProjectRef } from "@/services/projectAccess";
+import { calculateSessionProject } from "@/services/projectService";
 import { useToast } from "@/hooks/use-toast";
 import { geocodeAddress } from "@/services/geocodingService";
 import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, CheckCircle2 } from "lucide-react";
@@ -75,7 +77,6 @@ export default function Wizard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createProject = useCreateProject();
-  const calculateProject = useCalculateProject();
 
   const form = useForm<WizardFormValues>({
     resolver: zodResolver(wizardSchema),
@@ -145,7 +146,9 @@ export default function Wizard() {
           arrayLocationNote: data.arrayLocationNote || undefined,
         },
       });
-      await calculateProject.mutateAsync({ id: project.id });
+      const accessToken = (project as { accessToken?: string }).accessToken;
+      if (accessToken) saveProjectRef({ id: project.id, accessToken });
+      await calculateSessionProject(project.id);
       toast({ title: "Design Complete", description: "Your solar report is ready." });
       setLocation(`/results/${project.id}`);
     } catch {
@@ -161,7 +164,7 @@ export default function Wizard() {
 
   const prevStep = () => setStep(s => Math.max(1, s - 1));
 
-  const isBusy = createProject.isPending || calculateProject.isPending;
+  const isBusy = createProject.isPending;
 
   return (
     <AppLayout>

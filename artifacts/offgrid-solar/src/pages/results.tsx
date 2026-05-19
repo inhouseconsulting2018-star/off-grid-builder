@@ -1,6 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useParams, Link } from "wouter";
-import { useGetProject, useCalculateProject, getGetProjectQueryKey, useCreateProjectCheckoutSession } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,12 +8,14 @@ import {
   DollarSign, Settings2, Edit, MapPin, Sun, FileText,
   Info, Lightbulb, CheckCircle2, ClipboardList, LayoutGrid, Lock
 } from "lucide-react";
-import { useEffect, useRef, Fragment, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, Fragment, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ProjectMap } from "@/components/maps/ProjectMap";
-import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
+import { createProjectCheckoutSession, emailUnlockedReport, getProjectPreview, getProjectReport, getReportPdfUrl } from "@/services/projectService";
+import { saveProjectRef } from "@/services/projectAccess";
+import { Input } from "@/components/ui/input";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine,
@@ -23,51 +24,74 @@ import {
 export default function Results() {
   const { id } = useParams();
   const projectId = parseInt(id || "0", 10);
-  const { data: project, isLoading, error } = useGetProject(projectId);
-  const calculateProject = useCalculateProject();
-  const createCheckoutSession = useCreateProjectCheckoutSession();
+  const { data: preview, isLoading, error } = useQuery({
+    queryKey: ["project-preview", projectId],
+    queryFn: () => getProjectPreview<any>(projectId),
+    enabled: projectId > 0,
+  });
+  const { data: report, isLoading: isReportLoading, error: reportError } = useQuery({
+    queryKey: ["project-report", projectId],
+    queryFn: () => getProjectReport<any>(projectId),
+    enabled: !!preview?.paidAt && projectId > 0,
+  });
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const hasTriggeredCalc = useRef(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [deliveryEmail, setDeliveryEmail] = useState("");
+  const [isEmailingReport, setIsEmailingReport] = useState(false);
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("accessToken");
+    if (projectId > 0 && token) saveProjectRef({ id: projectId, accessToken: token });
+  }, [projectId]);
 
   const handleUnlockReport = () => {
     setIsRedirecting(true);
-    createCheckoutSession.mutate(
-      { id: projectId },
-      {
-        onSuccess: (data) => {
-          if (data.url) {
-            window.location.href = data.url;
-          }
-        },
-        onError: () => {
-          setIsRedirecting(false);
-          toast({
-            title: "Payment unavailable",
-            description: "Stripe is not yet configured. Please add STRIPE_PRICE_ID to complete setup.",
-            variant: "destructive",
-          });
-        },
-      }
-    );
+    createProjectCheckoutSession(projectId)
+      .then((data) => {
+        if (data.url) window.location.href = data.url;
+      })
+      .catch(() => {
+        setIsRedirecting(false);
+        toast({
+          title: "Payment unavailable",
+          description: "Stripe is not configured or this browser is missing project access.",
+          variant: "destructive",
+        });
+      });
+  };
+
+  const handleEmailReport = async () => {
+    if (!deliveryEmail.trim()) {
+      toast({ title: "Email required", description: "Enter the address that should receive this report.", variant: "destructive" });
+      return;
+    }
+    setIsEmailingReport(true);
+    try {
+      const delivery = await emailUnlockedReport(projectId, deliveryEmail.trim());
+      toast({
+        title: delivery.reportDeliveryStatus === "sent" ? "Report emailed" : "Report delivery queued",
+        description: `Delivery status for ${deliveryEmail.trim()}: ${delivery.reportDeliveryStatus}.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["project-preview", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project-report", projectId] });
+    } catch (err) {
+      toast({
+        title: "Could not email report",
+        description: err instanceof Error ? err.message : "Try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsEmailingReport(false);
+    }
   };
 
   useEffect(() => {
-    if (project && !project.calculationResult && !hasTriggeredCalc.current) {
-      hasTriggeredCalc.current = true;
-      calculateProject.mutate({ id: projectId }, {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
-        },
-        onError: () => {
-          toast({ title: "Calculation failed", variant: "destructive" });
-        }
-      });
-    }
-  }, [project, projectId, queryClient, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+    const email = (preview as { purchaserEmail?: string | null } | undefined)?.purchaserEmail;
+    if (email && !deliveryEmail) setDeliveryEmail(email);
+  }, [preview, deliveryEmail]);
 
-  if (isLoading || (!project?.calculationResult && !error)) {
+  if (isLoading || (!!preview?.paidAt && isReportLoading)) {
     return (
       <AppLayout>
         <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -79,7 +103,7 @@ export default function Results() {
     );
   }
 
-  if (error || !project) {
+  if (error || !preview || reportError) {
     return (
       <AppLayout>
         <div className="text-center py-12 text-destructive">Failed to load project report. Please try again.</div>
@@ -87,29 +111,70 @@ export default function Results() {
     );
   }
 
-  const calc = project.calculationResult!;
+  if (!preview.paidAt) {
+    const calc = preview.preview;
+    return (
+      <AppLayout>
+        <div className="max-w-5xl mx-auto space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Sun className="h-4 w-4 text-primary" />
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Free Solar Preview</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight">{preview.name}</h1>
+              <p className="text-muted-foreground mt-1 flex items-center gap-1 text-sm">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{preview.city}, {preview.state}</span>
+              </p>
+            </div>
+            <Button
+              className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white"
+              onClick={handleUnlockReport}
+              disabled={isRedirecting}
+            >
+              {isRedirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+              Unlock Full Report - $49
+            </Button>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-4">
+            <Card className="bg-primary/5 border-primary/25">
+              <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Rough Solar Array</CardTitle></CardHeader>
+              <CardContent><div className="text-3xl font-black text-primary">{calc?.adjustedArraySizeKw?.toFixed?.(2) ?? "--"} kW</div><div className="text-sm">{calc?.numPanels ?? "--"} panels</div></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Rough Cost Range</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-black">${Math.round(calc?.installedCostLow ?? 0).toLocaleString()} - ${Math.round(calc?.installedCostHigh ?? 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">Installed planning range</div></CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Basic Savings</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-black">${Math.round(calc?.estimatedYearlySavings ?? 0).toLocaleString()}/yr</div><div className="text-xs text-muted-foreground">{calc?.productionEstimateLabel ?? "Preview estimate"}</div></CardContent>
+            </Card>
+          </div>
+          <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
+            <CardContent className="py-8 flex flex-col items-center text-center gap-4">
+              <Lock className="h-8 w-8 text-amber-600" />
+              <div>
+                <h2 className="text-xl font-bold">Detailed contractor-grade report is locked</h2>
+                <p className="text-sm text-muted-foreground max-w-xl mt-2">
+                  Full BOM, losses, battery and inverter sizing, monthly PVWatts production, ROI details, and PDF download are returned only after payment entitlement is verified by the server.
+                </p>
+              </div>
+              <Button size="lg" className="bg-amber-500 hover:bg-amber-600 text-white gap-2 px-8" onClick={handleUnlockReport} disabled={isRedirecting}>
+                {isRedirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+                Unlock Full Report - $49
+              </Button>
+              <p className="text-xs text-muted-foreground">Secure one-time payment via Stripe.</p>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
-  const bom = generateBom({
-    systemType: project.systemType,
-    installationType: project.installationType,
-    budgetTier: project.budgetTier,
-    numPanels: calc.numPanels,
-    adjustedArraySizeKw: calc.adjustedArraySizeKw,
-    inverterSizeKw: calc.inverterSizeKw,
-    totalBatteryBankKwh: calc.totalBatteryBankKwh,
-    batteryUsableKwh: calc.batteryUsableKwh,
-    batteryChemistry: project.batteryChemistry,
-    hasGenerator: project.hasGenerator,
-    generatorKw: project.generatorKw,
-    wantsGenerator: project.wantsGenerator,
-    snowArea: project.snowArea,
-    recommendedPanelBrand: calc.recommendedPanelBrand,
-    recommendedInverterBrand: calc.recommendedInverterBrand,
-    recommendedBatteryBrand: calc.recommendedBatteryBrand,
-    recommendedMountingBrand: calc.recommendedMountingBrand,
-    diyEquipmentCostLow: calc.diyEquipmentCostLow,
-    diyEquipmentCostHigh: calc.diyEquipmentCostHigh,
-  });
+  const project = report.project;
+  const calc = report.calculation;
+  const bom = report.bom as Array<Record<string, any>>;
 
   const designNotes = generateDesignNotes({
     systemType: project.systemType,
@@ -144,6 +209,7 @@ export default function Results() {
     pvwattsSolradAnnual?: number | null;
     pvwattsCapacityFactor?: number | null;
     pvwattsSource?: string | null;
+    productionEstimateLabel?: string | null;
   };
 
   const hasPVWatts = pvCalc.pvwattsSource === "pvwatts" && Array.isArray(pvCalc.pvwattsMonthlyKwh);
@@ -173,6 +239,8 @@ export default function Results() {
   const hasBattery = calc.batteryUsableKwh > 0;
   // isPaid: true when the project has been unlocked via a successful Stripe payment
   const isPaid = !!project.paidAt;
+  const reportDeliveryStatus = (project as { reportDeliveryStatus?: string | null }).reportDeliveryStatus;
+  const purchaserEmail = (project as { purchaserEmail?: string | null }).purchaserEmail;
 
   const noteIcon = (type: string) => {
     if (type === "warning") return <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />;
@@ -187,11 +255,26 @@ export default function Results() {
   };
 
   // Group BOM by category
-  const bomCategories = Array.from(new Set(bom.map(b => b.category)));
+  const bomCategories = Array.from(new Set(bom.map((b) => String(b.category))));
 
   return (
     <AppLayout>
-      <div className="max-w-5xl mx-auto flex flex-col gap-8 print:gap-6">
+      <div className="max-w-5xl mx-auto">
+        {isPaid && (
+          <ContractorProposalReport
+            project={project}
+            calc={calc}
+            bom={bom}
+            bomCategories={bomCategories}
+            monthlyChartData={monthlyChartData}
+            hasPVWatts={hasPVWatts}
+            hasBattery={hasBattery}
+            systemTypeLabel={systemTypeLabel}
+            designNotes={designNotes}
+          />
+        )}
+
+        <div className="interactive-report flex flex-col gap-8 print:hidden">
 
         {/* ── Report Header ─────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 print:hidden">
@@ -216,7 +299,7 @@ export default function Results() {
           {pvCalc.pvwattsSource === "fallback" && (
             <div className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-700 mt-1 w-fit">
               <Info className="h-3 w-3" />
-              State estimate (no PVWatts key)
+              Approximate production estimate
             </div>
           )}
           {/* Action buttons — compact icon+label on mobile, full on desktop */}
@@ -234,18 +317,18 @@ export default function Results() {
               </Button>
             </Link>
             {isPaid ? (
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.location.href = getReportPdfUrl(projectId)}>
                 <Download className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Download </span>PDF
+                <span className="hidden sm:inline">Download Branded </span>PDF
               </Button>
             ) : (
               <Button
                 size="sm"
                 className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white border-0"
                 onClick={handleUnlockReport}
-                disabled={isRedirecting || createCheckoutSession.isPending}
+                disabled={isRedirecting}
               >
-                {isRedirecting || createCheckoutSession.isPending
+                {isRedirecting
                   ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   : <Lock className="h-3.5 w-3.5" />}
                 Unlock Report
@@ -275,6 +358,41 @@ export default function Results() {
             </div>
           </div>
         </div>
+
+        {isPaid && (
+          <Card className="print:hidden border-green-200 bg-green-50/70 dark:bg-green-950/20">
+            <CardContent className="py-4 flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
+              <div>
+                <div className="font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  Full report unlocked
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Download the branded PDF or send the report link to a guest checkout email.
+                  {reportDeliveryStatus === "sent" && purchaserEmail ? ` Last delivery: ${purchaserEmail}.` : ""}
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 lg:w-auto">
+                <Input
+                  className="sm:w-64 bg-background"
+                  type="email"
+                  value={deliveryEmail}
+                  placeholder={purchaserEmail ?? "customer@example.com"}
+                  onChange={(event) => setDeliveryEmail(event.target.value)}
+                  aria-label="Report delivery email"
+                />
+                <Button variant="outline" className="gap-1.5" onClick={handleEmailReport} disabled={isEmailingReport}>
+                  {isEmailingReport ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                  Email Report
+                </Button>
+                <Button className="gap-1.5" onClick={() => window.location.href = getReportPdfUrl(projectId)}>
+                  <Download className="h-3.5 w-3.5" />
+                  PDF
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── Section 1: System Summary ──────────────────────────────── */}
         <section>
@@ -496,7 +614,9 @@ export default function Results() {
                 </details>
 
                 <p className="text-xs text-muted-foreground">
-                  Production modeled using NREL PVWatts v8 with TMY3 weather data for {project.city}, {project.state}.
+                  {hasPVWatts
+                    ? `Production modeled using NREL PVWatts v8 weather data for ${project.city}, ${project.state}.`
+                    : `Production uses an approximate state seasonal model because PVWatts data was unavailable for this run.`}
                   Actual output may vary ±10–15% based on weather, soiling, and equipment performance.
                 </p>
               </CardContent>
@@ -1013,7 +1133,7 @@ export default function Results() {
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <Settings2 className="h-4 w-4 text-primary" /> System Loss Breakdown
           </h2>
-          <Card>
+          <Card className={!isPaid ? "opacity-40 pointer-events-none select-none blur-[2px]" : ""}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">
                 Total System Loss: {calc.totalSystemLossPct.toFixed(1)}%
@@ -1107,15 +1227,15 @@ export default function Results() {
                   size="lg"
                   className="bg-amber-500 hover:bg-amber-600 text-white gap-2 px-8"
                   onClick={handleUnlockReport}
-                  disabled={isRedirecting || createCheckoutSession.isPending}
+                  disabled={isRedirecting}
                 >
-                  {isRedirecting || createCheckoutSession.isPending
+                  {isRedirecting
                     ? <Loader2 className="h-4 w-4 animate-spin" />
                     : <Lock className="h-4 w-4" />}
                   Unlock Full Report — $49
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  Secure payment via Stripe · test mode active (use card 4242 4242 4242 4242)
+                  Secure one-time payment via Stripe.
                 </p>
               </CardContent>
             </Card>
@@ -1194,7 +1314,7 @@ export default function Results() {
                                     <span className="hidden group-open:inline">▼ Hide alternatives</span>
                                   </summary>
                                   <div className="mt-2 space-y-2 pl-2 border-l-2 border-primary/20">
-                                    {bomItem.alternatives.map((alt, ai) => (
+                                    {(bomItem.alternatives as Array<Record<string, any>>).map((alt, ai) => (
                                       <div key={ai} className="text-xs bg-muted/30 rounded p-2">
                                         <div className="font-semibold text-foreground/90">
                                           {alt.brandLink
@@ -1247,7 +1367,18 @@ export default function Results() {
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <FileText className="h-4 w-4 text-primary" /> Design Notes
           </h2>
-          <div className="grid gap-3">
+          {!isPaid && (
+            <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20 mb-4 print:hidden">
+              <CardContent className="py-4 flex items-center gap-3">
+                <Lock className="h-5 w-5 text-amber-600" />
+                <div>
+                  <div className="font-semibold text-sm">Detailed design notes are locked</div>
+                  <div className="text-xs text-muted-foreground">Unlock the full report for contractor-ready recommendations and downloadable PDF access.</div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          <div className={`grid gap-3 ${!isPaid ? "opacity-40 pointer-events-none select-none blur-[2px]" : ""}`}>
             {designNotes.map((note, i) => (
               <div key={i} className={`rounded-lg border p-4 ${noteStyle(note.type)}`}>
                 <div className="flex items-start gap-2 mb-2">
@@ -1267,7 +1398,7 @@ export default function Results() {
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <MapPin className="h-4 w-4 text-primary" /> Project Location
           </h2>
-          <Card>
+          <Card className={!isPaid ? "opacity-40 pointer-events-none select-none blur-[2px]" : ""}>
             <CardContent className="pt-4 pb-4">
               <ProjectMap
                 address={project.address}
@@ -1346,8 +1477,258 @@ export default function Results() {
           </div>
         </section>
 
+        </div>
       </div>
     </AppLayout>
+  );
+}
+
+type ContractorProposalReportProps = {
+  project: Record<string, any>;
+  calc: Record<string, any>;
+  bom: Array<Record<string, any>>;
+  bomCategories: string[];
+  monthlyChartData: Array<{ month: string; kwh: number; solrad: number | null }> | null;
+  hasPVWatts: boolean;
+  hasBattery: boolean;
+  systemTypeLabel: string;
+  designNotes: Array<{ title: string; body: string; type: string }>;
+};
+
+function ContractorProposalReport({
+  project,
+  calc,
+  bom,
+  bomCategories,
+  monthlyChartData,
+  hasPVWatts,
+  hasBattery,
+  systemTypeLabel,
+  designNotes,
+}: ContractorProposalReportProps) {
+  const annualProduction = calc.pvwattsAnnualKwh ?? calc.yearlyProductionKwh;
+  const monthlyMax = Math.max(...(monthlyChartData?.map((row) => row.kwh) ?? [1]));
+  const installedMidpoint = (calc.installedCostLow + calc.installedCostHigh) / 2;
+  const diyMidpoint = (calc.diyEquipmentCostLow + calc.diyEquipmentCostHigh) / 2;
+  const dcAcRatio = calc.inverterSizeKw > 0 ? calc.adjustedArraySizeKw / calc.inverterSizeKw : null;
+  const equipmentPreview = bom.slice(0, 14);
+  const totalEquipment = bom.reduce(
+    (sum, item) => ({
+      low: sum.low + (item.totalPriceLow ?? 0),
+      high: sum.high + (item.totalPriceHigh ?? 0),
+    }),
+    { low: 0, high: 0 },
+  );
+
+  const SummaryRow = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="proposal-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+
+  return (
+    <article className="contractor-report hidden print:block">
+      <section className="proposal-cover">
+        <div className="proposal-brand">
+          <div className="proposal-logo">LOGO</div>
+          <div>
+            <div className="proposal-kicker">Contractor-Grade Solar Proposal</div>
+            <h1>{project.name}</h1>
+            <p>{project.address}, {project.city}, {project.state} {project.zip}</p>
+          </div>
+        </div>
+        <div className="proposal-meta">
+          <div>Prepared by OffGrid Solar Builder</div>
+          <div>Generated {new Date().toLocaleDateString()}</div>
+          <div>{systemTypeLabel} · {project.installationType} mount</div>
+        </div>
+        <div className="proposal-hero-grid">
+          <div>
+            <span>Recommended array</span>
+            <strong>{calc.adjustedArraySizeKw.toFixed(2)} kW DC</strong>
+          </div>
+          <div>
+            <span>Annual production</span>
+            <strong>{Math.round(annualProduction).toLocaleString()} kWh</strong>
+          </div>
+          <div>
+            <span>Installed estimate</span>
+            <strong>${Math.round(calc.installedCostLow).toLocaleString()} - ${Math.round(calc.installedCostHigh).toLocaleString()}</strong>
+          </div>
+          <div>
+            <span>Payback</span>
+            <strong>{calc.paybackYears ? `${calc.paybackYears.toFixed(1)} yrs` : "N/A"}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="proposal-section">
+        <h2>Project Summary</h2>
+        <div className="proposal-two-col">
+          <div className="proposal-panel">
+            <SummaryRow label="System type" value={systemTypeLabel} />
+            <SummaryRow label="Installation" value={`${project.installationType} mount`} />
+            <SummaryRow label="Annual usage" value={`${Math.round(project.annualKwh).toLocaleString()} kWh`} />
+            <SummaryRow label="Daily usage" value={`${calc.dailyKwh.toFixed(1)} kWh/day`} />
+            <SummaryRow label="Utility rate" value={`$${project.utilityRatePerKwh.toFixed(3)}/kWh`} />
+          </div>
+          <div className="proposal-panel">
+            <SummaryRow label="Panel count" value={`${calc.numPanels} modules`} />
+            <SummaryRow label="Array footprint" value={calc.squareFeetRequired ? `${calc.squareFeetRequired} sq ft` : "Site verified"} />
+            <SummaryRow label="Tilt / azimuth" value={`${project.roofPitch || "Site"} / ${project.roofDirection || "South"}`} />
+            <SummaryRow label="Peak sun hours" value={`${calc.peakSunHours} h/day ${hasPVWatts ? "(PVWatts)" : "(estimate)"}`} />
+            <SummaryRow label="DC/AC ratio" value={dcAcRatio ? dcAcRatio.toFixed(2) : "TBD"} />
+          </div>
+        </div>
+      </section>
+
+      <section className="proposal-section">
+        <h2>Site Map</h2>
+        <div className="proposal-map">
+          <div>
+            <strong>Project Location</strong>
+            <p>{project.address}, {project.city}, {project.state} {project.zip}</p>
+            <p>Property coordinates: {project.lat != null && project.lon != null ? `${Number(project.lat).toFixed(5)}, ${Number(project.lon).toFixed(5)}` : "Geocoding pending"}</p>
+            <p>Array coordinates: {project.arrayLat != null && project.arrayLon != null ? `${Number(project.arrayLat).toFixed(5)}, ${Number(project.arrayLon).toFixed(5)}` : "Uses property location"}</p>
+          </div>
+          <div className="proposal-map-placeholder">Map / Site Plan Placeholder</div>
+        </div>
+      </section>
+
+      <section className="proposal-section">
+        <h2>Production Estimate</h2>
+        <div className="proposal-two-col">
+          <div className="proposal-panel">
+            <SummaryRow label="Annual AC production" value={`${Math.round(annualProduction).toLocaleString()} kWh`} />
+            <SummaryRow label="Monthly average" value={`${Math.round(annualProduction / 12).toLocaleString()} kWh`} />
+            <SummaryRow label="Capacity factor" value={calc.pvwattsCapacityFactor ? `${calc.pvwattsCapacityFactor.toFixed(1)}%` : "Estimated"} />
+            <SummaryRow label="Production source" value={hasPVWatts ? "NREL PVWatts v8" : "State seasonal fallback"} />
+          </div>
+          <div className="proposal-panel">
+            <div className="proposal-chart">
+              {monthlyChartData?.map((row) => (
+                <div key={row.month} className="proposal-chart-bar">
+                  <div style={{ height: `${Math.max(8, (row.kwh / monthlyMax) * 100)}%` }} />
+                  <span>{row.month}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="proposal-section">
+        <h2>Battery and Inverter Sizing</h2>
+        <div className="proposal-two-col">
+          <div className="proposal-panel">
+            <SummaryRow label="Inverter rating" value={`${calc.inverterSizeKw.toFixed(1)} kW AC`} />
+            <SummaryRow label="Recommended inverter" value={calc.recommendedInverterBrand} />
+            <SummaryRow label="Sizing basis" value={project.systemType === "grid-tied" ? "DC/AC ratio and standard inverter sizes" : "Estimated peak load plus motor-start reserve"} />
+          </div>
+          <div className="proposal-panel">
+            <SummaryRow label="Battery selected" value={hasBattery ? "Yes" : "No"} />
+            <SummaryRow label="Usable capacity" value={hasBattery ? `${calc.batteryUsableKwh.toFixed(1)} kWh` : "N/A"} />
+            <SummaryRow label="Total bank" value={hasBattery ? `${calc.totalBatteryBankKwh.toFixed(1)} kWh` : "N/A"} />
+            <SummaryRow label="Recommended battery" value={hasBattery ? calc.recommendedBatteryBrand : "Not selected"} />
+          </div>
+        </div>
+      </section>
+
+      <section className="proposal-section proposal-page-break">
+        <h2>Losses Breakdown</h2>
+        <table className="proposal-table">
+          <thead>
+            <tr><th>Loss Category</th><th>Percent</th><th>Basis</th></tr>
+          </thead>
+          <tbody>
+            {[
+              ["Inverter conversion", calc.inverterLossPct, "DC to AC conversion"],
+              ["Wire and connection", calc.wireLossPct, "Conductor resistance and terminations"],
+              ["Shading", calc.shadeLossPct, `${project.shadeLevel} shade condition`],
+              ["Temperature", calc.tempLossPct, "Module temperature derating"],
+              ["Dirt / soiling", calc.dirtLossPct, "Dust and seasonal soiling"],
+              ["Panel mismatch", calc.misMatchLossPct ?? 2, "Manufacturing tolerance and string mismatch"],
+              ...(calc.batteryLossPct > 0 ? [["Battery round trip", calc.batteryLossPct, "Charge/discharge throughput"]] : []),
+            ].map(([name, pct, basis]) => (
+              <tr key={String(name)}>
+                <td>{name}</td>
+                <td>{Number(pct).toFixed(1)}%</td>
+                <td>{basis}</td>
+              </tr>
+            ))}
+            <tr className="proposal-total-row">
+              <td>Total modeled loss</td>
+              <td>{calc.totalSystemLossPct.toFixed(1)}%</td>
+              <td>Used for system sizing and production estimate</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section className="proposal-section">
+        <h2>Equipment List</h2>
+        <table className="proposal-table">
+          <thead>
+            <tr><th>Category</th><th>Equipment</th><th>Qty</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            {equipmentPreview.map((item, index) => (
+              <tr key={`${item.category}-${index}`}>
+                <td>{item.category}</td>
+                <td><strong>{item.model}</strong><br /><span>{item.specs}</span></td>
+                <td>{item.qty}</td>
+                <td>{item.totalPrice}</td>
+              </tr>
+            ))}
+            {bom.length > equipmentPreview.length && (
+              <tr><td colSpan={4}>Additional balance-of-system items included in the interactive report.</td></tr>
+            )}
+            <tr className="proposal-total-row">
+              <td colSpan={3}>Estimated equipment subtotal</td>
+              <td>${Math.round(totalEquipment.low).toLocaleString()} - ${Math.round(totalEquipment.high).toLocaleString()}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="proposal-footnote">Equipment categories included: {bomCategories.join(", ")}.</p>
+      </section>
+
+      <section className="proposal-section">
+        <h2>Cost Estimate and ROI</h2>
+        <div className="proposal-two-col">
+          <div className="proposal-panel">
+            <SummaryRow label="Installed cost range" value={`$${Math.round(calc.installedCostLow).toLocaleString()} - $${Math.round(calc.installedCostHigh).toLocaleString()}`} />
+            <SummaryRow label="Installed midpoint" value={`$${Math.round(installedMidpoint).toLocaleString()}`} />
+            <SummaryRow label="DIY equipment range" value={`$${Math.round(calc.diyEquipmentCostLow).toLocaleString()} - $${Math.round(calc.diyEquipmentCostHigh).toLocaleString()}`} />
+            <SummaryRow label="DIY midpoint" value={`$${Math.round(diyMidpoint).toLocaleString()}`} />
+          </div>
+          <div className="proposal-panel">
+            <SummaryRow label="Annual savings" value={`$${Math.round(calc.estimatedYearlySavings).toLocaleString()}/yr`} />
+            <SummaryRow label="Simple payback" value={calc.paybackYears ? `${calc.paybackYears.toFixed(1)} years` : "N/A"} />
+            <SummaryRow label="Bill offset basis" value={`${Math.min(Math.round(annualProduction), Math.round(project.annualKwh)).toLocaleString()} kWh/yr`} />
+            <SummaryRow label="Incentives" value="Not included unless separately verified" />
+          </div>
+        </div>
+      </section>
+
+      <section className="proposal-section">
+        <h2>Assumptions and Contractor Notes</h2>
+        <ul className="proposal-list">
+          <li>Production estimates use {hasPVWatts ? "NREL PVWatts v8 weather data" : "state-average seasonal assumptions"} and preliminary project inputs.</li>
+          <li>Final design must verify roof structure, setbacks, fire pathways, point-of-interconnection, conductor routing, and AHJ requirements.</li>
+          <li>Costs are planning ranges and exclude utility upgrades, trenching, structural engineering, permit fees, taxes, financing, and incentive adjustments unless noted.</li>
+          <li>Battery backup duration assumes average load. Critical-load panel design may materially change usable backup time.</li>
+          {designNotes.slice(0, 4).map((note) => <li key={note.title}>{note.title}: {note.body}</li>)}
+        </ul>
+      </section>
+
+      <section className="proposal-section">
+        <h2>Disclaimers</h2>
+        <p className="proposal-disclaimer">
+          This proposal is for preliminary planning and sales discussion only. It is not a stamped engineering package, construction drawing set, interconnection application, permit plan, or guarantee of production, savings, incentives, utility approval, or code compliance. Final system design, electrical work, structural review, permitting, inspection, and commissioning must be completed by qualified licensed professionals and approved by the Authority Having Jurisdiction.
+        </p>
+      </section>
+    </article>
   );
 }
 

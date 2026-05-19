@@ -11,6 +11,13 @@ import { env, requireEnv } from "../../config/env";
  * In production: uses the live keys (when deployed).
  */
 async function getStripeCredentials(): Promise<{ secretKey: string; publishableKey?: string }> {
+  if (env.stripeSecretKey) {
+    return {
+      secretKey: env.stripeSecretKey,
+      publishableKey: env.stripePublishableKey,
+    };
+  }
+
   const hostname = env.replitConnectorsHostname;
   const xReplitToken = env.replitIdentity
     ? "repl " + env.replitIdentity
@@ -78,11 +85,19 @@ export async function getStripePublishableKey(): Promise<string | undefined> {
 
 /**
  * Constructs and verifies a Stripe webhook event from a raw Buffer payload.
- * stripe-replit-sync manages the webhook secret automatically, so we don't
- * need a manual STRIPE_WEBHOOK_SECRET env var.
+ * In production, STRIPE_WEBHOOK_SECRET must be set so custom unlock logic never
+ * trusts unsigned JSON before stripe-replit-sync processes the event.
  */
-export async function constructStripeEvent(payload: Buffer, _signature: string): Promise<Stripe.Event> {
-  // Parse the event — webhook signature verification is handled by stripe-replit-sync
+export async function constructStripeEvent(payload: Buffer, signature: string): Promise<Stripe.Event> {
+  if (env.stripeWebhookSecret) {
+    const stripe = await getUncachableStripeClient();
+    return stripe.webhooks.constructEvent(payload, signature, env.stripeWebhookSecret);
+  }
+
+  if (env.nodeEnv === "production") {
+    throw new Error("STRIPE_WEBHOOK_SECRET is required in production");
+  }
+
   return JSON.parse(payload.toString()) as Stripe.Event;
 }
 
