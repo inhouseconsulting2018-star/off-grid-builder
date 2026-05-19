@@ -1,0 +1,89 @@
+Prepare Stripe live-mode payment setup for OffGrid Solar Builder.
+
+Important:
+Do not switch to live mode blindly.
+Do not expose Stripe secret keys.
+Do not delete the existing test-mode setup.
+Do not move launch tags.
+
+Current issue:
+The current STRIPE_PRICE_ID starts with price_1TWz... and appears to be a Stripe test-mode price. For live payments, the app needs a live Stripe product/price and live Stripe secrets.
+
+Tasks:
+
+1. Inspect current Stripe setup
+- Locate Stripe integration/config files.
+- Locate the seed script that creates Stripe product/price records.
+- Identify how STRIPE_PRICE_ID is currently used.
+- Identify whether the app uses Replit Stripe connector variables or normal Stripe env vars.
+
+2. Confirm required live-mode environment variables
+List exactly what must be set in Replit Secrets/Integrations:
+- STRIPE_SECRET_KEY or Replit Stripe live connector equivalent
+- STRIPE_PUBLISHABLE_KEY if used by frontend
+- STRIPE_PRICE_ID
+- STRIPE_WEBHOOK_SECRET
+- ADMIN_TOKEN
+- DATABASE_URL
+
+3. Create live Stripe product/price safely
+- Update or run the seed script against the live Stripe account only when live Stripe credentials are active.
+- Product name:
+  Full Solar Report
+- Price:
+  $49 one-time payment
+- Currency:
+  USD
+- Save/output the new live price ID.
+- Confirm the live price ID is different from the test price ID.
+
+4. Update Replit Secrets
+- Update STRIPE_PRICE_ID to the new live price ID.
+- Confirm STRIPE_WEBHOOK_SECRET is for the live webhook endpoint, not test mode.
+- Confirm no live secret keys are written into source files.
+- Confirm .env files remain gitignored.
+
+5. Configure live webhook
+Use this production webhook URL:
+https://offgridsolarbuilders.com/api/stripe/webhook
+
+Required webhook events:
+- checkout.session.completed
+- payment_intent.payment_failed
+
+Verify:
+- webhook signature verification works
+- webhook endpoint returns success for valid Stripe events
+- failed/invalid signatures are rejected
+
+6. Live-mode checkout verification
+After live secrets are configured:
+- create a guest project
+- view preview report
+- click Unlock Full Solar Report
+- confirm checkout opens with live Stripe mode
+- confirm amount is $49
+- confirm domain/success/cancel URLs use offgridsolarbuilders.com
+- do not complete a real payment unless I explicitly say so
+
+7. Safety checks
+Verify:
+- unpaid users cannot access full report
+- unpaid users cannot download PDF
+- paid entitlement still required
+- admin pages require ADMIN_TOKEN
+- no customer project enumeration is public
+- no secrets are committed
+- no live Stripe keys appear client-side
+
+8. Final output
+Give me:
+- whether live Stripe is ready
+- new live STRIPE_PRICE_ID
+- webhook status
+- required Replit Secrets checklist
+- remaining blockers before accepting real payments
+
+Do not create or move git tags.
+Do not merge branches.
+Do not switch unrelated services to production.
