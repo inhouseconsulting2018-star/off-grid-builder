@@ -4,7 +4,6 @@ import projectsRouter from "./projects";
 import settingsRouter from "./settings";
 import proposalsRouter from "./proposals";
 import geocodeRouter from "./geocode";
-import stripeRouter from "./stripe";
 
 const router: IRouter = Router();
 
@@ -13,6 +12,5 @@ router.use(projectsRouter);
 router.use(settingsRouter);
 router.use(proposalsRouter);
 router.use(geocodeRouter);
-router.use(stripeRouter);
 
 export default router;

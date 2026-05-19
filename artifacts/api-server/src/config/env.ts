@@ -5,6 +5,8 @@ export const env = {
   databaseUrl: process.env.DATABASE_URL,
   pvwattsApiKey: process.env.PVWATTS_API_KEY,
   stripePriceId: process.env.STRIPE_PRICE_ID,
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+  adminToken: process.env.ADMIN_TOKEN,
   replitConnectorsHostname: process.env.REPLIT_CONNECTORS_HOSTNAME,
   replitIdentity: process.env.REPL_IDENTITY,
   webReplRenewal: process.env.WEB_REPL_RENEWAL,

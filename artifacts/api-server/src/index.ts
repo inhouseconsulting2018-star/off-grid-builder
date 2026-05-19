@@ -2,6 +2,7 @@ import { runMigrations } from "stripe-replit-sync";
 import app from "./app";
 import { env, requireEnv } from "./config/env";
 import { logger } from "./utils/logger";
+import { db, settingsTable } from "@workspace/db";
 
 /**
  * Attempt to create the stripe.* schema tables via stripe-replit-sync.
@@ -20,6 +21,26 @@ async function initStripeSchema() {
   }
 }
 
+/**
+ * Ensure the settings table has exactly one row with default values.
+ * Idempotent — skips insertion if a row already exists.
+ */
+async function seedSettings() {
+  try {
+    const [existing] = await db.select().from(settingsTable).limit(1);
+    if (!existing) {
+      await db.insert(settingsTable).values({});
+      logger.info("Settings row seeded with defaults");
+    }
+  } catch (error: unknown) {
+    logger.warn({ err: error }, "Settings seed skipped");
+  }
+}
+
+// Fail fast on startup if critical env vars are absent.
+// Better to crash immediately with a clear message than to boot and fail on the first request.
+requireEnv("databaseUrl");
+
 const rawPort = requireEnv("port");
 
 const port = Number(rawPort);
@@ -30,6 +51,9 @@ if (Number.isNaN(port) || port <= 0) {
 
 // Run stripe schema migration fire-and-forget (non-blocking)
 initStripeSchema().catch(() => {});
+
+// Seed default settings row if the table is empty (non-blocking)
+seedSettings().catch(() => {});
 
 app.listen(port, (err) => {
   if (err) {

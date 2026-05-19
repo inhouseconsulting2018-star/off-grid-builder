@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db, projectsTable, settingsTable } from "@workspace/db";
@@ -12,6 +13,14 @@ import {
 import { geocodeAddress } from "../services/geocoding/geocodingService";
 import { runCalculationsWithPVWatts } from "../services/solar/calculationEngine";
 import { logger } from "../utils/logger";
+import { env } from "../config/env";
+import { getUncachableStripeClient } from "../services/payments/stripeClient";
+import {
+  requireAdminToken,
+  resolveProjectByToken,
+  sanitizeProject,
+  previewProject,
+} from "../middlewares/auth";
 
 const router: IRouter = Router();
 
@@ -26,10 +35,7 @@ async function geocodeAndPersist(project: {
   lat: number | null;
   lon: number | null;
 }): Promise<void> {
-  // Never overwrite manually-entered coordinates
   if (project.useManualCoords) return;
-
-  // Only geocode if we have enough address info
   if (!project.city || !project.state) return;
 
   try {
@@ -48,19 +54,21 @@ async function geocodeAndPersist(project: {
       logger.info({ id: project.id, accuracy: result.accuracy }, "Project geocoded");
     }
   } catch (err) {
-    // Geocoding failure is non-fatal — project is still saved, map falls back gracefully
     logger.warn({ err, id: project.id }, "Geocode failed — project saved without coords");
   }
 }
 
-router.get("/projects", async (req, res): Promise<void> => {
+// ── GET /projects — admin only ─────────────────────────────────────────────────
+router.get("/projects", requireAdminToken, async (_req, res): Promise<void> => {
   const projects = await db
     .select()
     .from(projectsTable)
     .orderBy(desc(projectsTable.createdAt));
-  res.json(projects);
+  res.json(projects.map(sanitizeProject));
 });
 
+// ── POST /projects ─────────────────────────────────────────────────────────────
+// Public — creates a new project and returns a one-time accessToken.
 router.post("/projects", async (req, res): Promise<void> => {
   const parsed = CreateProjectBody.safeParse(req.body);
   if (!parsed.success) {
@@ -68,9 +76,13 @@ router.post("/projects", async (req, res): Promise<void> => {
     return;
   }
 
-  const [project] = await db.insert(projectsTable).values(parsed.data).returning();
+  const accessToken = randomUUID();
 
-  // Geocode in the background — don't block the response
+  const [project] = await db
+    .insert(projectsTable)
+    .values({ ...parsed.data, accessToken })
+    .returning();
+
   void geocodeAndPersist({
     id: project.id,
     address: project.address,
@@ -82,10 +94,12 @@ router.post("/projects", async (req, res): Promise<void> => {
     lon: project.lon,
   });
 
+  // Return the full row including accessToken — this is the ONLY time it is disclosed.
   res.status(201).json(project);
 });
 
-router.get("/projects/stats/summary", async (req, res): Promise<void> => {
+// ── GET /projects/stats/summary — admin only ───────────────────────────────────
+router.get("/projects/stats/summary", requireAdminToken, async (_req, res): Promise<void> => {
   const projects = await db.select().from(projectsTable).orderBy(desc(projectsTable.createdAt));
 
   const totalProjects = projects.length;
@@ -109,10 +123,13 @@ router.get("/projects/stats/summary", async (req, res): Promise<void> => {
     offGridCount,
     gridTiedCount,
     hybridCount,
-    recentProjects: projects.slice(0, 5),
+    recentProjects: projects.slice(0, 5).map(sanitizeProject),
   });
 });
 
+// ── GET /projects/:id ──────────────────────────────────────────────────────────
+// Requires valid accessToken (or admin token).
+// Returns full calculationResult only if project is paid; preview otherwise.
 router.get("/projects/:id", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
@@ -121,24 +138,33 @@ router.get("/projects/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [project] = await db
-    .select()
-    .from(projectsTable)
-    .where(eq(projectsTable.id, params.data.id));
-
+  const project = await resolveProjectByToken(req, params.data.id);
   if (!project) {
     res.status(404).json({ error: "Project not found" });
     return;
   }
 
-  res.json(project);
+  if (!project.paidAt) {
+    res.json(previewProject(project));
+    return;
+  }
+
+  res.json(sanitizeProject(project));
 });
 
+// ── PATCH /projects/:id ────────────────────────────────────────────────────────
+// Requires valid accessToken or admin token.
 router.patch("/projects/:id", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = UpdateProjectParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const existingProject = await resolveProjectByToken(req, params.data.id);
+  if (!existingProject) {
+    res.status(404).json({ error: "Project not found" });
     return;
   }
 
@@ -159,7 +185,6 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Re-geocode if address fields changed and not using manual coordinates
   const body = parsed.data as Record<string, unknown>;
   const addressChanged = "address" in body || "city" in body || "state" in body || "zip" in body;
   const manualDisabled = "useManualCoords" in body && body["useManualCoords"] === false;
@@ -176,14 +201,22 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
     });
   }
 
-  res.json(project);
+  res.json(sanitizeProject(project));
 });
 
+// ── DELETE /projects/:id ───────────────────────────────────────────────────────
+// Requires valid accessToken or admin token.
 router.delete("/projects/:id", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = DeleteProjectParams.safeParse({ id: parseInt(raw, 10) });
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const existingProject = await resolveProjectByToken(req, params.data.id);
+  if (!existingProject) {
+    res.status(404).json({ error: "Project not found" });
     return;
   }
 
@@ -200,20 +233,14 @@ router.delete("/projects/:id", async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-// ── POST /projects/:id/regeocode ──────────────────────────────────────────────
-// Geocodes (or re-geocodes) a project's address and persists the result.
-// Returns the updated project row.
-
+// ── POST /projects/:id/regeocode ───────────────────────────────────────────────
+// Requires valid accessToken or admin token.
 router.post("/projects/:id/regeocode", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid project ID" }); return; }
 
-  const [project] = await db
-    .select()
-    .from(projectsTable)
-    .where(eq(projectsTable.id, id));
-
+  const project = await resolveProjectByToken(req, id);
   if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
   if (!project.city || !project.state) {
@@ -240,9 +267,13 @@ router.post("/projects/:id/regeocode", async (req, res): Promise<void> => {
     .returning();
 
   logger.info({ id, accuracy: result.accuracy }, "Project re-geocoded via API");
-  res.json(updated);
+  res.json(sanitizeProject(updated));
 });
 
+// ── POST /projects/:id/calculate ───────────────────────────────────────────────
+// Requires valid accessToken or admin token.
+// Runs calculations and persists results.
+// Returns full data if paid; preview-only (system sizing without BOM/costs) if unpaid.
 router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = CalculateProjectParams.safeParse({ id: parseInt(raw, 10) });
@@ -251,11 +282,7 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
     return;
   }
 
-  const [project] = await db
-    .select()
-    .from(projectsTable)
-    .where(eq(projectsTable.id, params.data.id));
-
+  const project = await resolveProjectByToken(req, params.data.id);
   if (!project) {
     res.status(404).json({ error: "Project not found" });
     return;
@@ -301,7 +328,105 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
     .set({ calculationResult: finalResult })
     .where(eq(projectsTable.id, params.data.id));
 
+  if (!project.paidAt) {
+    const calc = finalResult as Record<string, unknown>;
+    res.json({
+      preview: true,
+      paid: false,
+      arraySizeKw: calc["arraySizeKw"],
+      adjustedArraySizeKw: calc["adjustedArraySizeKw"],
+      numPanels: calc["numPanels"],
+      inverterSizeKw: calc["inverterSizeKw"],
+      batteryUsableKwh: calc["batteryUsableKwh"],
+      yearlyProductionKwh: calc["yearlyProductionKwh"],
+      peakSunHours: calc["peakSunHours"],
+      pvwattsSource: calc["pvwattsSource"],
+      notes: (calc["notes"] as string[] | undefined)?.slice(0, 2) ?? [],
+    });
+    return;
+  }
+
   res.json(finalResult);
+});
+
+// ── GET /projects/:id/report ───────────────────────────────────────────────────
+// Requires valid accessToken AND payment entitlement (paidAt must be set).
+// Returns full calculation result and BOM data as JSON.
+// PDF rendering is a TODO — this endpoint enforces the payment gate now.
+router.get("/projects/:id/report", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(raw, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid project ID" }); return; }
+
+  const project = await resolveProjectByToken(req, id);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  if (!project.paidAt) {
+    res.status(402).json({
+      error: "Payment required",
+      message: "Purchase the full report to access system design, BOM, and cost analysis.",
+      projectId: id,
+    });
+    return;
+  }
+
+  res.json({
+    project: sanitizeProject(project),
+    report: {
+      generatedAt: new Date().toISOString(),
+      paidAt: project.paidAt,
+      calculationResult: project.calculationResult,
+    },
+  });
+});
+
+// ── POST /projects/:id/create-checkout-session ─────────────────────────────────
+// Requires valid accessToken or admin token.
+router.post("/projects/:id/create-checkout-session", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(raw, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid project ID" }); return; }
+
+  const project = await resolveProjectByToken(req, id);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  if (project.paidAt) {
+    res.status(400).json({ error: "Project is already unlocked" });
+    return;
+  }
+
+  const priceId = env.stripePriceId;
+  if (!priceId) {
+    res.status(500).json({
+      error: "STRIPE_PRICE_ID is not configured. Run the seed script and set the env var.",
+    });
+    return;
+  }
+
+  const stripe = await getUncachableStripeClient();
+
+  const host = req.get("host") ?? "localhost";
+  const protocol = req.protocol;
+  const accessToken = req.headers["x-access-token"] ?? req.query["accessToken"] ?? "";
+  const successUrl = `${protocol}://${host}/payment-success?projectId=${id}&session_id={CHECKOUT_SESSION_ID}&accessToken=${accessToken}`;
+  const cancelUrl = `${protocol}://${host}/payment-cancel?projectId=${id}&accessToken=${accessToken}`;
+
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ["card"],
+    line_items: [{ price: priceId, quantity: 1 }],
+    mode: "payment",
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    metadata: { projectId: String(id) },
+  });
+
+  res.json({ url: session.url });
 });
 
 export default router;

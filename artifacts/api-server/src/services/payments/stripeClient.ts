@@ -1,14 +1,11 @@
 import Stripe from 'stripe';
 import { StripeSync } from 'stripe-replit-sync';
 import { env, requireEnv } from "../../config/env";
+import { logger } from "../../utils/logger";
 
 /**
  * Fetches Stripe credentials from the Replit connection API.
  * Not cached — tokens can rotate, so fetch fresh each time.
- *
- * Keys come from the Stripe integration connected via the Replit Integrations tab.
- * In development: uses the Stripe sandbox (test) keys.
- * In production: uses the live keys (when deployed).
  */
 async function getStripeCredentials(): Promise<{ secretKey: string; publishableKey?: string }> {
   const hostname = env.replitConnectorsHostname;
@@ -78,12 +75,37 @@ export async function getStripePublishableKey(): Promise<string | undefined> {
 
 /**
  * Constructs and verifies a Stripe webhook event from a raw Buffer payload.
- * stripe-replit-sync manages the webhook secret automatically, so we don't
- * need a manual STRIPE_WEBHOOK_SECRET env var.
+ *
+ * Verification strategy:
+ *   - If STRIPE_WEBHOOK_SECRET is set: always verify the Stripe signature (HMAC-SHA256).
+ *   - If STRIPE_WEBHOOK_SECRET is not set AND we are in a Replit deployment: throw — production
+ *     must always verify signatures to prevent webhook spoofing.
+ *   - If STRIPE_WEBHOOK_SECRET is not set in development: log a warning and skip verification
+ *     (allows local testing with the Stripe CLI before setting up the secret).
  */
-export async function constructStripeEvent(payload: Buffer, _signature: string): Promise<Stripe.Event> {
-  // Parse the event — webhook signature verification is handled by stripe-replit-sync
-  return JSON.parse(payload.toString()) as Stripe.Event;
+export async function constructStripeEvent(payload: Buffer, signature: string): Promise<Stripe.Event> {
+  const webhookSecret = env.stripeWebhookSecret;
+
+  if (!webhookSecret) {
+    if (env.isReplitDeployment) {
+      throw new Error(
+        "STRIPE_WEBHOOK_SECRET must be set in production. " +
+        "Configure it via the environment secrets before deploying."
+      );
+    }
+    logger.warn(
+      "STRIPE_WEBHOOK_SECRET is not set — skipping webhook signature verification. " +
+      "This is only acceptable in local development. Set it before deploying."
+    );
+    return JSON.parse(payload.toString()) as Stripe.Event;
+  }
+
+  const stripe = await getUncachableStripeClient();
+  return stripe.webhooks.constructEvent(
+    payload,
+    signature,
+    webhookSecret,
+  ) as Stripe.Event;
 }
 
 /**

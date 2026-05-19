@@ -40,6 +40,10 @@ export const projectsTable = pgTable("projects", {
   // When true the map uses lat/lon directly without re-geocoding
   useManualCoords: boolean("use_manual_coords").notNull().default(false),
   calculationResult: jsonb("calculation_result"),
+  // Guest access token — generated on project creation, returned once in the 201 response.
+  // Required (via X-Access-Token header or ?accessToken= query) for all project mutations
+  // and for reading project data. Null for pre-launch rows; admin token bypasses it.
+  accessToken: text("access_token"),
   // Stripe payment fields — null means unpaid, populated after successful Stripe Checkout
   paidAt: timestamp("paid_at", { withTimezone: true }),
   stripeSessionId: text("stripe_session_id"),
