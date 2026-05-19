@@ -38,6 +38,57 @@ export interface GeoResult {
   accuracy: "exact" | "zip" | "city";
 }
 
+interface NominatimAddress {
+  house_number?: string;
+  road?: string;
+  pedestrian?: string;
+  residential?: string;
+  city?: string;
+  town?: string;
+  village?: string;
+  state?: string;
+  state_code?: string;
+  postcode?: string;
+}
+
+interface NominatimRow {
+  lat?: string;
+  lon?: string;
+  address?: NominatimAddress;
+  importance?: number;
+}
+
+function normalize(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\b(street|st)\b/g, "st")
+    .replace(/\b(avenue|ave)\b/g, "ave")
+    .replace(/\b(road|rd)\b/g, "rd")
+    .replace(/\b(drive|dr)\b/g, "dr")
+    .replace(/\b(lane|ln)\b/g, "ln")
+    .replace(/\b(court|ct)\b/g, "ct")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function rowScore(row: NominatimRow, opts: { address: string; city: string; state: string; zip: string }): number {
+  const addr = row.address;
+  if (!addr) return 0;
+  let score = 0;
+  const inputStreet = normalize(opts.address);
+  const rowStreet = normalize([addr.house_number, addr.road ?? addr.pedestrian ?? addr.residential].filter(Boolean).join(" "));
+  const rowCity = normalize(addr.city ?? addr.town ?? addr.village ?? "");
+  const rowState = normalize(addr.state_code ?? addr.state ?? "");
+  const rowZip = (addr.postcode ?? "").slice(0, 5);
+
+  if (addr.house_number && inputStreet.startsWith(normalize(addr.house_number))) score += 4;
+  if (rowStreet && inputStreet && (rowStreet === inputStreet || inputStreet.includes(rowStreet) || rowStreet.includes(inputStreet))) score += 5;
+  if (opts.city && rowCity === normalize(opts.city)) score += 2;
+  if (opts.state && rowState.includes(normalize(opts.state))) score += 2;
+  if (opts.zip && rowZip === opts.zip.slice(0, 5)) score += 3;
+  return score + (row.importance ?? 0);
+}
+
 /**
  * Geocodes a property address with a four-level progressive fallback strategy.
  * Returns null only if all strategies fail (rare — should at least match city+state).
@@ -50,13 +101,19 @@ export async function geocodeAddress(opts: {
 }): Promise<GeoResult | null> {
   const { address = "", city = "", state = "", zip = "" } = opts;
 
-  interface Row { lat?: string; lon?: string }
-
-  const trySearch = async (params: Record<string, string>): Promise<{ lat: number; lon: number } | null> => {
+  const trySearch = async (
+    params: Record<string, string>,
+    requireStreetMatch = false,
+  ): Promise<{ lat: number; lon: number } | null> => {
     try {
-      const rows = (await nominatimSearch(params)) as Row[];
-      if (rows.length > 0 && rows[0].lat && rows[0].lon) {
-        return { lat: parseFloat(rows[0].lat), lon: parseFloat(rows[0].lon) };
+      const rows = (await nominatimSearch(params)) as NominatimRow[];
+      const ranked = rows
+        .filter((row) => row.lat && row.lon)
+        .map((row) => ({ row, score: rowScore(row, { address, city, state, zip }) }))
+        .sort((a, b) => b.score - a.score);
+      const best = ranked[0];
+      if (best && (!requireStreetMatch || best.score >= 9)) {
+        return { lat: parseFloat(best.row.lat!), lon: parseFloat(best.row.lon!) };
       }
     } catch { /* try next level */ }
     return null;
@@ -64,14 +121,14 @@ export async function geocodeAddress(opts: {
 
   // 1. Structured query — most accurate, avoids cross-state false matches
   if (address && city && state) {
-    const r = await trySearch({ street: address, city, state, ...(zip ? { postalcode: zip } : {}), limit: "1" });
+    const r = await trySearch({ street: address, city, state, ...(zip ? { postalcode: zip } : {}), limit: "5" }, true);
     if (r) return { ...r, accuracy: "exact" };
   }
 
   // 2. Free-form full address string
   if (address && city && state) {
     const q = `${address}, ${city}, ${state}${zip ? " " + zip : ""}, USA`;
-    const r = await trySearch({ q, limit: "1" });
+    const r = await trySearch({ q, limit: "5" }, true);
     if (r) return { ...r, accuracy: "exact" };
   }
 

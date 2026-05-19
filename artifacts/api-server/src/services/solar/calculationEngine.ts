@@ -712,6 +712,11 @@ function withFallbackPvwattsFields(calcResult: CalculationResult) {
     pvwattsSolradAnnual: calcResult.peakSunHours,
     pvwattsCapacityFactor: null,
     pvwattsSource: "fallback" as const,
+    productionEstimateLabel: "Approximate state-seasonal estimate",
+    notes: [
+      ...calcResult.notes,
+      "PVWatts production data was unavailable, so solar production, savings, ROI, and battery planning use approximate state-average irradiance assumptions.",
+    ],
   };
 }
 
@@ -744,6 +749,7 @@ function withPvwattsResult(
     pvwattsSolradAnnual: pvwatts.solradAnnual,
     pvwattsCapacityFactor: pvwatts.capacityFactor,
     pvwattsSource: pvwatts.source,
+    productionEstimateLabel: "NREL PVWatts v8 modeled estimate",
   };
 }
 
@@ -755,6 +761,9 @@ export async function runCalculationsWithPVWatts(
   const pvwatts = await fetchPVWatts({
     systemCapacityKw: calcResult.adjustedArraySizeKw,
     losses: pvWattsLosses(calcResult),
+    dcAcRatio: calcResult.inverterSizeKw > 0
+      ? calcResult.adjustedArraySizeKw / calcResult.inverterSizeKw
+      : 1.2,
     installationType: project.installationType,
     roofPitch: project.roofPitch ?? "20",
     roofDirection: project.roofDirection ?? "South",

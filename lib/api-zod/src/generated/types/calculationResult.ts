@@ -115,6 +115,8 @@ export interface CalculationResult {
    * @nullable
    */
   pvwattsSource?: string | null;
+  /** Human-readable production source label for report trust/disclaimer text. */
+  productionEstimateLabel?: string;
   /** Panel-to-panel mismatch and manufacturing tolerance loss (%). Typically 2%. */
   misMatchLossPct?: number;
   /** Total panel footprint required including racking clearance (sqft). */

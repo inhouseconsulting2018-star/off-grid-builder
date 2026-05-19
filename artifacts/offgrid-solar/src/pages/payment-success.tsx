@@ -2,11 +2,17 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, FileText, ArrowRight } from "lucide-react";
 import { Link, useSearch } from "wouter";
+import { saveProjectRef } from "@/services/projectAccess";
+import { useEffect } from "react";
 
 export default function PaymentSuccess() {
   const search = useSearch();
   const params = new URLSearchParams(search);
   const projectId = params.get("projectId");
+  const accessToken = params.get("accessToken");
+  useEffect(() => {
+    if (projectId && accessToken) saveProjectRef({ id: Number(projectId), accessToken });
+  }, [projectId, accessToken]);
 
   return (
     <AppLayout>

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useParams, Link } from "wouter";
-import { useGetProject } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
+import { getEditableProject } from "@/services/projectService";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -391,7 +392,11 @@ export default function PlacementPage() {
   const { id } = useParams();
   const projectId = parseInt(id || "0", 10);
 
-  const { data: project, isLoading, error } = useGetProject(projectId);
+  const { data: project, isLoading, error } = useQuery({
+    queryKey: ["editable-project", projectId],
+    queryFn: () => getEditableProject<any>(projectId),
+    enabled: projectId > 0,
+  });
 
   // ── Local state (visualization inputs)
   const [roofWidth, setRoofWidth] = useState(28);

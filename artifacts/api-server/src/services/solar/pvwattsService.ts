@@ -5,6 +5,7 @@ import { logger } from "../../utils/logger";
 export interface PVWattsParams {
   systemCapacityKw: number;
   losses: number;
+  dcAcRatio?: number | null;
   installationType: string;
   roofPitch: string;
   roofDirection: string;
@@ -55,6 +56,10 @@ const STATE_CENTROIDS: Record<string, { lat: number; lon: number }> = {
   WI: { lat: 44.3, lon: -89.6 },  WY: { lat: 43.0, lon: -107.6 },
 };
 
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(Math.max(n, min), max);
+}
+
 /** Map roof pitch string to tilt angle in degrees */
 function pitchToTilt(pitch: string): number {
   if (!pitch) return 20;
@@ -98,60 +103,75 @@ function installToArrayType(installationType: string, roofPitch: string): number
  * Returns null if the API key is missing or the call fails — callers fall back to state estimates.
  */
 export async function fetchPVWatts(params: PVWattsParams): Promise<PVWattsResult | null> {
-  const apiKey = env.pvwattsApiKey;
-  if (!apiKey) {
-    logger.info("PVWatts API key not configured — using state-based fallback");
-    return null;
-  }
-
-  // Resolve lat/lon — PVWatts v8 no longer accepts 'address' parameter (deprecated 2025-02-25)
-  // If the user specified a separate array location, use it directly (skips geocoding).
-  let coords: { lat: number; lon: number } | null =
-    (typeof params.arrayLat === "number" && typeof params.arrayLon === "number")
-      ? { lat: params.arrayLat, lon: params.arrayLon }
-      : null;
-  if (!coords) {
-    const result = await geocodeAddress({
-      address: params.address,
-      city: params.city,
-      state: params.state,
-      zip: params.zip,
-    });
-    coords = result ? { lat: result.lat, lon: result.lon } : null;
-  }
-  if (!coords) {
-    const centroid = STATE_CENTROIDS[params.state?.toUpperCase()];
-    if (centroid) {
-      logger.info({ state: params.state }, "Nominatim geocoding failed — using state centroid");
-      coords = centroid;
-    } else {
-      logger.warn({ state: params.state }, "No coordinates available for PVWatts — using fallback");
+  try {
+    const apiKey = env.nrelApiKey;
+    if (!apiKey) {
+      logger.info("NREL_API_KEY not configured — using approximate state-based fallback");
       return null;
     }
-  }
 
-  const tilt = pitchToTilt(params.roofPitch);
-  const azimuth = directionToAzimuth(params.roofDirection);
-  const arrayType = installToArrayType(params.installationType, params.roofPitch);
+    if (!Number.isFinite(params.systemCapacityKw) || params.systemCapacityKw <= 0) {
+      logger.warn({ systemCapacityKw: params.systemCapacityKw }, "Invalid PVWatts system size — using fallback");
+      return null;
+    }
 
-  const url = new URL("https://developer.nrel.gov/api/pvwatts/v8.json");
-  url.searchParams.set("api_key", apiKey);
-  url.searchParams.set("system_capacity", params.systemCapacityKw.toFixed(2));
-  url.searchParams.set("module_type", "0");
-  url.searchParams.set("losses", Math.min(params.losses, 99).toFixed(1));
-  url.searchParams.set("array_type", arrayType.toString());
-  url.searchParams.set("tilt", tilt.toString());
-  url.searchParams.set("azimuth", azimuth.toString());
-  url.searchParams.set("lat", coords.lat.toFixed(4));
-  url.searchParams.set("lon", coords.lon.toFixed(4));
-  url.searchParams.set("timeframe", "monthly");
+    // Resolve lat/lon — PVWatts v8 no longer accepts 'address' parameter.
+    // If the user specified a separate array location, use it directly.
+    let coords: { lat: number; lon: number; accuracy?: string; source: string } | null =
+      (typeof params.arrayLat === "number" && typeof params.arrayLon === "number")
+        ? { lat: params.arrayLat, lon: params.arrayLon, accuracy: "manual", source: "array coordinates" }
+        : null;
+    if (!coords) {
+      const result = await geocodeAddress({
+        address: params.address,
+        city: params.city,
+        state: params.state,
+        zip: params.zip,
+      });
+      coords = result ? { lat: result.lat, lon: result.lon, accuracy: result.accuracy, source: "geocoder" } : null;
+    }
+    if (!coords) {
+      const centroid = STATE_CENTROIDS[params.state?.toUpperCase()];
+      if (centroid) {
+        logger.info({ state: params.state }, "Nominatim geocoding failed — using state centroid");
+        coords = { ...centroid, accuracy: "state", source: "state centroid" };
+      } else {
+        logger.warn({ state: params.state }, "No coordinates available for PVWatts — using fallback");
+        return null;
+      }
+    }
 
-  logger.info(
-    { lat: coords.lat, lon: coords.lon, tilt, azimuth, arrayType, system_capacity: params.systemCapacityKw },
-    "Calling PVWatts v8 API"
-  );
+    const tilt = pitchToTilt(params.roofPitch);
+    const azimuth = directionToAzimuth(params.roofDirection);
+    const arrayType = installToArrayType(params.installationType, params.roofPitch);
+    const dcAcRatio = clamp(params.dcAcRatio ?? 1.2, 1.0, 2.0);
 
-  try {
+    logger.info(
+      { lat: coords.lat, lon: coords.lon, accuracy: coords.accuracy, source: coords.source },
+      "PVWatts geocoding coordinates resolved"
+    );
+
+    const payload = {
+      system_capacity: Number(params.systemCapacityKw.toFixed(2)),
+      module_type: 0,
+      losses: Number(clamp(params.losses, 0, 99).toFixed(1)),
+      array_type: arrayType,
+      tilt,
+      azimuth,
+      lat: Number(coords.lat.toFixed(6)),
+      lon: Number(coords.lon.toFixed(6)),
+      timeframe: "monthly",
+      dc_ac_ratio: Number(dcAcRatio.toFixed(2)),
+    };
+
+    const url = new URL("https://developer.nrel.gov/api/pvwatts/v8.json");
+    url.searchParams.set("api_key", apiKey);
+    for (const [key, value] of Object.entries(payload)) {
+      url.searchParams.set(key, String(value));
+    }
+
+    logger.debug({ payload }, "PVWatts API request payload");
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12_000);
     const resp = await fetch(url.toString(), { signal: controller.signal });
@@ -164,6 +184,7 @@ export async function fetchPVWatts(params: PVWattsParams): Promise<PVWattsResult
     }
 
     const json = await resp.json() as Record<string, unknown>;
+    logger.debug({ response: json }, "PVWatts API response");
     const errors = json["errors"] as string[] | undefined;
     if (errors && errors.length > 0) {
       logger.warn({ errors }, "PVWatts API returned errors — using fallback");

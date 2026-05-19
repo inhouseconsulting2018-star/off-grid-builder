@@ -20,6 +20,22 @@ async function initStripeSchema() {
   }
 }
 
+function warnOnMissingPaymentEnv() {
+  const hasConnector = !!env.replitConnectorsHostname && (!!env.replitIdentity || !!env.webReplRenewal);
+  const missing = [
+    !env.stripePriceId ? "STRIPE_PRICE_ID" : null,
+    !env.stripeWebhookSecret ? "STRIPE_WEBHOOK_SECRET" : null,
+    !hasConnector && !process.env.STRIPE_SECRET_KEY ? "STRIPE_SECRET_KEY or Replit Stripe connector variables" : null,
+  ].filter(Boolean);
+
+  if (missing.length > 0) {
+    logger.warn({ missing }, "Payment environment is incomplete; paid report unlocks are not production-ready");
+  }
+  if (!env.adminToken) {
+    logger.warn("ADMIN_TOKEN is not configured; admin routes will be unavailable");
+  }
+}
+
 const rawPort = requireEnv("port");
 
 const port = Number(rawPort);
@@ -30,6 +46,7 @@ if (Number.isNaN(port) || port <= 0) {
 
 // Run stripe schema migration fire-and-forget (non-blocking)
 initStripeSchema().catch(() => {});
+warnOnMissingPaymentEnv();
 
 app.listen(port, (err) => {
   if (err) {
