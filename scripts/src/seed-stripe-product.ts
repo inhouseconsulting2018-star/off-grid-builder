@@ -1,89 +1,113 @@
 import { getUncachableStripeClient } from './stripeClient';
 
-/**
- * Creates the "Full Solar Report" one-time product + $49 price in Stripe.
- *
- * Test mode:
- *   pnpm --filter @workspace/scripts run seed-stripe
- *
- * Live mode:
- *   STRIPE_MODE=live pnpm --filter @workspace/scripts run seed-stripe
- *
- * After running:
- *   1. Copy the printed price ID (price_xxx...)
- *   2. Set STRIPE_PRICE_ID=price_xxx... in the Replit Secrets tab
- *
- * This script is idempotent — safe to run multiple times.
- * It skips creation if the product already exists.
- */
-async function seedStripeProduct() {
-  const stripe = await getUncachableStripeClient();
-  const mode = process.env.STRIPE_MODE === "live" ? "live" : "test";
-  const expectedPrefixes = mode === "live" ? ["sk_live_", "rk_live_"] : ["sk_test_", "rk_test_"];
-  const explicitSecret = process.env.STRIPE_SECRET_KEY;
-  const productName = "Full Solar Report";
+type SeedPlan = {
+  productName: string;
+  description: string;
+  envName: string;
+  unitAmount: number;
+  metadataType: string;
+  recurring?: { interval: "year" };
+};
 
-  if (explicitSecret && !expectedPrefixes.some((prefix) => explicitSecret.startsWith(prefix))) {
+const PLANS: SeedPlan[] = [
+  {
+    productName: "Homeowner Full Report",
+    description: "One full OffGrid Solar Builder report and branded PDF for one project.",
+    envName: "STRIPE_HOMEOWNER_REPORT_PRICE_ID",
+    unitAmount: 1900,
+    metadataType: "homeowner_report",
+  },
+  {
+    productName: "Property Pack",
+    description: "Three full report credits for guest homeowner projects.",
+    envName: "STRIPE_PROPERTY_PACK_PRICE_ID",
+    unitAmount: 3900,
+    metadataType: "property_pack",
+  },
+  {
+    productName: "Contractor Annual Access",
+    description: "Annual contractor access with 50 full report credits.",
+    envName: "STRIPE_CONTRACTOR_ANNUAL_PRICE_ID",
+    unitAmount: 14900,
+    metadataType: "contractor_annual",
+    recurring: { interval: "year" },
+  },
+  {
+    productName: "Contractor Lifetime Beta",
+    description: "Founding contractor beta plan with 100 full report credits and core calculator access.",
+    envName: "STRIPE_CONTRACTOR_LIFETIME_PRICE_ID",
+    unitAmount: 19900,
+    metadataType: "contractor_lifetime_beta",
+  },
+];
+
+function validateExplicitKeyMode() {
+  const mode = process.env.STRIPE_MODE === "live" ? "live" : "test";
+  const explicitSecret = process.env.STRIPE_SECRET_KEY;
+  const allowedPrefixes = mode === "live" ? ["sk_live_", "rk_live_"] : ["sk_test_", "rk_test_"];
+
+  if (explicitSecret && !allowedPrefixes.some((prefix) => explicitSecret.startsWith(prefix))) {
     throw new Error(`STRIPE_SECRET_KEY does not look like a ${mode} mode Stripe secret or restricted key.`);
   }
 
-  console.log(`Running Stripe seed in ${mode.toUpperCase()} mode.`);
-  console.log(`Checking for existing ${productName} product...`);
-
-  // Check idempotently — skip if product already exists
-  const existing = await stripe.products.search({
-    query: `name:'${productName}' AND active:'true'`,
-  });
-
-  if (existing.data.length > 0) {
-    const product = existing.data[0];
-    console.log(`Product already exists: ${product.name} (${product.id})`);
-
-    // Find its active one-time price
-    const prices = await stripe.prices.list({ product: product.id, active: true });
-    const oneTime = prices.data.find(p => !p.recurring);
-    if (oneTime) {
-      console.log(`\n✓ Price already exists: $${(oneTime.unit_amount ?? 0) / 100} one-time (${oneTime.id})`);
-      console.log(`\nSet this in Replit Secrets:\n  STRIPE_PRICE_ID=${oneTime.id}`);
-    } else {
-      console.log('No one-time price found. Creating one...');
-      const price = await stripe.prices.create({
-        product: product.id,
-        unit_amount: 4900, // $49.00
-        currency: 'usd',
-      });
-      console.log(`\n✓ Created price: $49.00 one-time (${price.id})`);
-      console.log(`\nSet this in Replit Secrets:\n  STRIPE_PRICE_ID=${price.id}`);
-    }
-    return;
-  }
-
-  console.log(`Creating ${productName} product...`);
-
-  const product = await stripe.products.create({
-    name: productName,
-    description: 'Unlock the full PDF solar design report, complete equipment BOM, and unlimited project saves.',
-    metadata: {
-      app: 'offgrid-solar-builder',
-      type: 'one-time-report',
-    },
-  });
-  console.log(`Created product: ${product.name} (${product.id})`);
-
-  // One-time price: $49.00
-  const price = await stripe.prices.create({
-    product: product.id,
-    unit_amount: 4900, // $49.00 USD
-    currency: 'usd',
-    // No recurring field = one-time payment
-  });
-  console.log(`Created price: $49.00 one-time (${price.id})`);
-
-  console.log(`\n✓ Done! Set this in Replit Secrets:`);
-  console.log(`  STRIPE_PRICE_ID=${price.id}`);
+  return mode;
 }
 
-seedStripeProduct().catch((err) => {
+async function upsertPlan(plan: SeedPlan) {
+  const stripe = await getUncachableStripeClient();
+  const existing = await stripe.products.search({
+    query: `name:'${plan.productName}' AND active:'true'`,
+  });
+
+  const product = existing.data[0] ?? await stripe.products.create({
+    name: plan.productName,
+    description: plan.description,
+    metadata: {
+      app: 'offgrid-solar-builder',
+      type: plan.metadataType,
+    },
+  });
+
+  const prices = await stripe.prices.list({ product: product.id, active: true });
+  const existingPrice = prices.data.find((price) => {
+    const sameAmount = price.unit_amount === plan.unitAmount && price.currency === "usd";
+    const sameRecurring = plan.recurring
+      ? price.recurring?.interval === plan.recurring.interval
+      : !price.recurring;
+    return sameAmount && sameRecurring;
+  });
+
+  const price = existingPrice ?? await stripe.prices.create({
+    product: product.id,
+    unit_amount: plan.unitAmount,
+    currency: 'usd',
+    recurring: plan.recurring,
+    metadata: {
+      app: 'offgrid-solar-builder',
+      type: plan.metadataType,
+    },
+  });
+
+  const cadence = plan.recurring ? `/${plan.recurring.interval}` : " one-time";
+  console.log(`${plan.productName}: $${(plan.unitAmount / 100).toFixed(2)}${cadence} (${price.id})`);
+  console.log(`  ${plan.envName}=${price.id}`);
+
+  if (plan.metadataType === "homeowner_report") {
+    console.log(`  STRIPE_PRICE_ID=${price.id}  # legacy fallback`);
+  }
+}
+
+async function seedStripeProducts() {
+  const mode = validateExplicitKeyMode();
+  console.log(`Running Stripe seed in ${mode.toUpperCase()} mode.`);
+  console.log("Creating or reusing OffGrid Solar Builder launch prices...\n");
+
+  for (const plan of PLANS) {
+    await upsertPlan(plan);
+  }
+}
+
+seedStripeProducts().catch((err) => {
   console.error('Error:', err.message);
   process.exit(1);
 });

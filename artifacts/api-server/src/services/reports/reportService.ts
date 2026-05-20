@@ -5,6 +5,24 @@ type Calc = Record<string, any>;
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+function range(value: unknown, spreadPct: number, minSpread: number, decimals = 0) {
+  const numeric = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const spread = Math.max(Math.abs(numeric) * spreadPct, minSpread);
+  const factor = 10 ** decimals;
+  return {
+    low: Math.max(0, Math.floor((numeric - spread) * factor) / factor),
+    high: Math.ceil((numeric + spread) * factor) / factor,
+  };
+}
+
+function systemRecommendation(systemType: unknown, installationType: unknown) {
+  const system = typeof systemType === "string" ? systemType : "solar";
+  const mount = installationType === "ground" ? "ground-mount" : "roof-mount";
+  if (system === "off-grid") return `Off-grid ${mount} solar with battery storage`;
+  if (system === "hybrid") return `Hybrid ${mount} solar with battery backup`;
+  return `Grid-tied ${mount} solar`;
+}
+
 export function buildPreview(project: Project) {
   const calc = project.calculationResult as Calc | null;
   return {
@@ -29,11 +47,15 @@ export function buildPreview(project: Project) {
     locationAccuracy: project.locationAccuracy,
     preview: calc
       ? {
-          adjustedArraySizeKw: calc.adjustedArraySizeKw,
-          numPanels: calc.numPanels,
+          systemSizeKwRange: range(calc.adjustedArraySizeKw, 0.12, 0.5, 1),
+          panelCountRange: range(calc.numPanels, 0.12, 2),
+          yearlyProductionKwhRange: range(calc.yearlyProductionKwh, 0.15, 750),
+          costRange: {
+            low: Math.max(0, Math.round(calc.installedCostLow ?? 0)),
+            high: Math.max(0, Math.round(calc.installedCostHigh ?? 0)),
+          },
           estimatedYearlySavings: calc.estimatedYearlySavings,
-          installedCostLow: calc.installedCostLow,
-          installedCostHigh: calc.installedCostHigh,
+          basicSystemRecommendation: systemRecommendation(project.systemType, project.installationType),
           productionEstimateLabel: calc.productionEstimateLabel,
         }
       : null,

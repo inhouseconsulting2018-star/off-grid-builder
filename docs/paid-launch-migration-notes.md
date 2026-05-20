@@ -26,8 +26,20 @@ Confirm these existing paid-report columns also exist before enabling Stripe web
 ```sql
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS paid_at timestamptz;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS stripe_session_id text;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS stripe_price_id text;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS selected_plan text;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS paid_amount integer;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_credits integer NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS contractor_status boolean NOT NULL DEFAULT false;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS contractor_plan text;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS purchaser_email text;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_delivery_status text NOT NULL DEFAULT 'not_sent';
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_delivered_at timestamptz;
 ```
 
+Launch plan credit behavior:
+
+- `homeowner_report`: marks the current project paid and records 1 included report credit.
+- `property_pack`: marks the current project paid and records 3 report credits tied to the guest project access token for now.
+- `contractor_annual`: marks contractor status and records 50 annual report credits.
+- `contractor_lifetime_beta`: marks contractor beta status and records 100 included report credits.

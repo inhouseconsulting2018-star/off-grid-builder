@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 import { desc, eq, isNotNull } from "drizzle-orm";
 import { db, projectsTable } from "@workspace/db";
-import { env } from "../config/env";
 import { getUncachableStripeClient } from "../services/payments/stripeClient";
+import { getCheckoutPlan, parseCheckoutPlan } from "../services/payments/plans";
 import { deliverReportEmail } from "../services/reports/reportDeliveryService";
 import { requireAdmin } from "../middlewares/adminAuth";
 import { getAuthorizedProject } from "../services/projects/projectAccess";
@@ -12,13 +12,13 @@ const router: IRouter = Router();
 /**
  * POST /api/projects/:id/create-checkout-session
  *
- * Creates a Stripe Checkout session (one-time payment mode) to unlock the
- * full solar PDF report for a given project.
+ * Creates a Stripe Checkout session to unlock reports or buy launch credits.
  *
  * Required env vars:
- *   STRIPE_PRICE_ID — the one-time price ID from your Stripe Dashboard
- *                     (test mode: price_... starting with price_)
- *                     Set this after running: pnpm --filter @workspace/scripts run seed-stripe
+ *   STRIPE_HOMEOWNER_REPORT_PRICE_ID or STRIPE_PRICE_ID
+ *   STRIPE_PROPERTY_PACK_PRICE_ID
+ *   STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
+ *   STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
  */
 router.post("/projects/:id/create-checkout-session", async (req, res): Promise<void> => {
   const projectId = parseInt(req.params.id, 10);
@@ -31,18 +31,18 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   if (project === null) { res.status(404).json({ error: "Project not found" }); return; }
   if (project === "forbidden") { res.status(403).json({ error: "Invalid project access token" }); return; }
 
-  if (project.paidAt) {
+  const planId = parseCheckoutPlan(req.body?.plan);
+  const plan = getCheckoutPlan(planId);
+
+  if (project.paidAt && planId === "homeowner_report") {
     res.status(400).json({ error: "Project is already unlocked" });
     return;
   }
 
-  // STRIPE_PRICE_ID: set this env var to your one-time price ID.
-  // Create the price by running: pnpm --filter @workspace/scripts run seed-stripe
-  // Then copy the printed price ID and set STRIPE_PRICE_ID=price_xxx in Secrets.
-  const priceId = env.stripePriceId;
+  const priceId = plan.priceId;
   if (!priceId) {
     res.status(500).json({
-      error: "STRIPE_PRICE_ID is not configured. Run the seed script and set the env var.",
+      error: `${plan.envName} is not configured. Run the seed script and set the env var.`,
     });
     return;
   }
@@ -58,14 +58,16 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
     line_items: [{ price: priceId, quantity: 1 }],
-    // "payment" mode = one-time purchase (not a subscription)
-    mode: "payment",
-    customer_creation: "if_required",
+    mode: plan.checkoutMode,
+    ...(plan.checkoutMode === "payment" ? { customer_creation: "if_required" as const } : {}),
     success_url: successUrl,
     cancel_url: cancelUrl,
     // Embed projectId in metadata so the webhook knows which project to unlock
     metadata: {
       projectId: String(projectId),
+      selectedPlan: plan.id,
+      stripePriceId: priceId,
+      reportCredits: String(plan.includedCredits),
       reportType: "solar-design-report",
     },
   });
@@ -139,6 +141,12 @@ router.get("/admin/purchases", requireAdmin, async (_req, res): Promise<void> =>
       purchaserEmail: projectsTable.purchaserEmail,
       paidAt: projectsTable.paidAt,
       stripeSessionId: projectsTable.stripeSessionId,
+      stripePriceId: projectsTable.stripePriceId,
+      selectedPlan: projectsTable.selectedPlan,
+      paidAmount: projectsTable.paidAmount,
+      reportCredits: projectsTable.reportCredits,
+      contractorStatus: projectsTable.contractorStatus,
+      contractorPlan: projectsTable.contractorPlan,
       reportDeliveryStatus: projectsTable.reportDeliveryStatus,
       reportDeliveredAt: projectsTable.reportDeliveredAt,
       systemType: projectsTable.systemType,

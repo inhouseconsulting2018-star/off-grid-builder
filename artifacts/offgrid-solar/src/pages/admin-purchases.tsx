@@ -51,7 +51,7 @@ export default function AdminPurchases() {
               <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Admin</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Purchases</h1>
-            <p className="text-sm text-muted-foreground mt-1">One-time report unlocks, guest checkout emails, and delivery state.</p>
+            <p className="text-sm text-muted-foreground mt-1">Report purchases, launch plans, guest checkout emails, and delivery state.</p>
           </div>
         </div>
 
@@ -79,7 +79,7 @@ export default function AdminPurchases() {
         <Card>
           <CardHeader>
             <CardTitle>Unlocked Reports</CardTitle>
-            <CardDescription>Stripe Checkout sessions are one-time payments. Subscriptions are not enabled.</CardDescription>
+            <CardDescription>Stripe Checkout sessions include homeowner, pack, annual contractor, and lifetime beta purchases.</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading && (
@@ -99,6 +99,7 @@ export default function AdminPurchases() {
                       <TableHead>Project</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Paid</TableHead>
+                      <TableHead>Plan</TableHead>
                       <TableHead>Delivery</TableHead>
                       <TableHead>System</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -119,6 +120,10 @@ export default function AdminPurchases() {
                         </TableCell>
                         <TableCell className="text-sm">
                           {purchase.paidAt ? new Date(purchase.paidAt).toLocaleString() : "Unpaid"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <div>{purchase.selectedPlan ?? "homeowner_report"}</div>
+                          <div className="text-xs text-muted-foreground">{purchase.reportCredits ?? 0} credits</div>
                         </TableCell>
                         <TableCell>
                           <Badge variant={purchase.reportDeliveryStatus === "sent" ? "default" : "secondary"}>
