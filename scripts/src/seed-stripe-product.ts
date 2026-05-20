@@ -19,12 +19,12 @@ import { getUncachableStripeClient } from './stripeClient';
 async function seedStripeProduct() {
   const stripe = await getUncachableStripeClient();
   const mode = process.env.STRIPE_MODE === "live" ? "live" : "test";
-  const expectedLivePrefix = mode === "live" ? "sk_live_" : "sk_test_";
+  const expectedPrefixes = mode === "live" ? ["sk_live_", "rk_live_"] : ["sk_test_", "rk_test_"];
   const explicitSecret = process.env.STRIPE_SECRET_KEY;
   const productName = "Full Solar Report";
 
-  if (explicitSecret && !explicitSecret.startsWith(expectedLivePrefix)) {
-    throw new Error(`STRIPE_SECRET_KEY does not look like a ${mode} mode key.`);
+  if (explicitSecret && !expectedPrefixes.some((prefix) => explicitSecret.startsWith(prefix))) {
+    throw new Error(`STRIPE_SECRET_KEY does not look like a ${mode} mode Stripe secret or restricted key.`);
   }
 
   console.log(`Running Stripe seed in ${mode.toUpperCase()} mode.`);
