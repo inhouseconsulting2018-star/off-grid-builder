@@ -8,13 +8,14 @@
     "seed-stripe": "tsx ./src/seed-stripe-product.ts",
     "seed-stripe-live": "tsx ./src/seed-stripe-live.ts",
     "create-pr": "tsx ./src/create-pr.ts",
+    "create-github-release": "tsx ./src/create-github-release.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@replit/connectors-sdk": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "tsx": "catalog:"
-  },
-  "dependencies": {
-    "@replit/connectors-sdk": "^0.4.1"
   }
 }
