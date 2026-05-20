@@ -66,10 +66,38 @@ export async function resolveProjectByToken(
   return project;
 }
 
-export function previewProject(project: ProjectRow): Omit<ProjectRow, "accessToken" | "calculationResult"> & { calculationResult: null; paid: false } {
+export function previewProject(project: ProjectRow) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { accessToken: _t, calculationResult: _c, ...rest } = project;
-  return { ...rest, calculationResult: null, paid: false };
+  const { accessToken: _t, calculationResult: fullCalc, ...rest } = project;
+  const raw = fullCalc as Record<string, unknown> | null;
+
+  // Return only the safe sizing fields — never expose cost, brand, BOM, or loss data.
+  // These fields are included in the free preview so the results page can render
+  // basic system sizing without an infinite loading spinner.
+  const calculationResult = raw
+    ? {
+        preview: true as const,
+        arraySizeKw:           Number(raw["arraySizeKw"]           ?? 0),
+        adjustedArraySizeKw:   Number(raw["adjustedArraySizeKw"]   ?? 0),
+        numPanels:             Number(raw["numPanels"]             ?? 0),
+        inverterSizeKw:        Number(raw["inverterSizeKw"]        ?? 0),
+        batteryUsableKwh:      Number(raw["batteryUsableKwh"]      ?? 0),
+        totalBatteryBankKwh:   Number(raw["totalBatteryBankKwh"]   ?? 0),
+        yearlyProductionKwh:   Number(raw["yearlyProductionKwh"]   ?? 0),
+        peakSunHours:          Number(raw["peakSunHours"]          ?? 0),
+        dailyKwh:              Number(raw["dailyKwh"]              ?? 0),
+        squareFeetRequired:    raw["squareFeetRequired"]  != null ? Number(raw["squareFeetRequired"])  : null,
+        offGridDesignFactor:   raw["offGridDesignFactor"] != null ? Number(raw["offGridDesignFactor"]) : null,
+        pvwattsSource:         (raw["pvwattsSource"]         as string  | null) ?? null,
+        pvwattsMonthlyKwh:     (raw["pvwattsMonthlyKwh"]    as number[] | null) ?? null,
+        pvwattsSolradMonthly:  (raw["pvwattsSolradMonthly"] as number[] | null) ?? null,
+        pvwattsAnnualKwh:      raw["pvwattsAnnualKwh"]      != null ? Number(raw["pvwattsAnnualKwh"])      : null,
+        pvwattsSolradAnnual:   raw["pvwattsSolradAnnual"]   != null ? Number(raw["pvwattsSolradAnnual"])   : null,
+        pvwattsCapacityFactor: raw["pvwattsCapacityFactor"] != null ? Number(raw["pvwattsCapacityFactor"]) : null,
+      }
+    : null;
+
+  return { ...rest, calculationResult, paid: false as const };
 }
 
 export function sanitizeProject(project: ProjectRow): Omit<ProjectRow, "accessToken"> {

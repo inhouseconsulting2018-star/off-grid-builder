@@ -87,9 +87,13 @@ export default function Results() {
     );
   }
 
-  const calc = project.calculationResult!;
+  // isPaid: true when the project has been unlocked via a successful Stripe payment
+  const isPaid = !!project.paidAt;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const calc = project.calculationResult as any;
 
-  const bom = generateBom({
+  // BOM and design notes require full cost/brand data — only present after payment
+  const bom = isPaid ? generateBom({
     systemType: project.systemType,
     installationType: project.installationType,
     budgetTier: project.budgetTier,
@@ -109,9 +113,9 @@ export default function Results() {
     recommendedMountingBrand: calc.recommendedMountingBrand,
     diyEquipmentCostLow: calc.diyEquipmentCostLow,
     diyEquipmentCostHigh: calc.diyEquipmentCostHigh,
-  });
+  }) : [];
 
-  const designNotes = generateDesignNotes({
+  const designNotes = isPaid ? generateDesignNotes({
     systemType: project.systemType,
     annualKwh: project.annualKwh,
     dailyKwh: calc.dailyKwh,
@@ -134,10 +138,10 @@ export default function Results() {
     yearlyProductionKwh: calc.yearlyProductionKwh,
     paybackYears: calc.paybackYears,
     utilityRatePerKwh: project.utilityRatePerKwh,
-  });
+  }) : [];
 
-  // PVWatts enrichment data — typed loosely since JSONB field may have extra keys
-  const pvCalc = calc as typeof calc & {
+  // PVWatts enrichment data — these fields are included in the free preview
+  const pvCalc = calc as {
     pvwattsMonthlyKwh?: number[] | null;
     pvwattsSolradMonthly?: number[] | null;
     pvwattsAnnualKwh?: number | null;
@@ -159,7 +163,8 @@ export default function Results() {
       }))
     : null;
 
-  const lossData = [
+  // Loss detail is only available in the full paid report
+  const lossData = isPaid ? [
     { name: "Inverter", value: calc.inverterLossPct, color: "#f59e0b" },
     { name: "Wire", value: calc.wireLossPct, color: "#fb923c" },
     { name: "Shade", value: calc.shadeLossPct, color: "#64748b" },
@@ -167,12 +172,10 @@ export default function Results() {
     { name: "Dirt", value: calc.dirtLossPct, color: "#a16207" },
     { name: "Mismatch", value: calc.misMatchLossPct ?? 2, color: "#8b5cf6" },
     ...(calc.batteryLossPct > 0 ? [{ name: "Battery", value: calc.batteryLossPct, color: "#6366f1" }] : []),
-  ].filter(d => d.value > 0);
+  ].filter(d => d.value > 0) : [];
 
   const systemTypeLabel = project.systemType.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join("-");
-  const hasBattery = calc.batteryUsableKwh > 0;
-  // isPaid: true when the project has been unlocked via a successful Stripe payment
-  const isPaid = !!project.paidAt;
+  const hasBattery = (calc.batteryUsableKwh ?? 0) > 0;
 
   const noteIcon = (type: string) => {
     if (type === "warning") return <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />;
@@ -358,10 +361,10 @@ export default function Results() {
                       ...(calc.squareFeetRequired != null ? [["Panel Footprint", `~${calc.squareFeetRequired} sqft${project.availableSqft ? ` of ${project.availableSqft} sqft` : ""}`]] : []),
                       ["Inverter Size", `${calc.inverterSizeKw.toFixed(1)} kW`],
                       ["Est. Yearly Production", `${calc.yearlyProductionKwh.toLocaleString()} kWh${hasPVWatts ? " ✓" : ""}`],
-                      ["Est. Yearly Savings", `$${calc.estimatedYearlySavings.toLocaleString()}`],
+                      ...(isPaid ? [["Est. Yearly Savings", `$${calc.estimatedYearlySavings?.toLocaleString()}`]] : []),
                       ...(pvCalc.pvwattsCapacityFactor != null ? [["System Efficiency", `${pvCalc.pvwattsCapacityFactor.toFixed(1)}% capacity factor`]] : []),
                       ...(calc.offGridDesignFactor != null && calc.offGridDesignFactor > 1 ? [["Design Margin", `+${((calc.offGridDesignFactor - 1) * 100).toFixed(0)}% (${project.systemType} reserve)`]] : []),
-                      ...(calc.paybackYears
+                      ...(isPaid && calc.paybackYears
                         ? [[
                             "Est. Payback Period",
                             calc.paybackYears > 50
@@ -505,7 +508,7 @@ export default function Results() {
         )}
 
         {/* ── Battery System Guide (only when battery selected) ─────── */}
-        {hasBattery && (() => {
+        {isPaid && hasBattery && (() => {
           const chemistry = (project as { batteryChemistry?: string | null }).batteryChemistry ?? "lifepo4";
           const totalKwh = calc.totalBatteryBankKwh;
           const usableKwh = calc.batteryUsableKwh;
@@ -780,7 +783,7 @@ export default function Results() {
         })()}
 
         {/* ── Section 2: Cost Estimate ───────────────────────────────── */}
-        <section>
+        {isPaid && (<section>
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-primary" /> Cost Estimate
           </h2>
@@ -1006,10 +1009,10 @@ export default function Results() {
               For DIY resources: <a href="https://diysolarforum.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">DIY Solar Forum</a> · <a href="https://www.solar-electric.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Northern Arizona Wind & Sun</a> · <a href="https://www.wholesalesolar.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Wholesale Solar</a>
             </p>
           </div>
-        </section>
+        </section>)}
 
         {/* ── Section 3: Loss Breakdown ──────────────────────────────── */}
-        <section>
+        {isPaid && (<section>
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <Settings2 className="h-4 w-4 text-primary" /> System Loss Breakdown
           </h2>
@@ -1077,7 +1080,7 @@ export default function Results() {
               </table>
             </CardContent>
           </Card>
-        </section>
+        </section>)}
 
         {/* ── Section 4: Equipment / BOM ─────────────────────────────── */}
         <section>
@@ -1115,7 +1118,7 @@ export default function Results() {
                   Unlock Full Report — $49
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  Secure payment via Stripe · test mode active (use card 4242 4242 4242 4242)
+                  Secure payment via Stripe · instant access · no subscription
                 </p>
               </CardContent>
             </Card>
@@ -1243,7 +1246,7 @@ export default function Results() {
         </section>
 
         {/* ── Section 5: Design Notes ────────────────────────────────── */}
-        <section>
+        {isPaid && (<section>
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <FileText className="h-4 w-4 text-primary" /> Design Notes
           </h2>
@@ -1260,7 +1263,7 @@ export default function Results() {
               </div>
             ))}
           </div>
-        </section>
+        </section>)}
 
         {/* ── Section 6: Project Map ─────────────────────────────────── */}
         <section className="print:hidden" id="map">
@@ -1295,7 +1298,7 @@ export default function Results() {
         </div>
 
         {/* ── Equipment Recommendations Summary ─────────────────────── */}
-        <section>
+        {isPaid && (<section>
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-primary" /> Recommended Equipment Categories
           </h2>
@@ -1317,10 +1320,10 @@ export default function Results() {
               </div>
             ))}
           </div>
-        </section>
+        </section>)}
 
         {/* ── Engineering Notes from Calc Engine ───────────────────── */}
-        {calc.notes && calc.notes.length > 0 && (
+        {isPaid && calc.notes && calc.notes.length > 0 && (
           <section>
             <div className="rounded-lg border border-amber-400/50 bg-amber-50 dark:bg-amber-950/20 p-4">
               <div className="flex items-center gap-2 mb-3">

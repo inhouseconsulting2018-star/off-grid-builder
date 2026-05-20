@@ -6,10 +6,15 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "seed-stripe": "tsx ./src/seed-stripe-product.ts",
+    "seed-stripe-live": "tsx ./src/seed-stripe-live.ts",
+    "create-pr": "tsx ./src/create-pr.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "tsx": "catalog:"
+  },
+  "dependencies": {
+    "@replit/connectors-sdk": "^0.4.1"
   }
 }
