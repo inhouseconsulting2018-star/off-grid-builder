@@ -1,10 +1,13 @@
 import { getUncachableStripeClient } from './stripeClient';
 
 /**
- * Creates the "Solar Report Unlock" one-time product + $49 price in Stripe (test mode).
+ * Creates the "Full Solar Report" one-time product + $49 price in Stripe.
  *
- * Run with:
+ * Test mode:
  *   pnpm --filter @workspace/scripts run seed-stripe
+ *
+ * Live mode:
+ *   STRIPE_MODE=live pnpm --filter @workspace/scripts run seed-stripe
  *
  * After running:
  *   1. Copy the printed price ID (price_xxx...)
@@ -15,12 +18,21 @@ import { getUncachableStripeClient } from './stripeClient';
  */
 async function seedStripeProduct() {
   const stripe = await getUncachableStripeClient();
+  const mode = process.env.STRIPE_MODE === "live" ? "live" : "test";
+  const expectedLivePrefix = mode === "live" ? "sk_live_" : "sk_test_";
+  const explicitSecret = process.env.STRIPE_SECRET_KEY;
+  const productName = "Full Solar Report";
 
-  console.log('Checking for existing Solar Report product...');
+  if (explicitSecret && !explicitSecret.startsWith(expectedLivePrefix)) {
+    throw new Error(`STRIPE_SECRET_KEY does not look like a ${mode} mode key.`);
+  }
+
+  console.log(`Running Stripe seed in ${mode.toUpperCase()} mode.`);
+  console.log(`Checking for existing ${productName} product...`);
 
   // Check idempotently — skip if product already exists
   const existing = await stripe.products.search({
-    query: "name:'Solar Report Unlock' AND active:'true'",
+    query: `name:'${productName}' AND active:'true'`,
   });
 
   if (existing.data.length > 0) {
@@ -46,10 +58,10 @@ async function seedStripeProduct() {
     return;
   }
 
-  console.log('Creating Solar Report Unlock product...');
+  console.log(`Creating ${productName} product...`);
 
   const product = await stripe.products.create({
-    name: 'Solar Report Unlock',
+    name: productName,
     description: 'Unlock the full PDF solar design report, complete equipment BOM, and unlimited project saves.',
     metadata: {
       app: 'offgrid-solar-builder',
