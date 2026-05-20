@@ -386,6 +386,9 @@ components:
         stripeSessionId:
           type: ["string", "null"]
           description: "Stripe Checkout Session ID associated with the successful payment."
+        accessToken:
+          type: ["string", "null"]
+          description: "Per-project access token returned on creation. Required in x-access-token header for subsequent requests."
         createdAt:
           type: string
           format: date-time

@@ -417,14 +417,15 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   const successUrl = `${protocol}://${host}/payment-success?projectId=${id}&session_id={CHECKOUT_SESSION_ID}&accessToken=${accessToken}`;
   const cancelUrl = `${protocol}://${host}/payment-cancel?projectId=${id}&accessToken=${accessToken}`;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const session = await stripe.checkout.sessions.create({
-    payment_method_types: ["card"],
+    automatic_payment_methods: { enabled: true },
     line_items: [{ price: priceId, quantity: 1 }],
     mode: "payment",
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: { projectId: String(id) },
-  });
+  } as any);
 
   res.json({ url: session.url });
 });

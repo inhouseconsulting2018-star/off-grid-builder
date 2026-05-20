@@ -84,6 +84,11 @@ export interface Project {
    * @nullable
    */
   stripeSessionId?: string | null;
+  /**
+   * Per-project access token returned on creation. Required in x-access-token header for subsequent requests.
+   * @nullable
+   */
+  accessToken?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

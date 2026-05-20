@@ -23,9 +23,25 @@ import {
 export default function Results() {
   const { id } = useParams();
   const projectId = parseInt(id || "0", 10);
-  const { data: project, isLoading, error } = useGetProject(projectId);
-  const calculateProject = useCalculateProject();
-  const createCheckoutSession = useCreateProjectCheckoutSession();
+
+  const [token] = useState<string>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get("accessToken") ?? "";
+    if (urlToken) {
+      try { sessionStorage.setItem(`project-token-${projectId}`, urlToken); } catch { /* ignore */ }
+    }
+    try {
+      return urlToken || sessionStorage.getItem(`project-token-${projectId}`) || "";
+    } catch {
+      return urlToken;
+    }
+  });
+
+  const reqOpts = token ? { headers: { "x-access-token": token } } : undefined;
+
+  const { data: project, isLoading, error } = useGetProject(projectId, { request: reqOpts });
+  const calculateProject = useCalculateProject({ request: reqOpts });
+  const createCheckoutSession = useCreateProjectCheckoutSession({ request: reqOpts });
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const hasTriggeredCalc = useRef(false);

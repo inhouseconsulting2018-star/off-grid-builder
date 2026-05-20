@@ -9,8 +9,6 @@
 export interface CalculationResult {
   dailyKwh: number;
   peakSunHours: number;
-  /** Peak sun hours used for array sizing. Off-grid uses winter design PSH; grid-tied/hybrid use annual average. */
-  designPeakSunHours?: number;
   arraySizeKw: number;
   numPanels: number;
   adjustedArraySizeKw: number;
@@ -19,8 +17,6 @@ export interface CalculationResult {
   totalBatteryBankKwh: number;
   yearlyProductionKwh: number;
   totalSystemLossPct: number;
-  /** PV-only production losses before battery throughput losses. */
-  pvProductionLossPct?: number;
   inverterLossPct: number;
   wireLossPct: number;
   shadeLossPct: number;
@@ -65,12 +61,10 @@ export interface CalculationResult {
   batteryAutonomyDays?: number;
   /** Inverter efficiency % used when sizing battery load (e.g. 95) */
   batteryInverterEfficiencyPct?: number;
-  /** Legacy field. Surge is handled in inverter sizing, not battery kWh. */
+  /** Motor-start surge headroom added to usable kWh (% of autonomy load) */
   batterySurgeReservePct?: number;
-  /** Battery energy reserve added to autonomy load (%) */
+  /** Cloudy-day autonomy buffer added on top of surge-adjusted load (%) */
   batteryWeatherReservePct?: number;
-  /** Battery energy reserve added for inverter idle draw, aging, forecast misses, and load growth (%) */
-  batteryEnergyReservePct?: number;
   /** Effective depth of discharge used in sizing (80 for LiFePO4, 50 for lead) */
   batteryEffectiveDodPct?: number;
   /** Cold-climate bank upsize % applied for lead chemistry in snow areas (0 if N/A) */
@@ -91,12 +85,12 @@ export interface CalculationResult {
   recommendedBatteryBrand: string;
   recommendedMountingBrand: string;
   notes: string[];
-  /** 12-element array of monthly AC production (kWh). Uses PVWatts when available; otherwise state seasonal fallback. */
+  /** 12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable. */
   pvwattsMonthlyKwh?: number[] | null;
   /** 12-element array of monthly average daily solar irradiance (kWh/m²/day) from PVWatts. */
   pvwattsSolradMonthly?: number[] | null;
   /**
-   * Annual AC energy production (kWh). Uses PVWatts when available; otherwise state fallback.
+   * Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.
    * @nullable
    */
   pvwattsAnnualKwh?: number | null;
@@ -119,10 +113,8 @@ export interface CalculationResult {
   misMatchLossPct?: number;
   /** Total panel footprint required including racking clearance (sqft). */
   squareFeetRequired?: number;
-  /** Array design factor applied after design PSH. Hybrid uses 1.08; off-grid seasonal correction is represented by winterPshFactor. */
+  /** Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied. */
   offGridDesignFactor?: number;
-  /** Off-grid winter design multiplier applied to annual peak sun hours. Null for non-off-grid systems. */
-  winterPshFactor?: number | null;
   /** Extra battery bank capacity added for cold-climate temperature derating (0 if not applied). */
   batteryTempDeratingPct?: number;
 }

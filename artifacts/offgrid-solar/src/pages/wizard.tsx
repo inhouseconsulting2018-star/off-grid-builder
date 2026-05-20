@@ -12,9 +12,10 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useCreateProject, useCalculateProject } from "@workspace/api-client-react";
+import { useCreateProject } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { geocodeAddress } from "@/services/geocodingService";
+import { appEnv } from "@/config/env";
 import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, CheckCircle2 } from "lucide-react";
 
 const wizardSchema = z.object({
@@ -75,7 +76,7 @@ export default function Wizard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createProject = useCreateProject();
-  const calculateProject = useCalculateProject();
+  const [isCalculating, setIsCalculating] = useState(false);
 
   const form = useForm<WizardFormValues>({
     resolver: zodResolver(wizardSchema),
@@ -145,9 +146,23 @@ export default function Wizard() {
           arrayLocationNote: data.arrayLocationNote || undefined,
         },
       });
-      await calculateProject.mutateAsync({ id: project.id });
+
+      const token = project.accessToken ?? "";
+      try { sessionStorage.setItem(`project-token-${project.id}`, token); } catch { /* ignore */ }
+
+      setIsCalculating(true);
+      try {
+        const calcRes = await fetch(`${appEnv.apiBaseUrl}/projects/${project.id}/calculate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-access-token": token },
+        });
+        if (!calcRes.ok) throw new Error("Calculation failed");
+      } finally {
+        setIsCalculating(false);
+      }
+
       toast({ title: "Design Complete", description: "Your solar report is ready." });
-      setLocation(`/results/${project.id}`);
+      setLocation(`/results/${project.id}?accessToken=${encodeURIComponent(token)}`);
     } catch {
       toast({ title: "Error", description: "Failed to create project", variant: "destructive" });
     }
@@ -161,7 +176,7 @@ export default function Wizard() {
 
   const prevStep = () => setStep(s => Math.max(1, s - 1));
 
-  const isBusy = createProject.isPending || calculateProject.isPending;
+  const isBusy = createProject.isPending || isCalculating;
 
   return (
     <AppLayout>
