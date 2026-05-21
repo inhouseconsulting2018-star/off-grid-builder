@@ -420,11 +420,14 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   const isSubscription = productType === "contractor_annual";
   const stripe = await getUncachableStripeClient();
 
-  const host = req.get("host") ?? "localhost";
-  const protocol = req.protocol;
   const accessToken = req.headers["x-access-token"] ?? req.query["accessToken"] ?? "";
-  const successUrl = `${protocol}://${host}/payment-success?projectId=${id}&session_id={CHECKOUT_SESSION_ID}&accessToken=${accessToken}`;
-  const cancelUrl = `${protocol}://${host}/payment-cancel?projectId=${id}&accessToken=${accessToken}`;
+  // Prefer explicit FRONTEND_URL (set in production secrets) so redirects always
+  // go to the correct domain even when the API and frontend are on separate origins.
+  // Fall back to reconstructing from the request headers (works in dev).
+  const baseOrigin = env.frontendUrl?.replace(/\/$/, "")
+    ?? `${req.protocol}://${req.get("x-forwarded-host") ?? req.get("host") ?? "localhost"}`;
+  const successUrl = `${baseOrigin}/payment-success?projectId=${id}&session_id={CHECKOUT_SESSION_ID}&accessToken=${accessToken}`;
+  const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${id}&accessToken=${accessToken}`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const session = await stripe.checkout.sessions.create({

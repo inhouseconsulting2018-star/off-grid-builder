@@ -45,3 +45,7 @@ channel = "stable-25_05"
 STRIPE_HOMEOWNER_REPORT_PRICE_ID = "price_1TZPDcPtpEeLlAYiXtAifKb4"
 "STRIPE_CONTRACTOR_ANNUAL_PRICE_ID=price_..." = "price_1TZRKDPtpEeLlAYiWXhoyQHz"
 STRIPE_PROPERTY_PACK_PRICE_ID = "price_1TZQxRPtpEeLlAYiBfvfWkGK"
+ADMIN_TOKEN = "ogsbadmin-dc4anh5nhff00aaaqr49rzba"
+
+[userenv.production]
+FRONTEND_URL = "https://www.offgridsolarbuilder.com"

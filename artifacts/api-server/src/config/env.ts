@@ -9,6 +9,7 @@ export const env = {
   stripeContractorAnnualPriceId: process.env.STRIPE_CONTRACTOR_ANNUAL_PRICE_ID,
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
   adminToken: process.env.ADMIN_TOKEN,
+  frontendUrl: process.env.FRONTEND_URL,
   replitConnectorsHostname: process.env.REPLIT_CONNECTORS_HOSTNAME,
   replitIdentity: process.env.REPL_IDENTITY,
   webReplRenewal: process.env.WEB_REPL_RENEWAL,

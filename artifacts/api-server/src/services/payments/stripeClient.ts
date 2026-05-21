@@ -4,10 +4,14 @@ import { env, requireEnv } from "../../config/env";
 import { logger } from "../../utils/logger";
 
 /**
- * Fetches Stripe credentials from the Replit connection API.
- * Not cached — tokens can rotate, so fetch fresh each time.
+ * Fetches Stripe credentials — tries the Replit connector first,
+ * then falls back to STRIPE_SECRET_KEY / STRIPE_PUBLISHABLE_KEY env vars.
  */
 async function getStripeCredentials(): Promise<{ secretKey: string; publishableKey?: string }> {
+  // ── Fallback: direct env var keys (always checked, used when connector unavailable) ──
+  const envSecretKey = process.env.STRIPE_SECRET_KEY;
+  const envPublishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+
   const hostname = env.replitConnectorsHostname;
   const xReplitToken = env.replitIdentity
     ? "repl " + env.replitIdentity
@@ -15,50 +19,58 @@ async function getStripeCredentials(): Promise<{ secretKey: string; publishableK
       ? "depl " + env.webReplRenewal
       : null;
 
+  // If connector infrastructure isn't present, fall back to direct keys immediately
   if (!hostname || !xReplitToken) {
+    if (envSecretKey) {
+      logger.info("Stripe: using STRIPE_SECRET_KEY env var (no connector context)");
+      return { secretKey: envSecretKey, publishableKey: envPublishableKey };
+    }
     throw new Error(
-      'Missing Replit environment variables. ' +
-      'Ensure the Stripe integration is connected via the Integrations tab.'
+      'Stripe not configured. Set STRIPE_SECRET_KEY in environment secrets.'
     );
   }
 
-  const targetEnvironment = env.isReplitDeployment ? "production" : "development";
+  // ── Try the Replit connector ──
+  try {
+    const targetEnvironment = env.isReplitDeployment ? "production" : "development";
 
-  const url = new URL(`https://${hostname}/api/v2/connection`);
-  url.searchParams.set("include_secrets", "true");
-  url.searchParams.set("connector_names", "stripe");
-  url.searchParams.set("environment", targetEnvironment);
+    const url = new URL(`https://${hostname}/api/v2/connection`);
+    url.searchParams.set("include_secrets", "true");
+    url.searchParams.set("connector_names", "stripe");
+    url.searchParams.set("environment", targetEnvironment);
 
-  const resp = await fetch(url.toString(), {
-    headers: { Accept: "application/json", "X-Replit-Token": xReplitToken },
-    signal: AbortSignal.timeout(10_000),
-  });
+    const resp = await fetch(url.toString(), {
+      headers: { Accept: "application/json", "X-Replit-Token": xReplitToken },
+      signal: AbortSignal.timeout(8_000),
+    });
 
-  if (!resp.ok) {
-    throw new Error(`Failed to fetch Stripe credentials: ${resp.status} ${resp.statusText}`);
+    if (resp.ok) {
+      const data = await resp.json() as {
+        items?: Array<{ settings?: { publishable?: string; secret?: string } }>
+      };
+      const settings = data.items?.[0]?.settings;
+
+      if (settings?.secret) {
+        return { secretKey: settings.secret, publishableKey: settings.publishable };
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "Stripe connector fetch failed — will try env var fallback");
   }
 
-  const data = await resp.json() as {
-    items?: Array<{ settings?: { publishable?: string; secret?: string } }>
-  };
-  const settings = data.items?.[0]?.settings;
-
-  if (!settings?.secret) {
-    throw new Error(
-      'Stripe integration not connected or missing secret key. ' +
-      'Connect Stripe via the Integrations tab first.'
-    );
+  // ── Connector returned nothing — fall back to env var ──
+  if (envSecretKey) {
+    logger.info("Stripe: connector returned no credentials, using STRIPE_SECRET_KEY env var");
+    return { secretKey: envSecretKey, publishableKey: envPublishableKey };
   }
 
-  return {
-    secretKey: settings.secret,
-    publishableKey: settings.publishable,
-  };
+  throw new Error(
+    'Stripe not configured. Connect Stripe via the Integrations tab or set STRIPE_SECRET_KEY in environment secrets.'
+  );
 }
 
 /**
  * Returns a fresh authenticated Stripe client.
- * Not cached — fetches credentials on every call so rotated keys are picked up.
  */
 export async function getUncachableStripeClient(): Promise<Stripe> {
   const { secretKey } = await getStripeCredentials();
@@ -66,7 +78,7 @@ export async function getUncachableStripeClient(): Promise<Stripe> {
 }
 
 /**
- * Returns the Stripe publishable key for use in frontend configuration.
+ * Returns the Stripe publishable key for frontend use.
  */
 export async function getStripePublishableKey(): Promise<string | undefined> {
   const { publishableKey } = await getStripeCredentials();
@@ -75,13 +87,6 @@ export async function getStripePublishableKey(): Promise<string | undefined> {
 
 /**
  * Constructs and verifies a Stripe webhook event from a raw Buffer payload.
- *
- * Verification strategy:
- *   - If STRIPE_WEBHOOK_SECRET is set: always verify the Stripe signature (HMAC-SHA256).
- *   - If STRIPE_WEBHOOK_SECRET is not set AND we are in a Replit deployment: throw — production
- *     must always verify signatures to prevent webhook spoofing.
- *   - If STRIPE_WEBHOOK_SECRET is not set in development: log a warning and skip verification
- *     (allows local testing with the Stripe CLI before setting up the secret).
  */
 export async function constructStripeEvent(payload: Buffer, signature: string): Promise<Stripe.Event> {
   const webhookSecret = env.stripeWebhookSecret;
@@ -89,14 +94,10 @@ export async function constructStripeEvent(payload: Buffer, signature: string): 
   if (!webhookSecret) {
     if (env.isReplitDeployment) {
       throw new Error(
-        "STRIPE_WEBHOOK_SECRET must be set in production. " +
-        "Configure it via the environment secrets before deploying."
+        "STRIPE_WEBHOOK_SECRET must be set in production."
       );
     }
-    logger.warn(
-      "STRIPE_WEBHOOK_SECRET is not set — skipping webhook signature verification. " +
-      "This is only acceptable in local development. Set it before deploying."
-    );
+    logger.warn("STRIPE_WEBHOOK_SECRET not set — skipping webhook signature verification (dev only).");
     return JSON.parse(payload.toString()) as Stripe.Event;
   }
 
@@ -109,8 +110,7 @@ export async function constructStripeEvent(payload: Buffer, signature: string): 
 }
 
 /**
- * Returns a fresh StripeSync instance for webhook processing and data sync.
- * Not cached — fetches credentials on every call so rotated keys are picked up.
+ * Returns a fresh StripeSync instance for webhook processing.
  */
 export async function getStripeSync(): Promise<StripeSync> {
   const databaseUrl = requireEnv("databaseUrl");

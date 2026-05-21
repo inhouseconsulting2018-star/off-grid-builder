@@ -10,6 +10,10 @@ import { constructStripeEvent } from "./services/payments/stripeClient";
 
 const app: Express = express();
 
+// Trust the first proxy hop so req.protocol correctly returns "https" in production
+// (Replit's load balancer terminates TLS and forwards X-Forwarded-Proto)
+app.set("trust proxy", 1);
+
 // ── Stripe Webhook — MUST be registered BEFORE express.json() ──────────────
 // Stripe sends a raw Buffer body for signature verification.
 // If express.json() runs first it parses the body, breaking the HMAC check.

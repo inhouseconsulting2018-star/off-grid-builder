@@ -1,11 +1,8 @@
 /**
  * Shared geocoding helper — used by both the geocode route and the projects route.
  *
- * Geocodes an address using Nominatim (OpenStreetMap) with a progressive fallback
- * strategy from most-precise (street-level) to least-precise (city centroid).
- *
- * Swap the `nominatimSearch` implementation here to change geocoding providers
- * (e.g. Google Maps, Mapbox) without touching routes.
+ * Uses Nominatim (OpenStreetMap) with a progressive fallback strategy.
+ * Rural and unmapped roads fall back gracefully to ZIP centroid.
  */
 
 import { logger } from "../../utils/logger";
@@ -39,8 +36,8 @@ export interface GeoResult {
 }
 
 /**
- * Geocodes a property address with a four-level progressive fallback strategy.
- * Returns null only if all strategies fail (rare — should at least match city+state).
+ * Geocodes a property address with a multi-level progressive fallback strategy.
+ * Handles rural and unmapped roads gracefully.
  */
 export async function geocodeAddress(opts: {
   address?: string;
@@ -49,6 +46,9 @@ export async function geocodeAddress(opts: {
   zip?: string;
 }): Promise<GeoResult | null> {
   const { address = "", city = "", state = "", zip = "" } = opts;
+
+  // Normalize address — strip trailing punctuation, extra spaces
+  const cleanAddress = address.replace(/[.,]+$/, "").trim();
 
   interface Row { lat?: string; lon?: string }
 
@@ -62,26 +62,55 @@ export async function geocodeAddress(opts: {
     return null;
   };
 
-  // 1. Structured query — most accurate, avoids cross-state false matches
-  if (address && city && state) {
-    const r = await trySearch({ street: address, city, state, ...(zip ? { postalcode: zip } : {}), limit: "1" });
+  // 1. Structured query — street + city + state + zip (most accurate)
+  if (cleanAddress && city && state) {
+    const r = await trySearch({ street: cleanAddress, city, state, ...(zip ? { postalcode: zip } : {}), limit: "1" });
     if (r) return { ...r, accuracy: "exact" };
   }
 
   // 2. Free-form full address string
-  if (address && city && state) {
-    const q = `${address}, ${city}, ${state}${zip ? " " + zip : ""}, USA`;
+  if (cleanAddress && city && state) {
+    const q = `${cleanAddress}, ${city}, ${state}${zip ? " " + zip : ""}, USA`;
     const r = await trySearch({ q, limit: "1" });
     if (r) return { ...r, accuracy: "exact" };
   }
 
-  // 3. City + state + ZIP (ZIP centroid)
+  // 3. Street + ZIP only (handles cases where city name is off/misspelled)
+  if (cleanAddress && zip) {
+    const r = await trySearch({ street: cleanAddress, postalcode: zip, limit: "1" });
+    if (r) return { ...r, accuracy: "exact" };
+  }
+
+  // 4. Free-form: street + zip (no city — catches rural addresses where city name varies)
+  if (cleanAddress && zip) {
+    const q = `${cleanAddress}, ${zip}, USA`;
+    const r = await trySearch({ q, limit: "1" });
+    if (r) return { ...r, accuracy: "exact" };
+  }
+
+  // 5. Street number + zip only (strip road type for very rural roads)
+  if (cleanAddress && zip) {
+    const streetNumber = cleanAddress.match(/^(\d+)/)?.[1];
+    if (streetNumber) {
+      const q = `${streetNumber}, ${zip}, USA`;
+      const r = await trySearch({ q, limit: "1" });
+      if (r) return { ...r, accuracy: "zip" };
+    }
+  }
+
+  // 6. City + state + ZIP centroid
   if (city && state && zip) {
     const r = await trySearch({ q: `${city}, ${state} ${zip}, USA`, limit: "1" });
     if (r) return { ...r, accuracy: "zip" };
   }
 
-  // 4. City + state only (least precise)
+  // 7. ZIP code only
+  if (zip) {
+    const r = await trySearch({ postalcode: zip, limit: "1" });
+    if (r) return { ...r, accuracy: "zip" };
+  }
+
+  // 8. City + state only (least precise)
   if (city && state) {
     const r = await trySearch({ q: `${city}, ${state}, USA`, limit: "1" });
     if (r) return { ...r, accuracy: "city" };
