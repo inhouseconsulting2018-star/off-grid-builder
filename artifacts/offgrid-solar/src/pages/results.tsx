@@ -47,10 +47,10 @@ export default function Results() {
   const hasTriggeredCalc = useRef(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const handleUnlockReport = () => {
+  const handleUnlockReport = (productType: "homeowner" | "property_pack" | "contractor_annual" = "homeowner") => {
     setIsRedirecting(true);
     createCheckoutSession.mutate(
-      { id: projectId },
+      { id: projectId, data: { productType } },
       {
         onSuccess: (data) => {
           if (data.url) {
@@ -61,7 +61,7 @@ export default function Results() {
           setIsRedirecting(false);
           toast({
             title: "Payment unavailable",
-            description: "Stripe is not yet configured. Please add STRIPE_PRICE_ID to complete setup.",
+            description: "Could not start checkout. Please try again.",
             variant: "destructive",
           });
         },
@@ -1107,34 +1107,92 @@ export default function Results() {
           {/* Paywall gate — shown when project is unpaid */}
           {!isPaid && (
             <Card className="border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/20 mb-4">
-              <CardContent className="py-8 flex flex-col items-center text-center gap-4">
+              <CardContent className="py-8 flex flex-col items-center text-center gap-6">
                 <div className="flex items-center justify-center w-14 h-14 rounded-full bg-amber-100 dark:bg-amber-900">
                   <Lock className="h-6 w-6 text-amber-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold mb-1">Unlock the Full Solar Report</h3>
                   <p className="text-sm text-muted-foreground max-w-md">
-                    Get the complete equipment bill of materials with real model numbers, 2024/2025
-                    pricing, and alternative options — plus the full downloadable PDF solar design report.
+                    Get the complete equipment bill of materials with real model numbers, current pricing,
+                    and alternative options — plus the full downloadable PDF solar design report.
                   </p>
                 </div>
-                <div className="flex flex-col sm:flex-row items-center gap-3">
-                  <div className="text-2xl font-extrabold text-amber-600">$49</div>
-                  <div className="text-sm text-muted-foreground">one-time · instant access · this project</div>
+
+                {/* Pricing tiers */}
+                <div className="grid sm:grid-cols-3 gap-3 w-full max-w-2xl">
+                  {/* Homeowner Report */}
+                  <div className="flex flex-col gap-3 p-4 rounded-xl border-2 border-amber-400 bg-white dark:bg-background text-left relative">
+                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">Most Popular</div>
+                    <div className="font-semibold text-sm">Homeowner Report</div>
+                    <div className="text-2xl font-extrabold text-amber-600">$19</div>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Full equipment BOM</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Downloadable PDF report</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />This project · one-time</li>
+                    </ul>
+                    <Button
+                      size="sm"
+                      className="bg-amber-500 hover:bg-amber-600 text-white gap-1.5 mt-auto"
+                      onClick={() => handleUnlockReport("homeowner")}
+                      disabled={isRedirecting || createCheckoutSession.isPending}
+                    >
+                      {isRedirecting || createCheckoutSession.isPending
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Lock className="h-3.5 w-3.5" />}
+                      Get Report
+                    </Button>
+                  </div>
+
+                  {/* Property Pack */}
+                  <div className="flex flex-col gap-3 p-4 rounded-xl border bg-white dark:bg-background text-left">
+                    <div className="font-semibold text-sm">Property Pack</div>
+                    <div className="text-2xl font-extrabold">$39</div>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />3 full report credits</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Compare multiple properties</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />One-time · never expires</li>
+                    </ul>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 mt-auto"
+                      onClick={() => handleUnlockReport("property_pack")}
+                      disabled={isRedirecting || createCheckoutSession.isPending}
+                    >
+                      {isRedirecting || createCheckoutSession.isPending
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Lock className="h-3.5 w-3.5" />}
+                      Get Pack
+                    </Button>
+                  </div>
+
+                  {/* Contractor Annual */}
+                  <div className="flex flex-col gap-3 p-4 rounded-xl border bg-white dark:bg-background text-left">
+                    <div className="font-semibold text-sm">Contractor Annual</div>
+                    <div className="text-2xl font-extrabold">$149<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />50 report credits</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Contractor-facing reports</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Annual · renews yearly</li>
+                    </ul>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 mt-auto"
+                      onClick={() => handleUnlockReport("contractor_annual")}
+                      disabled={isRedirecting || createCheckoutSession.isPending}
+                    >
+                      {isRedirecting || createCheckoutSession.isPending
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Lock className="h-3.5 w-3.5" />}
+                      Get Access
+                    </Button>
+                  </div>
                 </div>
-                <Button
-                  size="lg"
-                  className="bg-amber-500 hover:bg-amber-600 text-white gap-2 px-8"
-                  onClick={handleUnlockReport}
-                  disabled={isRedirecting || createCheckoutSession.isPending}
-                >
-                  {isRedirecting || createCheckoutSession.isPending
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : <Lock className="h-4 w-4" />}
-                  Unlock Full Report — $49
-                </Button>
+
                 <p className="text-xs text-muted-foreground">
-                  Secure payment via Stripe · instant access · no subscription
+                  Secure payment via Stripe · instant access
                 </p>
               </CardContent>
             </Card>

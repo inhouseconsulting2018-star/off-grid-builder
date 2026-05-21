@@ -1570,10 +1570,18 @@ export const CalculateProjectResponse = zod.object({
 });
 
 /**
- * @summary Create a Stripe Checkout session to unlock the full solar report (one-time payment)
+ * @summary Create a Stripe Checkout session to unlock the full solar report
  */
 export const CreateProjectCheckoutSessionParams = zod.object({
   id: zod.coerce.number(),
+});
+
+export const createProjectCheckoutSessionBodyProductTypeDefault = `homeowner`;
+
+export const CreateProjectCheckoutSessionBody = zod.object({
+  productType: zod
+    .enum(["homeowner", "property_pack", "contractor_annual"])
+    .default(createProjectCheckoutSessionBodyProductTypeDefault),
 });
 
 export const CreateProjectCheckoutSessionResponse = zod.object({

@@ -567,3 +567,16 @@ export interface SettingsPatch {
   /** Mounting/racking hardware cost per panel */
   mountingCostPerPanel?: number;
 }
+
+export type CreateProjectCheckoutSessionBodyProductType =
+  (typeof CreateProjectCheckoutSessionBodyProductType)[keyof typeof CreateProjectCheckoutSessionBodyProductType];
+
+export const CreateProjectCheckoutSessionBodyProductType = {
+  homeowner: "homeowner",
+  property_pack: "property_pack",
+  contractor_annual: "contractor_annual",
+} as const;
+
+export type CreateProjectCheckoutSessionBody = {
+  productType?: CreateProjectCheckoutSessionBodyProductType;
+};

@@ -401,14 +401,23 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
     return;
   }
 
-  const priceId = env.stripePriceId;
+  const productType = (req.body?.productType as string) || "homeowner";
+
+  const priceMap: Record<string, string | undefined> = {
+    homeowner: env.stripePriceId,
+    property_pack: env.stripePropertyPackPriceId,
+    contractor_annual: env.stripeContractorAnnualPriceId,
+  };
+
+  const priceId = priceMap[productType] ?? env.stripePriceId;
   if (!priceId) {
     res.status(500).json({
-      error: "STRIPE_PRICE_ID is not configured. Run the seed script and set the env var.",
+      error: "Stripe price not configured for this product type.",
     });
     return;
   }
 
+  const isSubscription = productType === "contractor_annual";
   const stripe = await getUncachableStripeClient();
 
   const host = req.get("host") ?? "localhost";
@@ -421,10 +430,10 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   const session = await stripe.checkout.sessions.create({
     automatic_payment_methods: { enabled: true },
     line_items: [{ price: priceId, quantity: 1 }],
-    mode: "payment",
+    mode: isSubscription ? "subscription" : "payment",
     success_url: successUrl,
     cancel_url: cancelUrl,
-    metadata: { projectId: String(id) },
+    metadata: { projectId: String(id), productType },
   } as any);
 
   res.json({ url: session.url });

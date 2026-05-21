@@ -179,13 +179,24 @@ paths:
     post:
       operationId: createProjectCheckoutSession
       tags: [payments]
-      summary: Create a Stripe Checkout session to unlock the full solar report (one-time payment)
+      summary: Create a Stripe Checkout session to unlock the full solar report
       parameters:
         - name: id
           in: path
           required: true
           schema:
             type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                productType:
+                  type: string
+                  enum: [homeowner, property_pack, contractor_annual]
+                  default: homeowner
       responses:
         "200":
           description: Checkout session URL to redirect the user to
