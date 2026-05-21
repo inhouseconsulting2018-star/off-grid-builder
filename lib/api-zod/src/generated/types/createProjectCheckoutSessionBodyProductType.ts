@@ -13,4 +13,5 @@ export const CreateProjectCheckoutSessionBodyProductType = {
   homeowner: "homeowner",
   property_pack: "property_pack",
   contractor_annual: "contractor_annual",
+  contractor_lifetime: "contractor_lifetime",
 } as const;

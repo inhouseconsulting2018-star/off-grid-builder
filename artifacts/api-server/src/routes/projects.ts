@@ -404,9 +404,10 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   const productType = (req.body?.productType as string) || "homeowner";
 
   const priceMap: Record<string, string | undefined> = {
-    homeowner: env.stripePriceId,
-    property_pack: env.stripePropertyPackPriceId,
-    contractor_annual: env.stripeContractorAnnualPriceId,
+    homeowner:           env.stripePriceId,
+    property_pack:       env.stripePropertyPackPriceId,
+    contractor_annual:   env.stripeContractorAnnualPriceId,
+    contractor_lifetime: env.stripeContractorLifetimePriceId,
   };
 
   const priceId = priceMap[productType] ?? env.stripePriceId;
@@ -417,6 +418,7 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
     return;
   }
 
+  // contractor_annual is the only subscription (recurring); everything else is one-time
   const isSubscription = productType === "contractor_annual";
   const stripe = await getUncachableStripeClient();
 

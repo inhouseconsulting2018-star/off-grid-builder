@@ -305,6 +305,33 @@ export const ListProjectsResponseItem = zod.object({
     .describe(
       "Stripe Checkout Session ID associated with the successful payment.",
     ),
+  stripePriceId: zod
+    .string()
+    .nullish()
+    .describe("Stripe Price ID used in the checkout session."),
+  paidAmount: zod.number().nullish().describe("Amount paid in cents (USD)."),
+  paymentStatus: zod
+    .string()
+    .optional()
+    .describe("Payment status: unpaid | paid | refunded"),
+  entitlementType: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plan purchased: homeowner | property_pack | contractor_annual | contractor_lifetime",
+    ),
+  reportCredits: zod
+    .number()
+    .optional()
+    .describe("Number of full report credits granted by this purchase."),
+  creditsUsed: zod
+    .number()
+    .optional()
+    .describe("Number of report credits consumed so far."),
+  selectedPlan: zod
+    .string()
+    .nullish()
+    .describe("Slug of the plan selected at checkout."),
   accessToken: zod
     .string()
     .nullish()
@@ -672,6 +699,33 @@ export const GetProjectResponse = zod.object({
     .describe(
       "Stripe Checkout Session ID associated with the successful payment.",
     ),
+  stripePriceId: zod
+    .string()
+    .nullish()
+    .describe("Stripe Price ID used in the checkout session."),
+  paidAmount: zod.number().nullish().describe("Amount paid in cents (USD)."),
+  paymentStatus: zod
+    .string()
+    .optional()
+    .describe("Payment status: unpaid | paid | refunded"),
+  entitlementType: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plan purchased: homeowner | property_pack | contractor_annual | contractor_lifetime",
+    ),
+  reportCredits: zod
+    .number()
+    .optional()
+    .describe("Number of full report credits granted by this purchase."),
+  creditsUsed: zod
+    .number()
+    .optional()
+    .describe("Number of report credits consumed so far."),
+  selectedPlan: zod
+    .string()
+    .nullish()
+    .describe("Slug of the plan selected at checkout."),
   accessToken: zod
     .string()
     .nullish()
@@ -1039,6 +1093,33 @@ export const UpdateProjectResponse = zod.object({
     .describe(
       "Stripe Checkout Session ID associated with the successful payment.",
     ),
+  stripePriceId: zod
+    .string()
+    .nullish()
+    .describe("Stripe Price ID used in the checkout session."),
+  paidAmount: zod.number().nullish().describe("Amount paid in cents (USD)."),
+  paymentStatus: zod
+    .string()
+    .optional()
+    .describe("Payment status: unpaid | paid | refunded"),
+  entitlementType: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plan purchased: homeowner | property_pack | contractor_annual | contractor_lifetime",
+    ),
+  reportCredits: zod
+    .number()
+    .optional()
+    .describe("Number of full report credits granted by this purchase."),
+  creditsUsed: zod
+    .number()
+    .optional()
+    .describe("Number of report credits consumed so far."),
+  selectedPlan: zod
+    .string()
+    .nullish()
+    .describe("Slug of the plan selected at checkout."),
   accessToken: zod
     .string()
     .nullish()
@@ -1350,6 +1431,33 @@ export const RegeocodeProjectResponse = zod.object({
     .describe(
       "Stripe Checkout Session ID associated with the successful payment.",
     ),
+  stripePriceId: zod
+    .string()
+    .nullish()
+    .describe("Stripe Price ID used in the checkout session."),
+  paidAmount: zod.number().nullish().describe("Amount paid in cents (USD)."),
+  paymentStatus: zod
+    .string()
+    .optional()
+    .describe("Payment status: unpaid | paid | refunded"),
+  entitlementType: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plan purchased: homeowner | property_pack | contractor_annual | contractor_lifetime",
+    ),
+  reportCredits: zod
+    .number()
+    .optional()
+    .describe("Number of full report credits granted by this purchase."),
+  creditsUsed: zod
+    .number()
+    .optional()
+    .describe("Number of report credits consumed so far."),
+  selectedPlan: zod
+    .string()
+    .nullish()
+    .describe("Slug of the plan selected at checkout."),
   accessToken: zod
     .string()
     .nullish()
@@ -1580,7 +1688,12 @@ export const createProjectCheckoutSessionBodyProductTypeDefault = `homeowner`;
 
 export const CreateProjectCheckoutSessionBody = zod.object({
   productType: zod
-    .enum(["homeowner", "property_pack", "contractor_annual"])
+    .enum([
+      "homeowner",
+      "property_pack",
+      "contractor_annual",
+      "contractor_lifetime",
+    ])
     .default(createProjectCheckoutSessionBodyProductTypeDefault),
 });
 
@@ -1955,6 +2068,36 @@ export const GetProjectsSummaryResponse = zod.object({
         .describe(
           "Stripe Checkout Session ID associated with the successful payment.",
         ),
+      stripePriceId: zod
+        .string()
+        .nullish()
+        .describe("Stripe Price ID used in the checkout session."),
+      paidAmount: zod
+        .number()
+        .nullish()
+        .describe("Amount paid in cents (USD)."),
+      paymentStatus: zod
+        .string()
+        .optional()
+        .describe("Payment status: unpaid | paid | refunded"),
+      entitlementType: zod
+        .string()
+        .nullish()
+        .describe(
+          "Plan purchased: homeowner | property_pack | contractor_annual | contractor_lifetime",
+        ),
+      reportCredits: zod
+        .number()
+        .optional()
+        .describe("Number of full report credits granted by this purchase."),
+      creditsUsed: zod
+        .number()
+        .optional()
+        .describe("Number of report credits consumed so far."),
+      selectedPlan: zod
+        .string()
+        .nullish()
+        .describe("Slug of the plan selected at checkout."),
       accessToken: zod
         .string()
         .nullish()

@@ -7,6 +7,7 @@ export const env = {
   stripePriceId: process.env.STRIPE_HOMEOWNER_REPORT_PRICE_ID ?? process.env.STRIPE_PRICE_ID,
   stripePropertyPackPriceId: process.env.STRIPE_PROPERTY_PACK_PRICE_ID,
   stripeContractorAnnualPriceId: process.env.STRIPE_CONTRACTOR_ANNUAL_PRICE_ID,
+  stripeContractorLifetimePriceId: process.env.STRIPE_CONTRACTOR_LIFETIME_PRICE_ID,
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
   adminToken: process.env.ADMIN_TOKEN,
   frontendUrl: process.env.FRONTEND_URL,

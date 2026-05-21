@@ -244,6 +244,32 @@ export interface Project {
    */
   stripeSessionId?: string | null;
   /**
+   * Stripe Price ID used in the checkout session.
+   * @nullable
+   */
+  stripePriceId?: string | null;
+  /**
+   * Amount paid in cents (USD).
+   * @nullable
+   */
+  paidAmount?: number | null;
+  /** Payment status: unpaid | paid | refunded */
+  paymentStatus?: string;
+  /**
+   * Plan purchased: homeowner | property_pack | contractor_annual | contractor_lifetime
+   * @nullable
+   */
+  entitlementType?: string | null;
+  /** Number of full report credits granted by this purchase. */
+  reportCredits?: number;
+  /** Number of report credits consumed so far. */
+  creditsUsed?: number;
+  /**
+   * Slug of the plan selected at checkout.
+   * @nullable
+   */
+  selectedPlan?: string | null;
+  /**
    * Per-project access token returned on creation. Required in x-access-token header for subsequent requests.
    * @nullable
    */
@@ -575,6 +601,7 @@ export const CreateProjectCheckoutSessionBodyProductType = {
   homeowner: "homeowner",
   property_pack: "property_pack",
   contractor_annual: "contractor_annual",
+  contractor_lifetime: "contractor_lifetime",
 } as const;
 
 export type CreateProjectCheckoutSessionBody = {

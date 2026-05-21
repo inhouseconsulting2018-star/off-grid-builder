@@ -32,23 +32,44 @@ app.post(
       // Construct and verify the Stripe event
       const event = await constructStripeEvent(req.body as Buffer, sig);
 
-      // ── Custom business logic: mark project as paid on checkout completion ──
+      // ── Mark project as paid and record full entitlement on checkout completion ──
       if (event.type === "checkout.session.completed") {
         const session = event.data.object as {
           id: string;
           payment_status: string;
+          amount_total?: number | null;
           metadata?: Record<string, string>;
         };
         const projectId = parseInt(session.metadata?.projectId ?? "", 10);
+        const productType = session.metadata?.productType ?? "homeowner";
+
         if (!isNaN(projectId) && session.payment_status === "paid") {
+          // Credits granted per plan
+          const creditsMap: Record<string, number> = {
+            homeowner:           1,
+            property_pack:       3,
+            contractor_annual:   50,
+            contractor_lifetime: 100,
+          };
+          const reportCredits = creditsMap[productType] ?? 1;
+
           await db
             .update(projectsTable)
             .set({
-              paidAt: new Date(),
+              paidAt:          new Date(),
               stripeSessionId: session.id,
+              paymentStatus:   "paid",
+              selectedPlan:    productType,
+              entitlementType: productType,
+              reportCredits,
+              paidAmount:      session.amount_total ?? null,
             })
             .where(eq(projectsTable.id, projectId));
-          logger.info({ projectId, sessionId: session.id }, "Project unlocked via Stripe payment");
+
+          logger.info(
+            { projectId, sessionId: session.id, productType, reportCredits },
+            "Project unlocked via Stripe payment"
+          );
         }
       }
 

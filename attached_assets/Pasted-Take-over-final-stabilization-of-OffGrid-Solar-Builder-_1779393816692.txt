@@ -1,0 +1,245 @@
+Take over final stabilization of OffGrid Solar Builder and get it running properly end-to-end.
+
+I do not want more back-and-forth unless something legally/security-wise requires my manual approval, such as GitHub branch protection approval, Stripe dashboard action, DNS records, or secrets that only I can enter.
+
+Primary problems to fix:
+1. Wrong location/map pin for real addresses.
+2. Paywall/report unlock not working correctly.
+3. Any pending branches/PRs/merge issues blocking launch.
+4. Bugs preventing the app from working as a real paid solar report product.
+
+Important:
+- Do not expose secrets.
+- Do not hardcode API keys.
+- Do not weaken security.
+- Do not bypass GitHub branch protection.
+- Do not switch Stripe to live mode unless all test-mode verification passes.
+- Do not move launch tags until the app passes final QA.
+- If GitHub approval is required, tell me exactly what button to click and stop there.
+- Otherwise, handle everything automatically.
+
+TASK 1 — GitHub / Branch / Merge Cleanup
+1. Check the current Git state.
+2. Identify all open branches and PRs related to:
+   - paid launch blockers
+   - pricing updates
+   - Stripe setup
+   - preview/paywall fixes
+   - geocoding/location fixes
+3. Merge whatever is safe and approved into launch-mvp.
+4. If PRs were canceled but the changes are needed, recreate them cleanly on a new branch.
+5. If branch protection blocks merge, tell me exactly:
+   - which PR is blocked
+   - what approval is required
+   - what button I need to click
+   - whether I need to temporarily change ruleset approvals
+6. Do not leave useful fixes stranded on unmerged branches.
+7. Final target branch should be:
+   launch-mvp
+
+TASK 2 — Fix Wrong Location / Map Pin
+Known issue:
+When entering real addresses, the app sometimes places the marker downtown or at a city center instead of the actual property.
+
+Fix this properly.
+
+Requirements:
+1. Always geocode using the full address:
+   street + city + state + ZIP
+2. Never geocode only city/state unless full address fails.
+3. Store successful latitude and longitude on the project.
+4. Use saved latitude/longitude first before re-geocoding.
+5. Never overwrite exact saved coordinates with city-center fallback.
+6. Add location accuracy status:
+   - exact_address
+   - approximate_zip
+   - approximate_city
+   - manual_coordinates
+   - failed
+7. If only approximate location is available, clearly show:
+   “Exact property location could not be verified. Showing approximate location.”
+8. Add manual latitude/longitude override fields.
+9. Add “Re-geocode Address” button.
+10. Add logging for:
+   - address submitted
+   - geocoder response
+   - lat/lng returned
+   - accuracy/source used
+
+Test with:
+2365 Myers Dr, Santa Rosa, CA 95403
+
+The map should not default to downtown Santa Rosa unless exact geocoding truly fails and the UI clearly labels it approximate.
+
+TASK 3 — Fix Paywall / Entitlement
+The paywall must work correctly.
+
+Before payment:
+- user can only see free preview
+- no full report
+- no full BOM
+- no contractor-grade PDF
+- no monthly production chart if it is paid-only
+- no PDF download
+- no hidden DOM report that can be printed
+- no paid data generated client-side
+
+After payment:
+- full report unlocks
+- PDF unlocks
+- correct plan/credits are applied
+- paid entitlement is stored server-side
+
+Plans to support:
+- Homeowner Full Report: $19, 1 full report credit
+- Property Pack: $39, 3 full report credits
+- Contractor Annual: $199/year or one-time annual access, 50 report credits
+- Contractor Lifetime Beta: $299 one-time, 100 report credits
+
+Stripe env vars:
+- STRIPE_HOMEOWNER_REPORT_PRICE_ID
+- STRIPE_PROPERTY_PACK_PRICE_ID
+- STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
+- STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
+- STRIPE_PRICE_ID fallback for homeowner report
+- STRIPE_WEBHOOK_SECRET
+- STRIPE_SECRET_KEY or Replit Stripe connector equivalent
+
+Paywall requirements:
+1. Free preview must be range-only.
+2. Full report data must come from server only after entitlement is verified.
+3. PDF endpoint must require entitlement.
+4. Report API must reject unpaid users.
+5. Project access must require accessToken or future owner auth.
+6. No public project enumeration.
+7. No access to another project without its token.
+8. Admin endpoints must require ADMIN_TOKEN.
+
+TASK 4 — Stripe Checkout and Webhook Test
+Verify Stripe in test mode first.
+
+Test flow:
+1. Create guest project.
+2. View free preview.
+3. Click unlock full report.
+4. Create Stripe Checkout session.
+5. Complete test payment.
+6. Confirm webhook fires.
+7. Confirm entitlement updates.
+8. Confirm full report unlocks.
+9. Confirm PDF download unlocks.
+10. Confirm unpaid PDF/report access remains blocked.
+
+If webhook cannot be fully tested because Stripe dashboard setup is missing, tell me exactly:
+- webhook URL needed
+- webhook events required
+- secret needed
+- where to paste it in Replit
+
+Webhook URL should be:
+https://offgridsolarbuilders.com/api/stripe/webhook
+
+Required events:
+- checkout.session.completed
+- payment_intent.payment_failed
+- customer.subscription.created
+- customer.subscription.updated
+- customer.subscription.deleted
+
+TASK 5 — Database / Migration Check
+Confirm production database supports:
+- project accessToken
+- ownerUserId
+- isGuestProject
+- entitlementType
+- reportCredits
+- creditsUsed
+- selectedPlan
+- paidAmount
+- paidAt
+- stripeSessionId
+- stripePriceId
+- paymentStatus
+
+If migration is missing:
+- create the migration
+- document how to run it
+- do not pretend it was applied if it was not applied
+
+TASK 6 — Full App QA
+Run full QA on launch-mvp.
+
+Test:
+- landing page
+- project wizard
+- address entry
+- geocoding
+- map marker
+- results preview
+- locked report cards
+- Stripe checkout
+- webhook
+- full report unlock
+- PDF unlock
+- saved projects
+- edit project
+- delete project
+- admin page with ADMIN_TOKEN
+- admin page without ADMIN_TOKEN
+- mobile layout
+- production build
+
+Run:
+- TypeScript checks
+- backend production build
+- frontend production build
+- launch QA tests
+
+TASK 7 — Pricing UI Check
+Confirm displayed pricing is:
+- Homeowner Full Report: $19
+- Property Pack: $39
+- Contractor Annual: $199/year
+- Contractor Lifetime Beta: $299 one-time
+
+Free preview must tease value but not expose paid details.
+
+TASK 8 — Production Readiness
+Confirm:
+- .env files are ignored
+- no secrets are committed
+- no live Stripe keys are exposed
+- frontend does not expose secret keys
+- API routes work in production
+- custom domain routing works
+- no localhost URLs remain in production code
+- no Replit preview URLs are hardcoded where custom domain should be used
+
+TASK 9 — Fix Bugs Automatically
+If you find bugs:
+- fix them
+- rerun tests
+- continue until stable
+
+Do not stop after identifying bugs unless manual approval/secrets/dashboard action is required.
+
+TASK 10 — Final Output
+Give me a clear final report:
+
+1. What was broken
+2. What you fixed
+3. What branches/PRs were merged or recreated
+4. Current branch and commit SHA
+5. Whether launch-mvp is clean
+6. Whether geocoding is fixed
+7. Whether paywall is fixed
+8. Whether Stripe test mode works
+9. Whether PDF unlock works
+10. Whether unpaid users are blocked
+11. Whether database migration is applied or still required
+12. Whether it is safe to deploy
+13. Whether it is safe to create v0.2-paid-launch-candidate
+14. Exact manual actions I still need to take, if any
+
+Do not move launch tags until all critical tests pass.
+Do not switch live Stripe on until test Stripe passes.

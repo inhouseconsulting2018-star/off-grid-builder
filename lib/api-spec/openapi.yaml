@@ -195,7 +195,7 @@ paths:
               properties:
                 productType:
                   type: string
-                  enum: [homeowner, property_pack, contractor_annual]
+                  enum: [homeowner, property_pack, contractor_annual, contractor_lifetime]
                   default: homeowner
       responses:
         "200":
@@ -397,6 +397,27 @@ components:
         stripeSessionId:
           type: ["string", "null"]
           description: "Stripe Checkout Session ID associated with the successful payment."
+        stripePriceId:
+          type: ["string", "null"]
+          description: "Stripe Price ID used in the checkout session."
+        paidAmount:
+          type: ["integer", "null"]
+          description: "Amount paid in cents (USD)."
+        paymentStatus:
+          type: string
+          description: "Payment status: unpaid | paid | refunded"
+        entitlementType:
+          type: ["string", "null"]
+          description: "Plan purchased: homeowner | property_pack | contractor_annual | contractor_lifetime"
+        reportCredits:
+          type: integer
+          description: "Number of full report credits granted by this purchase."
+        creditsUsed:
+          type: integer
+          description: "Number of report credits consumed so far."
+        selectedPlan:
+          type: ["string", "null"]
+          description: "Slug of the plan selected at checkout."
         accessToken:
           type: ["string", "null"]
           description: "Per-project access token returned on creation. Required in x-access-token header for subsequent requests."

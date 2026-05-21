@@ -47,7 +47,7 @@ export default function Results() {
   const hasTriggeredCalc = useRef(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const handleUnlockReport = (productType: "homeowner" | "property_pack" | "contractor_annual" = "homeowner") => {
+  const handleUnlockReport = (productType: "homeowner" | "property_pack" | "contractor_annual" | "contractor_lifetime" = "homeowner") => {
     setIsRedirecting(true);
     createCheckoutSession.mutate(
       { id: projectId, data: { productType } },
@@ -1120,7 +1120,7 @@ export default function Results() {
                 </div>
 
                 {/* Pricing tiers */}
-                <div className="grid sm:grid-cols-3 gap-3 w-full max-w-2xl">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 w-full max-w-3xl">
                   {/* Homeowner Report */}
                   <div className="flex flex-col gap-3 p-4 rounded-xl border-2 border-amber-400 bg-white dark:bg-background text-left relative">
                     <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">Most Popular</div>
@@ -1128,8 +1128,8 @@ export default function Results() {
                     <div className="text-2xl font-extrabold text-amber-600">$19</div>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Full equipment BOM</li>
-                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Downloadable PDF report</li>
-                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />This project · one-time</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />PDF report download</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />1 credit · one-time</li>
                     </ul>
                     <Button
                       size="sm"
@@ -1149,9 +1149,9 @@ export default function Results() {
                     <div className="font-semibold text-sm">Property Pack</div>
                     <div className="text-2xl font-extrabold">$39</div>
                     <ul className="text-xs text-muted-foreground space-y-1">
-                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />3 full report credits</li>
-                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Compare multiple properties</li>
-                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />One-time · never expires</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />3 report credits</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Compare properties</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />One-time · no expiry</li>
                     </ul>
                     <Button
                       size="sm"
@@ -1170,10 +1170,10 @@ export default function Results() {
                   {/* Contractor Annual */}
                   <div className="flex flex-col gap-3 p-4 rounded-xl border bg-white dark:bg-background text-left">
                     <div className="font-semibold text-sm">Contractor Annual</div>
-                    <div className="text-2xl font-extrabold">$149<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
+                    <div className="text-2xl font-extrabold">$199<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />50 report credits</li>
-                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Contractor-facing reports</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Contractor reports</li>
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Annual · renews yearly</li>
                     </ul>
                     <Button
@@ -1187,6 +1187,29 @@ export default function Results() {
                         ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         : <Lock className="h-3.5 w-3.5" />}
                       Get Access
+                    </Button>
+                  </div>
+
+                  {/* Contractor Lifetime Beta */}
+                  <div className="flex flex-col gap-3 p-4 rounded-xl border border-primary/40 bg-primary/5 dark:bg-background text-left relative">
+                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-primary text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">Beta Offer</div>
+                    <div className="font-semibold text-sm">Contractor Lifetime</div>
+                    <div className="text-2xl font-extrabold text-primary">$299<span className="text-sm font-normal text-muted-foreground"> one-time</span></div>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />100 report credits</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Lifetime access</li>
+                      <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Never renews</li>
+                    </ul>
+                    <Button
+                      size="sm"
+                      className="bg-primary hover:bg-primary/90 text-white gap-1.5 mt-auto"
+                      onClick={() => handleUnlockReport("contractor_lifetime")}
+                      disabled={isRedirecting || createCheckoutSession.isPending}
+                    >
+                      {isRedirecting || createCheckoutSession.isPending
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Lock className="h-3.5 w-3.5" />}
+                      Get Lifetime
                     </Button>
                   </div>
                 </div>
@@ -1344,6 +1367,17 @@ export default function Results() {
           <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
             <MapPin className="h-4 w-4 text-primary" /> Project Location
           </h2>
+          {/* Geocoding accuracy warning — shown when we only have an approximate fix */}
+          {project.locationAccuracy && project.locationAccuracy !== "exact" && !project.useManualCoords && (
+            <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>
+                Exact property location could not be verified.
+                Showing {project.locationAccuracy === "zip" ? "ZIP code centroid" : project.locationAccuracy === "city" ? "city/state center" : "approximate"} location.
+                You can set precise coordinates on the <a href={`/projects/${project.id}/edit`} className="underline font-medium">Edit page</a>.
+              </span>
+            </div>
+          )}
           <Card>
             <CardContent className="pt-4 pb-4">
               <ProjectMap

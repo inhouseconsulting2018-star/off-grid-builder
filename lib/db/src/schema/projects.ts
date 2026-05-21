@@ -34,19 +34,30 @@ export const projectsTable = pgTable("projects", {
   // Saved geocode result for the main property location
   lat: real("lat"),
   lon: real("lon"),
-  // 'exact' = street-level geocode, 'zip' = ZIP centroid fallback,
-  // 'city' = city centroid fallback, 'manual' = user-entered coordinates
+  // 'exact' = street-level, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered
   locationAccuracy: text("location_accuracy"),
-  // When true the map uses lat/lon directly without re-geocoding
   useManualCoords: boolean("use_manual_coords").notNull().default(false),
   calculationResult: jsonb("calculation_result"),
-  // Guest access token — generated on project creation, returned once in the 201 response.
-  // Required (via X-Access-Token header or ?accessToken= query) for all project mutations
-  // and for reading project data. Null for pre-launch rows; admin token bypasses it.
+  // Guest access token
   accessToken: text("access_token"),
-  // Stripe payment fields — null means unpaid, populated after successful Stripe Checkout
+  // Future auth
+  ownerUserId: text("owner_user_id"),
+  isGuestProject: boolean("is_guest_project").notNull().default(true),
+  // Stripe payment fields
   paidAt: timestamp("paid_at", { withTimezone: true }),
   stripeSessionId: text("stripe_session_id"),
+  stripePriceId: text("stripe_price_id"),
+  paidAmount: integer("paid_amount"),       // in cents
+  paymentStatus: text("payment_status").notNull().default("unpaid"),
+  // Entitlement / credits
+  entitlementType: text("entitlement_type"),
+  reportCredits: integer("report_credits").notNull().default(0),
+  creditsUsed: integer("credits_used").notNull().default(0),
+  selectedPlan: text("selected_plan"),
+  // Purchaser contact + delivery
+  purchaserEmail: text("purchaser_email"),
+  reportDeliveryStatus: text("report_delivery_status").notNull().default("not_sent"),
+  reportDeliveredAt: timestamp("report_delivered_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
