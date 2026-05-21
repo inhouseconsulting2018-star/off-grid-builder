@@ -43,3 +43,4 @@ channel = "stable-25_05"
 
 [userenv.shared]
 STRIPE_PRICE_ID = "price_1TWzd0Lz28pl9FUiWdYYAu3d"
+STRIPE_HOMEOWNER_REPORT_PRICE_ID = "price_1TZPDcPtpEeLlAYiXtAifKb4"
