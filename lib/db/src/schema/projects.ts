@@ -46,6 +46,12 @@ export const projectsTable = pgTable("projects", {
   // Stripe payment fields — null means unpaid, populated after successful Stripe Checkout
   paidAt: timestamp("paid_at", { withTimezone: true }),
   stripeSessionId: text("stripe_session_id"),
+  stripePriceId: text("stripe_price_id"),
+  selectedPlan: text("selected_plan"),
+  paidAmount: integer("paid_amount"),
+  reportCredits: integer("report_credits").notNull().default(0),
+  contractorStatus: boolean("contractor_status").notNull().default(false),
+  contractorPlan: text("contractor_plan"),
   purchaserEmail: text("purchaser_email"),
   reportDeliveryStatus: text("report_delivery_status").notNull().default("not_sent"),
   reportDeliveredAt: timestamp("report_delivered_at", { withTimezone: true }),

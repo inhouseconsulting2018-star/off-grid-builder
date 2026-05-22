@@ -11,8 +11,10 @@ export function regeocodeProject(projectId: number): Promise<RegeocodeProjectRes
   return apiPost<RegeocodeProjectResponse>(appendAccessToken(`/projects/${projectId}/regeocode`, projectId));
 }
 
-export function createProjectCheckoutSession(projectId: number): Promise<{ url?: string }> {
-  return apiPost<{ url?: string }>(appendAccessToken(`/projects/${projectId}/create-checkout-session`, projectId));
+export type CheckoutPlanId = "homeowner_report" | "property_pack" | "contractor_annual" | "contractor_lifetime_beta";
+
+export function createProjectCheckoutSession(projectId: number, plan: CheckoutPlanId = "homeowner_report"): Promise<{ url?: string }> {
+  return apiPost<{ url?: string }>(appendAccessToken(`/projects/${projectId}/create-checkout-session`, projectId), { plan });
 }
 
 export function emailUnlockedReport(
@@ -28,6 +30,12 @@ export interface AdminPurchase {
   purchaserEmail?: string | null;
   paidAt?: string | null;
   stripeSessionId?: string | null;
+  stripePriceId?: string | null;
+  selectedPlan?: string | null;
+  paidAmount?: number | null;
+  reportCredits?: number | null;
+  contractorStatus?: boolean | null;
+  contractorPlan?: string | null;
   reportDeliveryStatus: string;
   reportDeliveredAt?: string | null;
   systemType: string;

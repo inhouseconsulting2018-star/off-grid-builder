@@ -13,7 +13,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ProjectMap } from "@/components/maps/ProjectMap";
 import { generateDesignNotes } from "@/utils/design-notes";
-import { createProjectCheckoutSession, emailUnlockedReport, getProjectPreview, getProjectReport, getReportPdfUrl } from "@/services/projectService";
+import { type CheckoutPlanId, createProjectCheckoutSession, emailUnlockedReport, getProjectPreview, getProjectReport, getReportPdfUrl } from "@/services/projectService";
 import { saveProjectRef } from "@/services/projectAccess";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,9 +45,9 @@ export default function Results() {
     if (projectId > 0 && token) saveProjectRef({ id: projectId, accessToken: token });
   }, [projectId]);
 
-  const handleUnlockReport = () => {
+  const handleUnlockReport = (plan: CheckoutPlanId = "homeowner_report") => {
     setIsRedirecting(true);
-    createProjectCheckoutSession(projectId)
+    createProjectCheckoutSession(projectId, plan)
       .then((data) => {
         if (data.url) window.location.href = data.url;
       })
@@ -113,6 +113,16 @@ export default function Results() {
 
   if (!preview.paidAt) {
     const calc = preview.preview;
+    const fmtRange = (r?: { low?: number; high?: number }, suffix = "") => {
+      if (!r || typeof r.low !== "number" || typeof r.high !== "number") return "--";
+      return `${r.low.toLocaleString()}-${r.high.toLocaleString()}${suffix}`;
+    };
+    const pricingOptions: Array<{ plan: CheckoutPlanId; title: string; price: string; desc: string }> = [
+      { plan: "homeowner_report", title: "Homeowner Full Report", price: "$19", desc: "One complete report and PDF for this project." },
+      { plan: "property_pack", title: "Property Pack", price: "$39", desc: "Three full report credits tied to this guest project access." },
+      { plan: "contractor_annual", title: "Contractor Annual", price: "$149/yr", desc: "50 report credits, contractor status, PDF exports, and saved projects." },
+      { plan: "contractor_lifetime_beta", title: "Contractor Lifetime Beta", price: "$199", desc: "Founding contractor plan with 100 credits and core calculator access." },
+    ];
     return (
       <AppLayout>
         <div className="max-w-5xl mx-auto space-y-6">
@@ -130,26 +140,43 @@ export default function Results() {
             </div>
             <Button
               className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white"
-              onClick={handleUnlockReport}
+              onClick={() => handleUnlockReport("homeowner_report")}
               disabled={isRedirecting}
             >
               {isRedirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
-              Unlock Full Report - $49
+              Unlock Full Report - $19
             </Button>
           </div>
           <div className="grid sm:grid-cols-3 gap-4">
             <Card className="bg-primary/5 border-primary/25">
               <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Rough Solar Array</CardTitle></CardHeader>
-              <CardContent><div className="text-3xl font-black text-primary">{calc?.adjustedArraySizeKw?.toFixed?.(2) ?? "--"} kW</div><div className="text-sm">{calc?.numPanels ?? "--"} panels</div></CardContent>
+              <CardContent><div className="text-3xl font-black text-primary">{fmtRange(calc?.systemSizeKwRange, " kW")}</div><div className="text-sm">{fmtRange(calc?.panelCountRange)} panels</div></CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Rough Cost Range</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-black">${Math.round(calc?.installedCostLow ?? 0).toLocaleString()} - ${Math.round(calc?.installedCostHigh ?? 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">Installed planning range</div></CardContent>
+              <CardContent><div className="text-2xl font-black">${Math.round(calc?.costRange?.low ?? 0).toLocaleString()} - ${Math.round(calc?.costRange?.high ?? 0).toLocaleString()}</div><div className="text-xs text-muted-foreground">Installed planning range</div></CardContent>
             </Card>
             <Card>
-              <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Basic Savings</CardTitle></CardHeader>
-              <CardContent><div className="text-2xl font-black">${Math.round(calc?.estimatedYearlySavings ?? 0).toLocaleString()}/yr</div><div className="text-xs text-muted-foreground">{calc?.productionEstimateLabel ?? "Preview estimate"}</div></CardContent>
+              <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Production Range</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-black">{fmtRange(calc?.yearlyProductionKwhRange, " kWh/yr")}</div><div className="text-xs text-muted-foreground">{calc?.basicSystemRecommendation ?? "Basic system recommendation"}</div></CardContent>
             </Card>
+          </div>
+          <div className="grid md:grid-cols-4 gap-3">
+            {pricingOptions.map((option) => (
+              <Card key={option.plan} className={option.plan === "homeowner_report" ? "border-primary/40" : ""}>
+                <CardContent className="p-4 flex flex-col gap-3 h-full">
+                  <div>
+                    <div className="text-sm font-semibold">{option.title}</div>
+                    <div className="text-2xl font-black mt-1">{option.price}</div>
+                    <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{option.desc}</p>
+                  </div>
+                  <Button className="mt-auto" variant={option.plan === "homeowner_report" ? "default" : "outline"} onClick={() => handleUnlockReport(option.plan)} disabled={isRedirecting}>
+                    {isRedirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+                    Select
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
           </div>
           <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
             <CardContent className="py-8 flex flex-col items-center text-center gap-4">
@@ -160,9 +187,9 @@ export default function Results() {
                   Full BOM, losses, battery and inverter sizing, monthly PVWatts production, ROI details, and PDF download are returned only after payment entitlement is verified by the server.
                 </p>
               </div>
-              <Button size="lg" className="bg-amber-500 hover:bg-amber-600 text-white gap-2 px-8" onClick={handleUnlockReport} disabled={isRedirecting}>
+              <Button size="lg" className="bg-amber-500 hover:bg-amber-600 text-white gap-2 px-8" onClick={() => handleUnlockReport("homeowner_report")} disabled={isRedirecting}>
                 {isRedirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
-                Unlock Full Report - $49
+                Unlock Full Report - $19
               </Button>
               <p className="text-xs text-muted-foreground">Secure one-time payment via Stripe.</p>
             </CardContent>
@@ -325,7 +352,7 @@ export default function Results() {
               <Button
                 size="sm"
                 className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white border-0"
-                onClick={handleUnlockReport}
+                onClick={() => handleUnlockReport("homeowner_report")}
                 disabled={isRedirecting}
               >
                 {isRedirecting
@@ -1220,19 +1247,19 @@ export default function Results() {
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-3">
-                  <div className="text-2xl font-extrabold text-amber-600">$49</div>
+                  <div className="text-2xl font-extrabold text-amber-600">$19</div>
                   <div className="text-sm text-muted-foreground">one-time · instant access · this project</div>
                 </div>
                 <Button
                   size="lg"
                   className="bg-amber-500 hover:bg-amber-600 text-white gap-2 px-8"
-                  onClick={handleUnlockReport}
+                  onClick={() => handleUnlockReport("homeowner_report")}
                   disabled={isRedirecting}
                 >
                   {isRedirecting
                     ? <Loader2 className="h-4 w-4 animate-spin" />
                     : <Lock className="h-4 w-4" />}
-                  Unlock Full Report — $49
+                  Unlock Full Report — $19
                 </Button>
                 <p className="text-xs text-muted-foreground">
                   Secure one-time payment via Stripe.

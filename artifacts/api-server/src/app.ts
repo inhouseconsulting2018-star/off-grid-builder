@@ -10,6 +10,7 @@ import router from "./routes";
 import { logger } from "./utils/logger";
 import { WebhookHandlers } from "./services/payments/webhookHandlers";
 import { constructStripeEvent } from "./services/payments/stripeClient";
+import { getPlanForWebhook } from "./services/payments/plans";
 import { deliverReportEmail } from "./services/reports/reportDeliveryService";
 
 const app: Express = express();
@@ -24,7 +25,7 @@ app.set("trust proxy", 1);
 // Stripe sends a raw Buffer body for signature verification.
 // If express.json() runs first it parses the body, breaking the HMAC check.
 app.post(
-  "/api/stripe/webhook",
+  ["/api/stripe/webhook", "/api/webhooks/stripe"],
   express.raw({ type: "application/json" }),
   async (req, res) => {
     const signature = req.headers["stripe-signature"];
@@ -45,10 +46,12 @@ app.post(
           payment_status: string;
           customer_details?: { email?: string | null } | null;
           customer_email?: string | null;
+          amount_total?: number | null;
           metadata?: Record<string, string>;
         };
         const projectId = parseInt(session.metadata?.projectId ?? "", 10);
         if (!isNaN(projectId) && session.payment_status === "paid") {
+          const plan = getPlanForWebhook(session.metadata?.selectedPlan);
           const purchaserEmail = session.customer_details?.email ?? session.customer_email ?? null;
           const host = req.get("host") ?? "localhost";
           const [project] = await db
@@ -64,13 +67,21 @@ app.post(
             .set({
               paidAt: new Date(),
               stripeSessionId: session.id,
+              stripePriceId: session.metadata?.stripePriceId ?? null,
+              selectedPlan: plan.id,
+              paidAmount: session.amount_total ?? plan.amountCents,
+              reportCredits: plan.includedCredits,
+              contractorStatus: plan.contractorStatus,
+              contractorPlan: plan.contractorStatus ? plan.id : null,
               purchaserEmail,
               reportDeliveryStatus,
               reportDeliveredAt: reportDeliveryStatus === "sent" ? new Date() : null,
             })
             .where(eq(projectsTable.id, projectId));
-          logger.info({ projectId, sessionId: session.id, purchaserEmail }, "Project unlocked via Stripe payment");
+          logger.info({ projectId, sessionId: session.id, plan: plan.id, purchaserEmail }, "Project unlocked via Stripe payment");
         }
+      } else if (event.type === "payment_intent.payment_failed") {
+        logger.warn({ eventId: event.id }, "Stripe payment intent failed");
       }
 
       // Also sync event data via stripe-replit-sync (products, customers, etc.)

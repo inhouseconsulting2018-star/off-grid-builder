@@ -23,7 +23,10 @@ async function initStripeSchema() {
 function warnOnMissingPaymentEnv() {
   const hasConnector = !!env.replitConnectorsHostname && (!!env.replitIdentity || !!env.webReplRenewal);
   const missing = [
-    !env.stripePriceId ? "STRIPE_PRICE_ID" : null,
+    !env.stripeHomeownerReportPriceId ? "STRIPE_HOMEOWNER_REPORT_PRICE_ID or STRIPE_PRICE_ID" : null,
+    !env.stripePropertyPackPriceId ? "STRIPE_PROPERTY_PACK_PRICE_ID" : null,
+    !env.stripeContractorAnnualPriceId ? "STRIPE_CONTRACTOR_ANNUAL_PRICE_ID" : null,
+    !env.stripeContractorLifetimePriceId ? "STRIPE_CONTRACTOR_LIFETIME_PRICE_ID" : null,
     !env.stripeWebhookSecret ? "STRIPE_WEBHOOK_SECRET" : null,
     !hasConnector && !process.env.STRIPE_SECRET_KEY ? "STRIPE_SECRET_KEY or Replit Stripe connector variables" : null,
   ].filter(Boolean);

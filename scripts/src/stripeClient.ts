@@ -5,12 +5,21 @@ import Stripe from 'stripe';
  * Not cached — tokens can rotate, so fetch fresh each time.
  */
 async function getStripeCredentials(): Promise<{ secretKey: string; publishableKey?: string }> {
+  if (process.env.STRIPE_SECRET_KEY) {
+    return {
+      secretKey: process.env.STRIPE_SECRET_KEY,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+    };
+  }
+
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? "repl " + process.env.REPL_IDENTITY
     : process.env.WEB_REPL_RENEWAL
       ? "depl " + process.env.WEB_REPL_RENEWAL
       : null;
+  const stripeMode = process.env.STRIPE_MODE;
+  const connectorEnvironment = stripeMode === "live" ? "production" : "development";
 
   if (!hostname || !xReplitToken) {
     throw new Error(
@@ -22,7 +31,7 @@ async function getStripeCredentials(): Promise<{ secretKey: string; publishableK
   const url = new URL(`https://${hostname}/api/v2/connection`);
   url.searchParams.set("include_secrets", "true");
   url.searchParams.set("connector_names", "stripe");
-  url.searchParams.set("environment", "development");
+  url.searchParams.set("environment", connectorEnvironment);
 
   const resp = await fetch(url.toString(), {
     headers: { Accept: "application/json", "X-Replit-Token": xReplitToken },
