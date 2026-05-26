@@ -6,8 +6,17 @@ export interface RegeocodeProjectResponse {
   locationAccuracy?: string;
 }
 
-export function regeocodeProject(projectId: number): Promise<RegeocodeProjectResponse> {
-  return apiPost<RegeocodeProjectResponse>(`/projects/${projectId}/regeocode`);
+export function regeocodeProject(
+  projectId: number,
+  accessToken?: string
+): Promise<RegeocodeProjectResponse> {
+  const headers: Record<string, string> = {};
+  if (accessToken) headers["x-access-token"] = accessToken;
+  return apiPost<RegeocodeProjectResponse>(
+    `/projects/${projectId}/regeocode`,
+    undefined,
+    Object.keys(headers).length ? { headers } : undefined
+  );
 }
 
 export function createProjectCheckoutSession(projectId: number): Promise<{ url?: string }> {

@@ -98,6 +98,36 @@ router.post("/projects", async (req, res): Promise<void> => {
   res.status(201).json(project);
 });
 
+// ── GET /projects/purchases — admin only ───────────────────────────────────────
+// Returns all projects that have completed payment, sorted by paidAt desc.
+router.get("/projects/purchases", requireAdminToken, async (_req, res): Promise<void> => {
+  const purchases = await db
+    .select({
+      id:              projectsTable.id,
+      name:            projectsTable.name,
+      address:         projectsTable.address,
+      city:            projectsTable.city,
+      state:           projectsTable.state,
+      zip:             projectsTable.zip,
+      systemType:      projectsTable.systemType,
+      paidAt:          projectsTable.paidAt,
+      paidAmount:      projectsTable.paidAmount,
+      selectedPlan:    projectsTable.selectedPlan,
+      entitlementType: projectsTable.entitlementType,
+      reportCredits:   projectsTable.reportCredits,
+      creditsUsed:     projectsTable.creditsUsed,
+      paymentStatus:   projectsTable.paymentStatus,
+      stripeSessionId: projectsTable.stripeSessionId,
+      purchaserEmail:  projectsTable.purchaserEmail,
+      createdAt:       projectsTable.createdAt,
+    })
+    .from(projectsTable)
+    .where(eq(projectsTable.paymentStatus, "paid"))
+    .orderBy(desc(projectsTable.paidAt));
+
+  res.json(purchases);
+});
+
 // ── GET /projects/stats/summary — admin only ───────────────────────────────────
 router.get("/projects/stats/summary", requireAdminToken, async (_req, res): Promise<void> => {
   const projects = await db.select().from(projectsTable).orderBy(desc(projectsTable.createdAt));
@@ -431,6 +461,15 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   const successUrl = `${baseOrigin}/payment-success?projectId=${id}&session_id={CHECKOUT_SESSION_ID}&accessToken=${accessToken}`;
   const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${id}&accessToken=${accessToken}`;
 
+  // Credits granted per plan — mirrored in the webhook handler
+  const creditsMap: Record<string, number> = {
+    homeowner:           1,
+    property_pack:       3,
+    contractor_annual:   50,
+    contractor_lifetime: 100,
+  };
+  const creditAmount = creditsMap[productType] ?? 1;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const session = await stripe.checkout.sessions.create({
     automatic_payment_methods: { enabled: true },
@@ -438,7 +477,13 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
     mode: isSubscription ? "subscription" : "payment",
     success_url: successUrl,
     cancel_url: cancelUrl,
-    metadata: { projectId: String(id), productType },
+    metadata: {
+      projectId:    String(id),
+      productType,
+      selectedPlan: productType,
+      creditAmount: String(creditAmount),
+      accessToken:  String(accessToken),
+    },
   } as any);
 
   res.json({ url: session.url });

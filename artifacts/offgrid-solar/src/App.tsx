@@ -16,6 +16,7 @@ import SettingsPage from "@/pages/settings";
 import QuickProposal from "@/pages/quick-proposal";
 import PaymentSuccess from "@/pages/payment-success";
 import PaymentCancel from "@/pages/payment-cancel";
+import PurchasesPage from "@/pages/purchases";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ function Router() {
       <Route path="/settings" component={SettingsPage} />
       <Route path="/payment-success" component={PaymentSuccess} />
       <Route path="/payment-cancel" component={PaymentCancel} />
+      <Route path="/purchases" component={PurchasesPage} />
       <Route component={NotFound} />
     </Switch>
   );

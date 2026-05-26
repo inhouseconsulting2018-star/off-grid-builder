@@ -17,6 +17,10 @@ function buildUrl(path: string, query?: Record<string, QueryValue>): string {
   return url.toString();
 }
 
+export interface ApiRequestOptions {
+  headers?: Record<string, string>;
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
@@ -34,10 +38,12 @@ export function apiGet<T>(path: string, query?: Record<string, QueryValue>): Pro
   return apiRequest<T>(path, undefined, query);
 }
 
-export function apiPost<T>(path: string, body?: unknown): Promise<T> {
+export function apiPost<T>(path: string, body?: unknown, extra?: ApiRequestOptions): Promise<T> {
+  const baseHeaders: Record<string, string> = body == null ? {} : { "Content-Type": "application/json" };
+  const headers = { ...baseHeaders, ...(extra?.headers ?? {}) };
   return apiRequest<T>(path, {
     method: "POST",
-    headers: body == null ? undefined : { "Content-Type": "application/json" },
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body == null ? undefined : JSON.stringify(body),
   });
 }

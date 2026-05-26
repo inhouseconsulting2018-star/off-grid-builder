@@ -56,16 +56,32 @@ export default function EditProject() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: project, isLoading: isLoadingProject } = useGetProject(projectId);
-  const updateProject = useUpdateProject();
-  const calculateProject = useCalculateProject();
+  // Read the per-project access token from sessionStorage (persisted by wizard/results).
+  const [token] = useState<string>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get("accessToken") ?? "";
+    if (urlToken) {
+      try { sessionStorage.setItem(`project-token-${projectId}`, urlToken); } catch { /* ignore */ }
+    }
+    try {
+      return urlToken || sessionStorage.getItem(`project-token-${projectId}`) || "";
+    } catch {
+      return urlToken;
+    }
+  });
+
+  const reqOpts = token ? { headers: { "x-access-token": token } } : undefined;
+
+  const { data: project, isLoading: isLoadingProject } = useGetProject(projectId, { request: reqOpts });
+  const updateProject = useUpdateProject({ request: reqOpts });
+  const calculateProject = useCalculateProject({ request: reqOpts });
 
   const [isRegeocodeing, setIsRegeocodeing] = useState(false);
 
   const handleRegeocode = async () => {
     setIsRegeocodeing(true);
     try {
-      const updated = await regeocodeProject(projectId);
+      const updated = await regeocodeProject(projectId, token);
       if (updated.lat != null) form.setValue("lat", updated.lat);
       if (updated.lon != null) form.setValue("lon", updated.lon);
       form.setValue("useManualCoords", false);
@@ -154,7 +170,7 @@ export default function EditProject() {
       await calculateProject.mutateAsync({ id: projectId });
       queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
       toast({ title: "Project updated", description: "Design has been recalculated." });
-      setLocation(`/results/${projectId}`);
+      setLocation(`/results/${projectId}${token ? `?accessToken=${encodeURIComponent(token)}` : ""}`);
     } catch {
       toast({ title: "Error", description: "Failed to update project", variant: "destructive" });
     }
@@ -176,7 +192,7 @@ export default function EditProject() {
     <AppLayout>
       <div className="max-w-4xl mx-auto flex flex-col gap-4">
         <div className="flex items-center gap-3">
-          <Link href={`/results/${projectId}`}>
+          <Link href={`/results/${projectId}${token ? `?accessToken=${encodeURIComponent(token)}` : ""}`}>
             <Button variant="ghost" size="sm" className="gap-1.5">
               <ArrowLeft className="h-4 w-4" /> Back to Report
             </Button>

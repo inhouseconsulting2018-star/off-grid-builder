@@ -7,6 +7,7 @@ import {
   MessageSquare,
   PlusCircle,
   FileText,
+  ShoppingBag,
   Menu,
   X,
 } from "lucide-react";
@@ -22,6 +23,7 @@ const navigation = [
   { name: "Quick Proposal", href: "/proposal", icon: FileText },
   { name: "New Design", href: "/wizard", icon: PlusCircle },
   { name: "AI Assistant", href: "/ai-assistant", icon: MessageSquare },
+  { name: "Purchases", href: "/purchases", icon: ShoppingBag },
   { name: "Settings", href: "/settings", icon: SettingsIcon },
 ];
 
