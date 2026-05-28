@@ -48,6 +48,7 @@ ADMIN_TOKEN = "ogsbadmin-dc4anh5nhff00aaaqr49rzba"
 STRIPE_CONTRACTOR_ANNUAL_PRICE_ID = "price_1TZRKDPtpEeLlAYiWXhoyQHz"
 STRIPE_PRICE_ID = "price_1TZPDcPtpEeLlAYiXtAifKb4"
 STRIPE_CONTRACTOR_LIFETIME_PRICE_ID = "price_1TZcrwPtpEeLlAYi61f8L0Qu"
+"checkout.session.completed" = "whsec_SIyqiGeb2InxHiObq8I2bVoX7wBnCYVA"
 
 [userenv.production]
 FRONTEND_URL = "https://www.offgridsolarbuilder.com"
