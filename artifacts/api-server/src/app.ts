@@ -32,7 +32,7 @@ app.post(
       // Construct and verify the Stripe event
       const event = await constructStripeEvent(req.body as Buffer, sig);
 
-      // ── Mark project as paid and record full entitlement on checkout completion ──
+      // ── checkout.session.completed — grant entitlement ─────────────────────
       if (event.type === "checkout.session.completed") {
         const session = event.data.object as {
           id: string;
@@ -44,7 +44,6 @@ app.post(
         const productType = session.metadata?.productType ?? "homeowner";
 
         if (!isNaN(projectId) && session.payment_status === "paid") {
-          // Credits granted per plan
           const creditsMap: Record<string, number> = {
             homeowner:           1,
             property_pack:       3,
@@ -71,6 +70,38 @@ app.post(
             "Project unlocked via Stripe payment"
           );
         }
+      }
+
+      // ── payment_intent.payment_failed — log failed payments ─────────────────
+      if (event.type === "payment_intent.payment_failed") {
+        const pi = event.data.object as { id: string; last_payment_error?: { message?: string } };
+        logger.warn(
+          { paymentIntentId: pi.id, reason: pi.last_payment_error?.message },
+          "Stripe payment failed"
+        );
+      }
+
+      // ── Subscription lifecycle — contractor_annual plan ──────────────────────
+      // stripe-replit-sync keeps stripe.subscriptions in sync automatically.
+      // We log state changes here; full per-project entitlement revocation requires
+      // stripeSubscriptionId stored on the project (future enhancement).
+      if (event.type === "customer.subscription.created") {
+        const sub = event.data.object as { id: string; status: string; customer: string };
+        logger.info({ subscriptionId: sub.id, customerId: sub.customer, status: sub.status }, "Stripe subscription created");
+      }
+
+      if (event.type === "customer.subscription.updated") {
+        const sub = event.data.object as { id: string; status: string; customer: string };
+        logger.info({ subscriptionId: sub.id, customerId: sub.customer, status: sub.status }, "Stripe subscription updated");
+        // If subscription moves to past_due or unpaid, log a warning
+        if (sub.status === "past_due" || sub.status === "unpaid") {
+          logger.warn({ subscriptionId: sub.id, status: sub.status }, "Stripe subscription payment past due");
+        }
+      }
+
+      if (event.type === "customer.subscription.deleted") {
+        const sub = event.data.object as { id: string; status: string; customer: string };
+        logger.warn({ subscriptionId: sub.id, customerId: sub.customer }, "Stripe subscription cancelled — manual entitlement review may be needed");
       }
 
       // Also sync event data via stripe-replit-sync (products, customers, etc.)

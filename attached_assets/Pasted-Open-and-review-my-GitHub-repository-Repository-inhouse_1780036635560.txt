@@ -1,0 +1,237 @@
+Open and review my GitHub repository:
+
+Repository:
+inhouseconsulting2018-star/off-grid-builder
+
+Primary branch to stabilize:
+launch-mvp
+
+Goal:
+Fully check and stabilize the OffGrid Solar Builder app from front end to back end, including Stripe payment, paywall, report unlock, PDF unlock, repository state, and production readiness.
+
+Do not add random new features.
+Do not expose secrets.
+Do not hardcode Stripe keys or API keys.
+Do not switch Stripe to live mode until test mode works perfectly.
+Do not move or create launch tags yet.
+Do not weaken security or paywall protection.
+
+1. Repository / GitHub Check
+Check:
+- current branch
+- open PRs
+- recent merged PRs
+- unmerged launch-related branches
+- working tree status
+- whether launch-mvp has the latest paywall/pricing/security fixes
+- whether main was accidentally changed
+- whether any launch fixes are stranded on other branches
+
+If safe launch fixes are stranded on another branch, bring them into launch-mvp cleanly.
+If branch protection blocks the merge, tell me exactly what button/action I need to take.
+
+2. Frontend Check
+Review and test:
+- landing page
+- pricing page
+- project wizard
+- project dashboard
+- project detail page
+- results/free preview page
+- locked report cards
+- unlock buttons
+- Stripe checkout button
+- payment success page
+- payment cancel page
+- full report page
+- PDF download button
+- admin/settings page
+- admin/purchases page
+- mobile layout
+
+Frontend requirements:
+- free preview only shows ranges
+- free preview does not show paid report details
+- paid sections are locked before payment
+- unlock buttons create correct Stripe checkout sessions
+- payment success refreshes entitlement
+- PDF button is hidden or blocked before payment
+- no full report/BOM is generated client-side before payment
+- frontend does not expose Stripe secret keys
+- frontend shows friendly error messages
+
+3. Backend/API Check
+Review and test:
+- project create route
+- project read route
+- project update route
+- project delete route
+- preview calculation route
+- paid report route
+- PDF route
+- Stripe checkout session route
+- Stripe webhook route
+- admin routes
+- geocoding route
+- PVWatts/NREL route
+
+Backend requirements:
+- no public project enumeration
+- no project-by-ID access without accessToken or owner auth
+- update/delete/calculate/report/PDF routes require accessToken
+- preview endpoint only returns free preview/range data
+- full report endpoint requires paid entitlement
+- PDF endpoint requires paid entitlement
+- full BOM/equipment list is generated server-side only
+- admin routes require ADMIN_TOKEN
+- Stripe webhook verifies STRIPE_WEBHOOK_SECRET
+- webhook updates entitlement/payment fields correctly
+
+4. Stripe Payment / Paywall Check
+Make Stripe test mode work end-to-end.
+
+Plans:
+- Homeowner Full Report: $19, 1 full report credit
+- Property Pack: $39, 3 full report credits
+- Contractor Annual: $199/year, 50 report credits
+- Contractor Lifetime Beta: $299 one-time, 100 report credits
+
+Required env vars:
+- DATABASE_URL
+- ADMIN_TOKEN
+- STRIPE_SECRET_KEY or Replit Stripe connector equivalent
+- STRIPE_WEBHOOK_SECRET
+- STRIPE_HOMEOWNER_REPORT_PRICE_ID
+- STRIPE_PROPERTY_PACK_PRICE_ID
+- STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
+- STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
+- STRIPE_PRICE_ID fallback
+- NREL_API_KEY
+
+Stripe checkout requirements:
+- POST /api/stripe/create-checkout-session exists and works
+- checkout request includes projectId, accessToken, selectedPlan
+- Stripe session metadata includes projectId, accessToken, selectedPlan, creditAmount
+- correct Stripe price ID is used for each plan
+- success/cancel URLs work locally and in production
+- checkout opens without errors
+- payment completes in Stripe test mode
+- webhook receives checkout.session.completed
+- webhook marks payment complete
+- webhook unlocks the correct entitlement
+
+Webhook events:
+- checkout.session.completed
+- payment_intent.payment_failed
+- customer.subscription.created
+- customer.subscription.updated
+- customer.subscription.deleted
+
+Production webhook URL:
+https://offgridsolarbuilders.com/api/stripe/webhook
+
+5. Paywall Enforcement
+Before payment:
+- user only sees free preview ranges
+- full report API is blocked
+- PDF endpoint is blocked
+- full BOM is blocked
+- exact detailed monthly production is blocked if paid-only
+- hidden printable report DOM does not exist
+- another project cannot be accessed without accessToken
+
+After payment:
+- full report unlocks
+- PDF unlocks
+- BOM/equipment list unlocks
+- monthly production unlocks
+- losses breakdown unlocks
+- entitlement persists after refresh
+
+6. Database / Migration Check
+Confirm DB supports:
+- accessToken
+- ownerUserId
+- isGuestProject
+- entitlementType
+- reportCredits
+- creditsUsed
+- selectedPlan
+- paidAmount
+- paidAt
+- stripeSessionId
+- stripePriceId
+- paymentStatus
+
+If migration is missing:
+- create the migration
+- document exact migration command
+- do not pretend migration was applied unless it actually was
+
+7. Geocoding / Map Check
+Fix wrong location pins.
+
+Known test address:
+2365 Myers Dr, Santa Rosa, CA 95403
+
+Requirements:
+- geocode full street address first
+- do not default to city center unless exact geocode fails
+- store successful latitude/longitude
+- use saved latitude/longitude first
+- never overwrite exact coordinates with fallback coordinates
+- show location accuracy:
+  exact_address, approximate_zip, approximate_city, manual_coordinates, failed
+- manual lat/lng override exists
+- Re-geocode Address button exists
+- approximate locations are clearly labeled
+
+8. Build / Test / Fix
+Run and fix until passing:
+- TypeScript checks
+- backend production build
+- frontend production build
+- launch QA tests
+- any existing unit/integration tests
+
+If critical tests do not exist, add lightweight tests for:
+- unpaid report blocked
+- unpaid PDF blocked
+- paid entitlement unlocks report
+- accessToken required
+- Stripe webhook entitlement update
+- preview returns ranges only
+
+9. Final Stabilization
+If bugs are found:
+- fix them
+- rerun tests
+- continue until stable
+
+Do not stop after identifying problems unless the blocker requires my manual action in:
+- Stripe dashboard
+- Replit Secrets
+- DNS/domain setup
+- GitHub approval/ruleset
+
+10. Final Report
+Give me a final report showing:
+- repository status
+- current branch
+- commit SHA
+- frontend status
+- backend status
+- Stripe checkout status
+- webhook status
+- paywall status
+- PDF unlock status
+- database/migration status
+- geocoding status
+- tests passed
+- blockers remaining
+- exact manual steps I still need to take
+
+If everything passes, tell me whether it is safe to:
+1. redeploy launch-mvp in Replit
+2. create v0.2-paid-launch-candidate
+3. turn Stripe live mode on after test verification
