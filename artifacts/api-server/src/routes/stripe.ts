@@ -1,4 +1,5 @@
-import { Router, type IRouter } from "express";
+import { timingSafeEqual } from "node:crypto";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { desc, eq, isNotNull } from "drizzle-orm";
 import { db, projectsTable } from "@workspace/db";
 import { getUncachableStripeClient } from "../services/payments/stripeClient";
@@ -6,32 +7,46 @@ import { getCheckoutPlan, parseCheckoutPlan } from "../services/payments/plans";
 import { deliverReportEmail } from "../services/reports/reportDeliveryService";
 import { requireAdmin } from "../middlewares/adminAuth";
 import { getAuthorizedProject } from "../services/projects/projectAccess";
+import { env } from "../config/env";
 
 const router: IRouter = Router();
 
-/**
- * POST /api/projects/:id/create-checkout-session
- *
- * Creates a Stripe Checkout session to unlock reports or buy launch credits.
- *
- * Required env vars:
- *   STRIPE_HOMEOWNER_REPORT_PRICE_ID or STRIPE_PRICE_ID
- *   STRIPE_PROPERTY_PACK_PRICE_ID
- *   STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
- *   STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
- */
-router.post("/projects/:id/create-checkout-session", async (req, res): Promise<void> => {
-  const projectId = parseInt(req.params.id, 10);
-  if (isNaN(projectId)) {
+function resolveCheckoutBaseUrl(req: Request): string {
+  if (env.nodeEnv === "production" || env.isReplitDeployment) {
+    return "https://offgridsolarbuilders.com";
+  }
+  const host = req.get("host") ?? "localhost";
+  return `${req.protocol}://${host}`;
+}
+
+function constantTimeEquals(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+type CheckoutRequest = {
+  projectId: number;
+  accessToken: string;
+  selectedPlan?: unknown;
+  plan?: unknown;
+};
+
+async function createCheckoutSession(req: Request, res: Response, input: CheckoutRequest): Promise<void> {
+  const projectId = input.projectId;
+  if (!Number.isFinite(projectId)) {
     res.status(400).json({ error: "Invalid project ID" });
     return;
   }
 
-  const project = await getAuthorizedProject(req, projectId);
-  if (project === null) { res.status(404).json({ error: "Project not found" }); return; }
-  if (project === "forbidden") { res.status(403).json({ error: "Invalid project access token" }); return; }
+  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, projectId));
+  if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+  if (!input.accessToken || !constantTimeEquals(input.accessToken, project.accessToken)) {
+    res.status(403).json({ error: "Invalid project access token" });
+    return;
+  }
 
-  const planId = parseCheckoutPlan(req.body?.plan);
+  const planId = parseCheckoutPlan(input.selectedPlan ?? input.plan);
   const plan = getCheckoutPlan(planId);
 
   if (project.paidAt && planId === "homeowner_report") {
@@ -48,31 +63,60 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
   }
 
   const stripe = await getUncachableStripeClient();
-
-  // Build success/cancel URLs — works in both dev (proxied) and production
-  const host = req.get("host") ?? "localhost";
-  const protocol = req.protocol;
-  const successUrl = `${protocol}://${host}/payment-success?projectId=${projectId}&accessToken=${encodeURIComponent(project.accessToken)}&session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = `${protocol}://${host}/payment-cancel?projectId=${projectId}&accessToken=${encodeURIComponent(project.accessToken)}`;
+  const baseUrl = resolveCheckoutBaseUrl(req);
+  const successUrl = `${baseUrl}/payment-success?projectId=${projectId}&accessToken=${encodeURIComponent(project.accessToken)}&session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = `${baseUrl}/payment-cancel?projectId=${projectId}&accessToken=${encodeURIComponent(project.accessToken)}`;
+  const checkoutMetadata = {
+    projectId: String(projectId),
+    accessToken: project.accessToken,
+    selectedPlan: plan.id,
+    creditAmount: String(plan.includedCredits),
+    stripePriceId: priceId,
+    reportCredits: String(plan.includedCredits),
+    reportType: "solar-design-report",
+  };
 
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
     line_items: [{ price: priceId, quantity: 1 }],
     mode: plan.checkoutMode,
     ...(plan.checkoutMode === "payment" ? { customer_creation: "if_required" as const } : {}),
+    ...(plan.checkoutMode === "subscription" ? { subscription_data: { metadata: checkoutMetadata } } : {}),
     success_url: successUrl,
     cancel_url: cancelUrl,
-    // Embed projectId in metadata so the webhook knows which project to unlock
-    metadata: {
-      projectId: String(projectId),
-      selectedPlan: plan.id,
-      stripePriceId: priceId,
-      reportCredits: String(plan.includedCredits),
-      reportType: "solar-design-report",
-    },
+    metadata: checkoutMetadata,
   });
 
   res.json({ url: session.url });
+}
+
+/**
+ * POST /api/projects/:id/create-checkout-session
+ *
+ * Creates a Stripe Checkout session to unlock reports or buy launch credits.
+ *
+ * Required env vars:
+ *   STRIPE_HOMEOWNER_REPORT_PRICE_ID or STRIPE_PRICE_ID
+ *   STRIPE_PROPERTY_PACK_PRICE_ID
+ *   STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
+ *   STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
+ */
+router.post("/projects/:id/create-checkout-session", async (req, res): Promise<void> => {
+  const projectId = parseInt(req.params.id, 10);
+  const accessToken = typeof req.query.accessToken === "string" ? req.query.accessToken : "";
+  await createCheckoutSession(req, res, {
+    projectId,
+    accessToken,
+    selectedPlan: req.body?.selectedPlan ?? req.body?.plan,
+  });
+});
+
+router.post("/stripe/create-checkout-session", async (req, res): Promise<void> => {
+  await createCheckoutSession(req, res, {
+    projectId: Number(req.body?.projectId),
+    accessToken: typeof req.body?.accessToken === "string" ? req.body.accessToken : "",
+    selectedPlan: req.body?.selectedPlan,
+  });
 });
 
 /**
@@ -142,9 +186,12 @@ router.get("/admin/purchases", requireAdmin, async (_req, res): Promise<void> =>
       paidAt: projectsTable.paidAt,
       stripeSessionId: projectsTable.stripeSessionId,
       stripePriceId: projectsTable.stripePriceId,
+      entitlementType: projectsTable.entitlementType,
       selectedPlan: projectsTable.selectedPlan,
       paidAmount: projectsTable.paidAmount,
       reportCredits: projectsTable.reportCredits,
+      creditsUsed: projectsTable.creditsUsed,
+      paymentStatus: projectsTable.paymentStatus,
       contractorStatus: projectsTable.contractorStatus,
       contractorPlan: projectsTable.contractorPlan,
       reportDeliveryStatus: projectsTable.reportDeliveryStatus,

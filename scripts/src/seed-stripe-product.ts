@@ -28,7 +28,7 @@ const PLANS: SeedPlan[] = [
     productName: "Contractor Annual Access",
     description: "Annual contractor access with 50 full report credits.",
     envName: "STRIPE_CONTRACTOR_ANNUAL_PRICE_ID",
-    unitAmount: 14900,
+    unitAmount: 19900,
     metadataType: "contractor_annual",
     recurring: { interval: "year" },
   },
@@ -36,7 +36,7 @@ const PLANS: SeedPlan[] = [
     productName: "Contractor Lifetime Beta",
     description: "Founding contractor beta plan with 100 full report credits and core calculator access.",
     envName: "STRIPE_CONTRACTOR_LIFETIME_PRICE_ID",
-    unitAmount: 19900,
+    unitAmount: 29900,
     metadataType: "contractor_lifetime_beta",
   },
 ];

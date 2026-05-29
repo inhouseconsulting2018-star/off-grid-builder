@@ -8,8 +8,8 @@ The launch pricing model uses four Stripe prices:
 
 - `Homeowner Full Report`: `$19.00`, one-time, `STRIPE_HOMEOWNER_REPORT_PRICE_ID`
 - `Property Pack`: `$39.00`, one-time, `STRIPE_PROPERTY_PACK_PRICE_ID`
-- `Contractor Annual Access`: `$149.00/year`, yearly subscription, `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID`
-- `Contractor Lifetime Beta`: `$199.00`, one-time, `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID`
+- `Contractor Annual Access`: `$199.00/year`, yearly subscription, `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID`
+- `Contractor Lifetime Beta`: `$299.00`, one-time, `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID`
 
 The legacy `STRIPE_PRICE_ID` remains supported as a fallback for the homeowner full report only.
 

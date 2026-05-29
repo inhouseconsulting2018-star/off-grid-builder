@@ -1,17 +1,14 @@
 import express, { type Express, type ErrorRequestHandler } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { eq } from "drizzle-orm";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { db, projectsTable } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./utils/logger";
 import { WebhookHandlers } from "./services/payments/webhookHandlers";
 import { constructStripeEvent } from "./services/payments/stripeClient";
-import { getPlanForWebhook } from "./services/payments/plans";
-import { deliverReportEmail } from "./services/reports/reportDeliveryService";
+import { unlockProjectFromCheckoutSession, updateProjectFromSubscription } from "./services/payments/entitlements";
 
 const app: Express = express();
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -43,49 +40,41 @@ app.post(
       if (event.type === "checkout.session.completed") {
         const session = event.data.object as {
           id: string;
-          payment_status: string;
+          payment_status?: string | null;
           customer_details?: { email?: string | null } | null;
           customer_email?: string | null;
           amount_total?: number | null;
           metadata?: Record<string, string>;
         };
-        const projectId = parseInt(session.metadata?.projectId ?? "", 10);
-        if (!isNaN(projectId) && session.payment_status === "paid") {
-          const plan = getPlanForWebhook(session.metadata?.selectedPlan);
-          const purchaserEmail = session.customer_details?.email ?? session.customer_email ?? null;
-          const host = req.get("host") ?? "localhost";
-          const [project] = await db
-            .select({ accessToken: projectsTable.accessToken })
-            .from(projectsTable)
-            .where(eq(projectsTable.id, projectId));
-          const reportUrl = `${req.protocol}://${host}/results/${projectId}${project?.accessToken ? `?accessToken=${encodeURIComponent(project.accessToken)}` : ""}`;
-          const reportDeliveryStatus = purchaserEmail
-            ? await deliverReportEmail({ projectId, email: purchaserEmail, reportUrl })
-            : "unavailable";
-          await db
-            .update(projectsTable)
-            .set({
-              paidAt: new Date(),
-              stripeSessionId: session.id,
-              stripePriceId: session.metadata?.stripePriceId ?? null,
-              selectedPlan: plan.id,
-              paidAmount: session.amount_total ?? plan.amountCents,
-              reportCredits: plan.includedCredits,
-              contractorStatus: plan.contractorStatus,
-              contractorPlan: plan.contractorStatus ? plan.id : null,
-              purchaserEmail,
-              reportDeliveryStatus,
-              reportDeliveredAt: reportDeliveryStatus === "sent" ? new Date() : null,
-            })
-            .where(eq(projectsTable.id, projectId));
-          logger.info({ projectId, sessionId: session.id, plan: plan.id, purchaserEmail }, "Project unlocked via Stripe payment");
-        }
+        const result = await unlockProjectFromCheckoutSession(session, {
+          protocol: req.protocol,
+          host: req.get("host") ?? "localhost",
+        });
+        if (result) logger.info({ ...result, sessionId: session.id }, "Project unlocked via Stripe payment");
       } else if (event.type === "payment_intent.payment_failed") {
         logger.warn({ eventId: event.id }, "Stripe payment intent failed");
+      } else if (
+        event.type === "customer.subscription.created" ||
+        event.type === "customer.subscription.updated" ||
+        event.type === "customer.subscription.deleted"
+      ) {
+        const subscription = event.data.object as {
+          id: string;
+          status?: string | null;
+          metadata?: Record<string, string>;
+        };
+        const result = await updateProjectFromSubscription(subscription);
+        if (result) {
+          logger.info({ ...result, subscriptionId: subscription.id, eventType: event.type }, "Project subscription status updated");
+        }
       }
 
       // Also sync event data via stripe-replit-sync (products, customers, etc.)
-      await WebhookHandlers.processWebhook(req.body as Buffer, sig);
+      try {
+        await WebhookHandlers.processWebhook(req.body as Buffer, sig);
+      } catch (error) {
+        logger.warn({ err: error }, "Stripe-Replit sync failed after entitlement update");
+      }
 
       res.status(200).json({ received: true });
     } catch (error: unknown) {

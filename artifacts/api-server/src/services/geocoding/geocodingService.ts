@@ -34,8 +34,8 @@ export async function nominatimSearch(params: Record<string, string>): Promise<u
 export interface GeoResult {
   lat: number;
   lon: number;
-  /** How precise the result is: 'exact' = street-level, 'zip' = ZIP centroid, 'city' = city centroid */
-  accuracy: "exact" | "zip" | "city";
+  /** How precise the result is: exact street address, ZIP/city approximation, manual, or failed. */
+  accuracy: "exact_address" | "approximate_zip" | "approximate_city";
 }
 
 interface NominatimAddress {
@@ -122,26 +122,26 @@ export async function geocodeAddress(opts: {
   // 1. Structured query — most accurate, avoids cross-state false matches
   if (address && city && state) {
     const r = await trySearch({ street: address, city, state, ...(zip ? { postalcode: zip } : {}), limit: "5" }, true);
-    if (r) return { ...r, accuracy: "exact" };
+    if (r) return { ...r, accuracy: "exact_address" };
   }
 
   // 2. Free-form full address string
   if (address && city && state) {
     const q = `${address}, ${city}, ${state}${zip ? " " + zip : ""}, USA`;
     const r = await trySearch({ q, limit: "5" }, true);
-    if (r) return { ...r, accuracy: "exact" };
+    if (r) return { ...r, accuracy: "exact_address" };
   }
 
   // 3. City + state + ZIP (ZIP centroid)
   if (city && state && zip) {
     const r = await trySearch({ q: `${city}, ${state} ${zip}, USA`, limit: "1" });
-    if (r) return { ...r, accuracy: "zip" };
+    if (r) return { ...r, accuracy: "approximate_zip" };
   }
 
   // 4. City + state only (least precise)
   if (city && state) {
     const r = await trySearch({ q: `${city}, ${state}, USA`, limit: "1" });
-    if (r) return { ...r, accuracy: "city" };
+    if (r) return { ...r, accuracy: "approximate_city" };
   }
 
   return null;

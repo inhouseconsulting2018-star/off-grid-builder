@@ -37,8 +37,7 @@ export const projectsTable = pgTable("projects", {
   // Saved geocode result for the main property location
   lat: real("lat"),
   lon: real("lon"),
-  // 'exact' = street-level geocode, 'zip' = ZIP centroid fallback,
-  // 'city' = city centroid fallback, 'manual' = user-entered coordinates
+  // exact_address, approximate_zip, approximate_city, manual_coordinates, or failed
   locationAccuracy: text("location_accuracy"),
   // When true the map uses lat/lon directly without re-geocoding
   useManualCoords: boolean("use_manual_coords").notNull().default(false),
@@ -47,9 +46,12 @@ export const projectsTable = pgTable("projects", {
   paidAt: timestamp("paid_at", { withTimezone: true }),
   stripeSessionId: text("stripe_session_id"),
   stripePriceId: text("stripe_price_id"),
+  entitlementType: text("entitlement_type"),
   selectedPlan: text("selected_plan"),
   paidAmount: integer("paid_amount"),
   reportCredits: integer("report_credits").notNull().default(0),
+  creditsUsed: integer("credits_used").notNull().default(0),
+  paymentStatus: text("payment_status").notNull().default("unpaid"),
   contractorStatus: boolean("contractor_status").notNull().default(false),
   contractorPlan: text("contractor_plan"),
   purchaserEmail: text("purchaser_email"),

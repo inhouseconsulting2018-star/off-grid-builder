@@ -90,7 +90,12 @@ async function geocodeAndPersist(project: {
   locationAccuracy?: string | null;
 }): Promise<void> {
   // Never overwrite manually-entered coordinates
-  if (project.useManualCoords) return;
+  if (project.useManualCoords) {
+    if (project.lat != null && project.lon != null && project.locationAccuracy !== "manual_coordinates") {
+      await db.update(projectsTable).set({ locationAccuracy: "manual_coordinates" }).where(eq(projectsTable.id, project.id));
+    }
+    return;
+  }
 
   // Only geocode if we have enough address info
   if (!project.city || !project.state) return;
@@ -105,10 +110,10 @@ async function geocodeAndPersist(project: {
 
     if (result) {
       if (
-        project.locationAccuracy === "exact" &&
+        (project.locationAccuracy === "exact_address" || project.locationAccuracy === "exact") &&
         project.lat != null &&
         project.lon != null &&
-        result.accuracy !== "exact"
+        result.accuracy !== "exact_address"
       ) {
         logger.info(
           { id: project.id, existingAccuracy: project.locationAccuracy, attemptedAccuracy: result.accuracy },
@@ -122,8 +127,11 @@ async function geocodeAndPersist(project: {
         .set({ lat: result.lat, lon: result.lon, locationAccuracy: result.accuracy })
         .where(eq(projectsTable.id, project.id));
       logger.info({ id: project.id, accuracy: result.accuracy }, "Project geocoded");
+    } else {
+      await db.update(projectsTable).set({ locationAccuracy: "failed" }).where(eq(projectsTable.id, project.id));
     }
   } catch (err) {
+    await db.update(projectsTable).set({ locationAccuracy: "failed" }).where(eq(projectsTable.id, project.id));
     // Geocoding failure is non-fatal — project is still saved, map falls back gracefully
     logger.warn({ err, id: project.id }, "Geocode failed — project saved without coords");
   }
@@ -167,6 +175,9 @@ router.post("/projects", async (req, res): Promise<void> => {
     accessToken: createAccessToken(),
     ownerUserId: null,
     isGuestProject: true,
+    ...(parsed.data.useManualCoords && parsed.data.lat != null && parsed.data.lon != null
+      ? { locationAccuracy: "manual_coordinates" }
+      : {}),
   }).returning();
 
   // Geocode in the background — don't block the response
@@ -306,9 +317,18 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
   if (authorized === null) { res.status(404).json({ error: "Project not found" }); return; }
   if (authorized === "forbidden") { res.status(403).json({ error: "Invalid project access token" }); return; }
 
+  const updateData = {
+    ...parsed.data,
+    ...(
+      parsed.data.useManualCoords && parsed.data.lat != null && parsed.data.lon != null
+        ? { locationAccuracy: "manual_coordinates" }
+        : {}
+    ),
+  };
+
   const [project] = await db
     .update(projectsTable)
-    .set(parsed.data)
+    .set(updateData)
     .where(eq(projectsTable.id, params.data.id))
     .returning();
 
@@ -394,10 +414,10 @@ router.post("/projects/:id/regeocode", async (req, res): Promise<void> => {
   }
 
   if (
-    project.locationAccuracy === "exact" &&
+    (project.locationAccuracy === "exact_address" || project.locationAccuracy === "exact") &&
     project.lat != null &&
     project.lon != null &&
-    result.accuracy !== "exact"
+    result.accuracy !== "exact_address"
   ) {
     logger.info(
       { id, existingAccuracy: project.locationAccuracy, attemptedAccuracy: result.accuracy },

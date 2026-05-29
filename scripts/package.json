@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "qa:paywall": "tsx ./src/paywall-qa.test.ts",
     "qa:pvwatts": "tsx ./src/pvwatts-qa.test.ts",
     "seed-stripe": "tsx ./src/seed-stripe-product.ts",
+    "setup-stripe-test": "bash ./setup-stripe-test.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

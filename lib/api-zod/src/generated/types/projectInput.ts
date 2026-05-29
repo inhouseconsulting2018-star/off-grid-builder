@@ -8,6 +8,7 @@
 import type { ProjectInputBatteryChemistry } from "./projectInputBatteryChemistry";
 import type { ProjectInputBudgetTier } from "./projectInputBudgetTier";
 import type { ProjectInputInstallationType } from "./projectInputInstallationType";
+import type { ProjectInputLocationAccuracy } from "./projectInputLocationAccuracy";
 import type { ProjectInputShadeLevel } from "./projectInputShadeLevel";
 import type { ProjectInputSystemType } from "./projectInputSystemType";
 
@@ -62,10 +63,10 @@ export interface ProjectInput {
    */
   lon?: number | null;
   /**
-   * 'exact' | 'zip' | 'city' | 'manual'
+   * Geocode precision.
    * @nullable
    */
-  locationAccuracy?: string | null;
+  locationAccuracy?: ProjectInputLocationAccuracy;
   /** When true the map uses lat/lon directly without re-geocoding. */
   useManualCoords?: boolean;
 }

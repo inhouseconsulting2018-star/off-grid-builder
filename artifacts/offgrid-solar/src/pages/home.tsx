@@ -60,8 +60,8 @@ export default function Home() {
                 ["Free Preview", "$0", "System size range, panel count range, production range, rough cost range, and basic system recommendation."],
                 ["Homeowner Report", "$19", "One full report for one project with monthly production, battery and inverter sizing, BOM, losses, and PDF."],
                 ["Property Pack", "$39", "Three full report credits tied to guest project access for homeowners comparing multiple properties."],
-                ["Contractor Annual", "$149/year", "50 full report credits, unlimited previews, saved customer projects, PDF exports, and contractor report mode."],
-                ["Contractor Lifetime Beta", "$199", "Founding Contractor Plan — pay once during beta and keep access to the core calculator."],
+                ["Contractor Annual", "$199/year", "50 full report credits, unlimited previews, saved customer projects, PDF exports, and contractor report mode."],
+                ["Contractor Lifetime Beta", "$299", "Founding Contractor Plan — pay once during beta and keep access to the core calculator."],
               ].map(([title, price, desc]) => (
                 <div key={title} className="rounded-lg border bg-card p-5">
                   <div className="text-sm font-semibold text-muted-foreground">{title}</div>

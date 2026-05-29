@@ -29,9 +29,15 @@ cp .env.example .env
 | Variable | Required | Description |
 |---|---|---|
 | `DATABASE_URL` | Yes | Postgres connection string, e.g. `postgres://user:pass@host:5432/dbname` |
-| `SESSION_SECRET` | Yes | Random secret for session signing (use `openssl rand -hex 32`) |
-| `PVWATTS_API_KEY` | Optional | NREL PVWatts v8 API key — falls back to state-based estimates without it. Get a free key at [developer.nrel.gov](https://developer.nrel.gov/signup/) |
-| `STRIPE_PRICE_ID` | Optional | Stripe Price ID for the report unlock payment. Leave unset to disable payments. |
+| `ADMIN_TOKEN` | Yes | Bearer token required for admin settings and purchases endpoints. |
+| `STRIPE_SECRET_KEY` or Replit Stripe connector | Yes for checkout | Stripe test secret key or connected Replit Stripe integration. Do not expose this to frontend code. |
+| `STRIPE_WEBHOOK_SECRET` | Yes for checkout | Stripe webhook signing secret for `/api/stripe/webhook`. |
+| `STRIPE_HOMEOWNER_REPORT_PRICE_ID` | Yes for checkout | Stripe Price ID for the $19 homeowner full report. |
+| `STRIPE_PROPERTY_PACK_PRICE_ID` | Yes for checkout | Stripe Price ID for the $39 property pack. |
+| `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID` | Yes for checkout | Stripe Price ID for the $199/year contractor annual plan. |
+| `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID` | Yes for checkout | Stripe Price ID for the $299 contractor lifetime beta plan. |
+| `STRIPE_PRICE_ID` | Optional fallback | Legacy fallback used only for the homeowner full report. |
+| `NREL_API_KEY` | Yes for production solar data | NREL PVWatts v8 API key. Falls back to state estimates without it. |
 
 ### 3. Push the database schema
 
@@ -144,7 +150,7 @@ pnpm --filter @workspace/db run push
 
 - **Contract-first API**: The OpenAPI spec (`lib/api-spec/openapi.yaml`) is the single source of truth. Editing it and running codegen automatically produces typed React Query hooks and Zod validation schemas.
 - **JSONB calculation result**: `calculationResult` is stored as JSONB, so new PVWatts fields can be added without schema migrations.
-- **PVWatts fallback**: If `PVWATTS_API_KEY` is absent or the API call fails, calculations fall back to state-based peak sun hour estimates. The `pvwattsSource` field indicates which path was used (`"pvwatts"` | `"fallback"`).
+- **PVWatts fallback**: If `NREL_API_KEY` is absent or the API call fails, calculations fall back to state-based peak sun hour estimates. The `pvwattsSource` field indicates which path was used (`"pvwatts"` | `"fallback"`).
 - **Geocoding strategy**: Address → structured Nominatim query → free-form query → ZIP centroid → city centroid, each labeled with an accuracy level (`exact` / `zip` / `city`). Results are saved to the project so the dashboard map never re-geocodes unless you click Re-geocode.
 - **Reverse proxy routing**: A shared proxy routes `/api` to the Express server and `/` to the Vite dev server. All services bind to the `PORT` environment variable.
 
@@ -167,9 +173,15 @@ This project is structured for clean AI-assisted development:
 Create a `.env` file in the project root:
 
 ```env
-DATABASE_URL=postgres://postgres:password@localhost:5432/offgrid_solar
-SESSION_SECRET=your-random-secret-here
-PVWATTS_API_KEY=your-nrel-key-here
+DATABASE_URL=your-postgres-connection-string
+ADMIN_TOKEN=your-random-admin-token
+NREL_API_KEY=your-nrel-key-here
+STRIPE_SECRET_KEY=your-test-stripe-secret-key
+STRIPE_WEBHOOK_SECRET=your-test-stripe-webhook-signing-secret
+STRIPE_HOMEOWNER_REPORT_PRICE_ID=price_xxxxxxxxxxxx
+STRIPE_PROPERTY_PACK_PRICE_ID=price_xxxxxxxxxxxx
+STRIPE_CONTRACTOR_ANNUAL_PRICE_ID=price_xxxxxxxxxxxx
+STRIPE_CONTRACTOR_LIFETIME_PRICE_ID=price_xxxxxxxxxxxx
 STRIPE_PRICE_ID=price_xxxxxxxxxxxx
 ```
 

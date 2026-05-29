@@ -72,7 +72,7 @@ export default function EditProject() {
       form.setValue("useManualCoords", false);
       toast({
         title: "Address geocoded",
-        description: `Location accuracy: ${updated.locationAccuracy === "exact" ? "Exact street address ✓" : updated.locationAccuracy === "zip" ? "ZIP code approximation" : "City/state approximation"}`,
+        description: `Location accuracy: ${updated.locationAccuracy === "exact_address" || updated.locationAccuracy === "exact" ? "Exact street address ✓" : updated.locationAccuracy === "approximate_zip" || updated.locationAccuracy === "zip" ? "ZIP code approximation" : "City/state approximation"}`,
       });
       queryClient.invalidateQueries({ queryKey: ["editable-project", projectId] });
     } catch {
@@ -521,11 +521,12 @@ export default function EditProject() {
                     {project?.lat != null && (
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
-                        {project.locationAccuracy === "exact"
+                        {project.locationAccuracy === "exact_address" || project.locationAccuracy === "exact"
                           ? "Exact street address"
-                          : project.locationAccuracy === "zip" ? "ZIP code approximation"
-                          : project.locationAccuracy === "city" ? "City/state approximation"
-                          : project.locationAccuracy === "manual" ? "Manual coordinates"
+                          : project.locationAccuracy === "approximate_zip" || project.locationAccuracy === "zip" ? "ZIP code approximation"
+                          : project.locationAccuracy === "approximate_city" || project.locationAccuracy === "city" ? "City/state approximation"
+                          : project.locationAccuracy === "manual_coordinates" || project.locationAccuracy === "manual" ? "Manual coordinates"
+                          : project.locationAccuracy === "failed" ? "Geocode failed"
                           : "Coordinates saved"}
                         {" "}({Number(project.lat).toFixed(5)}, {Number(project.lon).toFixed(5)})
                       </span>

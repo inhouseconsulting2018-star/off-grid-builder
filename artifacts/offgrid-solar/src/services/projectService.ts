@@ -14,7 +14,11 @@ export function regeocodeProject(projectId: number): Promise<RegeocodeProjectRes
 export type CheckoutPlanId = "homeowner_report" | "property_pack" | "contractor_annual" | "contractor_lifetime_beta";
 
 export function createProjectCheckoutSession(projectId: number, plan: CheckoutPlanId = "homeowner_report"): Promise<{ url?: string }> {
-  return apiPost<{ url?: string }>(appendAccessToken(`/projects/${projectId}/create-checkout-session`, projectId), { plan });
+  return apiPost<{ url?: string }>("/stripe/create-checkout-session", {
+    projectId,
+    accessToken: getProjectAccessToken(projectId),
+    selectedPlan: plan,
+  });
 }
 
 export function emailUnlockedReport(
@@ -34,6 +38,9 @@ export interface AdminPurchase {
   selectedPlan?: string | null;
   paidAmount?: number | null;
   reportCredits?: number | null;
+  creditsUsed?: number | null;
+  paymentStatus?: string | null;
+  entitlementType?: string | null;
   contractorStatus?: boolean | null;
   contractorPlan?: string | null;
   reportDeliveryStatus: string;

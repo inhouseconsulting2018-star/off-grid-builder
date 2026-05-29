@@ -33,7 +33,7 @@ export default function PaymentSuccess() {
 
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           {projectId && (
-            <Link href={`/results/${projectId}`}>
+            <Link href={`/results/${projectId}${accessToken ? `?accessToken=${encodeURIComponent(accessToken)}` : ""}`}>
               <Button size="lg" className="gap-2 w-full sm:w-auto">
                 <FileText className="h-4 w-4" />
                 View Full Report

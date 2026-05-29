@@ -1,8 +1,5 @@
-# Paid Launch Migration Notes
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-Before deploying paid report unlocks, apply the project access columns:
-
-```sql
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS access_token text;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_user_id text;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_guest_project boolean NOT NULL DEFAULT true;
@@ -13,17 +10,7 @@ WHERE access_token IS NULL OR access_token = '';
 
 ALTER TABLE projects ALTER COLUMN access_token SET NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS projects_access_token_unique ON projects(access_token);
-```
 
-The `gen_random_bytes` function requires PostgreSQL `pgcrypto`:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-```
-
-Confirm these existing paid-report columns also exist before enabling Stripe webhooks:
-
-```sql
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS paid_at timestamptz;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS stripe_session_id text;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS stripe_price_id text;
@@ -38,17 +25,8 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS contractor_plan text;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS purchaser_email text;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_delivery_status text NOT NULL DEFAULT 'not_sent';
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_delivered_at timestamptz;
-```
 
-Launch plan credit behavior:
-
-- `homeowner_report`: marks the current project paid and records 1 included report credit.
-- `property_pack`: marks the current project paid and records 3 report credits tied to the guest project access token for now.
-- `contractor_annual`: marks contractor status and records 50 annual report credits.
-- `contractor_lifetime_beta`: marks contractor beta status and records 100 included report credits.
-
-The checked-in migration file is:
-
-```bash
-lib/db/migrations/20260526_paid_entitlements.sql
-```
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS lat real;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS lon real;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS location_accuracy text;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS use_manual_coords boolean NOT NULL DEFAULT false;

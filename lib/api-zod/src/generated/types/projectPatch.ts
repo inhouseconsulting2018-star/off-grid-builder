@@ -8,6 +8,7 @@
 import type { ProjectPatchBatteryChemistry } from "./projectPatchBatteryChemistry";
 import type { ProjectPatchBudgetTier } from "./projectPatchBudgetTier";
 import type { ProjectPatchInstallationType } from "./projectPatchInstallationType";
+import type { ProjectPatchLocationAccuracy } from "./projectPatchLocationAccuracy";
 import type { ProjectPatchShadeLevel } from "./projectPatchShadeLevel";
 import type { ProjectPatchSystemType } from "./projectPatchSystemType";
 
@@ -62,10 +63,10 @@ export interface ProjectPatch {
    */
   lon?: number | null;
   /**
-   * 'exact' | 'zip' | 'city' | 'manual'
+   * Geocode precision.
    * @nullable
    */
-  locationAccuracy?: string | null;
+  locationAccuracy?: ProjectPatchLocationAccuracy;
   /** When true the map uses lat/lon directly without re-geocoding. */
   useManualCoords?: boolean;
 }

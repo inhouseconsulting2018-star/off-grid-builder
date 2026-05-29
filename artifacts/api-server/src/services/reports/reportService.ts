@@ -54,7 +54,7 @@ export function buildPreview(project: Project) {
             low: Math.max(0, Math.round(calc.installedCostLow ?? 0)),
             high: Math.max(0, Math.round(calc.installedCostHigh ?? 0)),
           },
-          estimatedYearlySavings: calc.estimatedYearlySavings,
+          estimatedYearlySavingsRange: range(calc.estimatedYearlySavings, 0.2, 250),
           basicSystemRecommendation: systemRecommendation(project.systemType, project.installationType),
           productionEstimateLabel: calc.productionEstimateLabel,
         }

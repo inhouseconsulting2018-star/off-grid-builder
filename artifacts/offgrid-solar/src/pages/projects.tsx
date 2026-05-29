@@ -88,7 +88,10 @@ export default function ProjectsDashboard() {
                 <Zap className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold">{projects.reduce((sum: number, p: any) => sum + (p.preview?.adjustedArraySizeKw ?? 0), 0).toFixed(1)} kW</div>
+                <div className="text-2xl font-bold">{projects.reduce((sum: number, p: any) => {
+                  const range = p.preview?.systemSizeKwRange;
+                  return sum + (range ? (range.low + range.high) / 2 : 0);
+                }, 0).toFixed(1)} kW</div>
               </CardContent>
             </Card>
             <Card>
@@ -153,9 +156,7 @@ export default function ProjectsDashboard() {
             ) : projects && projects.length > 0 ? (
               <div className="divide-y">
                 {projects.map(project => {
-                  const adjKw = project.preview?.adjustedArraySizeKw;
-                  const grossKw = undefined;
-                  const displayKw = adjKw ?? grossKw;
+                  const displayKwRange = project.preview?.systemSizeKwRange;
                   const isMapSelected = project.id === mapSelectedId;
                   return (
                     <div
@@ -176,8 +177,8 @@ export default function ProjectsDashboard() {
                           {project.city}, {project.state}
                         </p>
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          {displayKw != null && (
-                            <span className="font-medium text-foreground">{displayKw.toFixed(2)} kW</span>
+                          {displayKwRange != null && (
+                            <span className="font-medium text-foreground">{displayKwRange.low.toFixed(1)}-{displayKwRange.high.toFixed(1)} kW</span>
                           )}
                           <span>{format(new Date(project.createdAt), 'MMM d, yyyy')}</span>
                         </div>

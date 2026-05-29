@@ -2,11 +2,17 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { XCircle, ArrowLeft } from "lucide-react";
 import { Link, useSearch } from "wouter";
+import { useEffect } from "react";
+import { saveProjectRef } from "@/services/projectAccess";
 
 export default function PaymentCancel() {
   const search = useSearch();
   const params = new URLSearchParams(search);
   const projectId = params.get("projectId");
+  const accessToken = params.get("accessToken");
+  useEffect(() => {
+    if (projectId && accessToken) saveProjectRef({ id: Number(projectId), accessToken });
+  }, [projectId, accessToken]);
 
   return (
     <AppLayout>
@@ -27,7 +33,7 @@ export default function PaymentCancel() {
 
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           {projectId && (
-            <Link href={`/results/${projectId}`}>
+            <Link href={`/results/${projectId}${accessToken ? `?accessToken=${encodeURIComponent(accessToken)}` : ""}`}>
               <Button size="lg" className="gap-2 w-full sm:w-auto">
                 <ArrowLeft className="h-4 w-4" />
                 Back to Report

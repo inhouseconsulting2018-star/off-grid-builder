@@ -120,8 +120,8 @@ export default function Results() {
     const pricingOptions: Array<{ plan: CheckoutPlanId; title: string; price: string; desc: string }> = [
       { plan: "homeowner_report", title: "Homeowner Full Report", price: "$19", desc: "One complete report and PDF for this project." },
       { plan: "property_pack", title: "Property Pack", price: "$39", desc: "Three full report credits tied to this guest project access." },
-      { plan: "contractor_annual", title: "Contractor Annual", price: "$149/yr", desc: "50 report credits, contractor status, PDF exports, and saved projects." },
-      { plan: "contractor_lifetime_beta", title: "Contractor Lifetime Beta", price: "$199", desc: "Founding contractor plan with 100 credits and core calculator access." },
+      { plan: "contractor_annual", title: "Contractor Annual", price: "$199/year", desc: "50 report credits, contractor status, PDF exports, and saved projects." },
+      { plan: "contractor_lifetime_beta", title: "Contractor Lifetime Beta", price: "$299", desc: "Founding contractor plan with 100 credits and core calculator access." },
     ];
     return (
       <AppLayout>

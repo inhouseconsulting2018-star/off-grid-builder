@@ -45,7 +45,7 @@ export interface DashboardProject {
   lat?: number | null;
   /** Saved geocoded longitude — use first before calling geocode API */
   lon?: number | null;
-  /** Geocode accuracy: 'exact' | 'zip' | 'city' | 'manual' */
+  /** Geocode accuracy: exact_address | approximate_zip | approximate_city | manual_coordinates | failed */
   locationAccuracy?: string | null;
   /** When true, use lat/lon directly without re-geocoding */
   useManualCoords?: boolean | null;
@@ -101,10 +101,10 @@ async function geocodeOne(
 
   try {
     const data = await geocodeAddress(p);
-    const accuracyLabel = data.accuracy === "exact" ? "Exact street address"
-      : data.accuracy === "zip" ? "ZIP code approximation"
+    const accuracyLabel = data.accuracy === "exact_address" || data.accuracy === "exact" ? "Exact street address"
+      : data.accuracy === "approximate_zip" || data.accuracy === "zip" ? "ZIP code approximation"
       : "City/state approximation";
-    const result = { lat: data.lat, lng: data.lon, fallback: data.accuracy !== "exact", accuracyLabel };
+    const result = { lat: data.lat, lng: data.lon, fallback: !["exact_address", "exact"].includes(data.accuracy ?? ""), accuracyLabel };
     writeCache(key, result);
     return result;
   } catch { /* fall through */ }
@@ -185,15 +185,16 @@ export function DashboardMap({ projects, selectedId, onPinClick }: DashboardMapP
 
         // ── Use saved coordinates first — skip geocode API call if available ──
         if (typeof p.lat === "number" && typeof p.lon === "number" && p.lat !== 0 && p.lon !== 0) {
-          const accuracyLabel = p.locationAccuracy === "exact" || p.useManualCoords
+          const accuracyLabel = p.locationAccuracy === "exact_address" || p.locationAccuracy === "exact" || p.useManualCoords
             ? (p.useManualCoords ? "Manual GPS coordinates" : "Exact street address")
-            : p.locationAccuracy === "zip" ? "ZIP code approximation"
-            : p.locationAccuracy === "city" ? "City/state approximation"
+            : p.locationAccuracy === "approximate_zip" || p.locationAccuracy === "zip" ? "ZIP code approximation"
+            : p.locationAccuracy === "approximate_city" || p.locationAccuracy === "city" ? "City/state approximation"
+            : p.locationAccuracy === "failed" ? "Geocode failed"
             : "Saved coordinates";
           coords = {
             lat: p.lat,
             lng: p.lon,
-            fallback: p.locationAccuracy === "city" || (!!p.locationAccuracy && p.locationAccuracy !== "exact" && !p.useManualCoords),
+            fallback: p.locationAccuracy === "approximate_city" || p.locationAccuracy === "city" || (!!p.locationAccuracy && !["exact_address", "exact"].includes(p.locationAccuracy) && !p.useManualCoords),
             accuracyLabel,
           };
         } else {

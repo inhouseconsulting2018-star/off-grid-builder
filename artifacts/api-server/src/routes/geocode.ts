@@ -15,7 +15,7 @@
  *
  *   GET /api/geocode/coords?q=<full address string>
  *     Returns { lat, lon, accuracy } for a single address (for map pin placement).
- *     accuracy: 'exact' | 'zip' | 'city'
+ *     accuracy: exact_address | approximate_zip | approximate_city
  */
 
 import { Router, type IRouter } from "express";

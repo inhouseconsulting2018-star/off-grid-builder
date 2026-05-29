@@ -9,6 +9,7 @@ import type { CalculationResult } from "./calculationResult";
 import type { ProjectBatteryChemistry } from "./projectBatteryChemistry";
 import type { ProjectBudgetTier } from "./projectBudgetTier";
 import type { ProjectInstallationType } from "./projectInstallationType";
+import type { ProjectLocationAccuracy } from "./projectLocationAccuracy";
 import type { ProjectShadeLevel } from "./projectShadeLevel";
 import type { ProjectSystemType } from "./projectSystemType";
 
@@ -67,10 +68,10 @@ export interface Project {
    */
   lon?: number | null;
   /**
-   * 'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates
+   * Geocode precision: exact address, ZIP approximation, city approximation, manual coordinates, or failed.
    * @nullable
    */
-  locationAccuracy?: string | null;
+  locationAccuracy?: ProjectLocationAccuracy;
   /** When true the map uses lat/lon directly without re-geocoding. */
   useManualCoords?: boolean;
   calculationResult?: CalculationResult;
@@ -84,6 +85,17 @@ export interface Project {
    * @nullable
    */
   stripeSessionId?: string | null;
+  /** @nullable */
+  stripePriceId?: string | null;
+  /** @nullable */
+  entitlementType?: string | null;
+  /** @nullable */
+  selectedPlan?: string | null;
+  /** @nullable */
+  paidAmount?: number | null;
+  reportCredits?: number;
+  creditsUsed?: number;
+  paymentStatus?: string;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -28,6 +28,7 @@ import type {
   ProposalEstimateInput,
   Settings,
   SettingsPatch,
+  StripeCheckoutSessionRequest,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -787,6 +788,96 @@ export const useCreateProjectCheckoutSession = <
   TContext
 > => {
   return useMutation(getCreateProjectCheckoutSessionMutationOptions(options));
+};
+
+/**
+ * @summary Create a Stripe Checkout session for a selected paid report plan
+ */
+export const getCreateStripeCheckoutSessionUrl = () => {
+  return `/api/stripe/create-checkout-session`;
+};
+
+export const createStripeCheckoutSession = async (
+  stripeCheckoutSessionRequest: StripeCheckoutSessionRequest,
+  options?: RequestInit,
+): Promise<CheckoutSessionResult> => {
+  return customFetch<CheckoutSessionResult>(
+    getCreateStripeCheckoutSessionUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(stripeCheckoutSessionRequest),
+    },
+  );
+};
+
+export const getCreateStripeCheckoutSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createStripeCheckoutSession>>,
+    TError,
+    { data: BodyType<StripeCheckoutSessionRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createStripeCheckoutSession>>,
+  TError,
+  { data: BodyType<StripeCheckoutSessionRequest> },
+  TContext
+> => {
+  const mutationKey = ["createStripeCheckoutSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createStripeCheckoutSession>>,
+    { data: BodyType<StripeCheckoutSessionRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createStripeCheckoutSession(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateStripeCheckoutSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createStripeCheckoutSession>>
+>;
+export type CreateStripeCheckoutSessionMutationBody =
+  BodyType<StripeCheckoutSessionRequest>;
+export type CreateStripeCheckoutSessionMutationError = ErrorType<void>;
+
+/**
+ * @summary Create a Stripe Checkout session for a selected paid report plan
+ */
+export const useCreateStripeCheckoutSession = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createStripeCheckoutSession>>,
+    TError,
+    { data: BodyType<StripeCheckoutSessionRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createStripeCheckoutSession>>,
+  TError,
+  { data: BodyType<StripeCheckoutSessionRequest> },
+  TContext
+> => {
+  return useMutation(getCreateStripeCheckoutSessionMutationOptions(options));
 };
 
 /**

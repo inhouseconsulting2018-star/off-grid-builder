@@ -226,5 +226,5 @@ await run("Street-level geocode matching rejects city-only rows as exact", async
     zip: "90012",
   });
 
-  assert.equal(result?.accuracy, "zip");
+  assert.equal(result?.accuracy, "approximate_zip");
 });

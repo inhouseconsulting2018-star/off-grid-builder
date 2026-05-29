@@ -75,10 +75,17 @@ export const ListProjectsResponseItem = zod.object({
       "Geocoded longitude of the property address. Null until geocoding runs.",
     ),
   locationAccuracy: zod
-    .string()
+    .union([
+      zod.literal("exact_address"),
+      zod.literal("approximate_zip"),
+      zod.literal("approximate_city"),
+      zod.literal("manual_coordinates"),
+      zod.literal("failed"),
+      zod.literal(null),
+    ])
     .nullish()
     .describe(
-      "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+      "Geocode precision: exact address, ZIP approximation, city approximation, manual coordinates, or failed.",
     ),
   useManualCoords: zod
     .boolean()
@@ -182,13 +189,13 @@ export const ListProjectsResponseItem = zod.object({
         .number()
         .optional()
         .describe(
-          "Legacy field. Surge is handled in inverter sizing, not battery kWh.",
+          "Motor-start surge headroom added to usable kWh (% of autonomy load)",
         ),
       batteryWeatherReservePct: zod
         .number()
         .optional()
         .describe(
-          "Battery energy reserve added to autonomy load (%)",
+          "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
         ),
       batteryEffectiveDodPct: zod
         .number()
@@ -237,7 +244,7 @@ export const ListProjectsResponseItem = zod.object({
         .array(zod.number())
         .nullish()
         .describe(
-          "12-element array of monthly AC production (kWh). Uses PVWatts when available; otherwise state seasonal fallback.",
+          "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
         ),
       pvwattsSolradMonthly: zod
         .array(zod.number())
@@ -249,7 +256,7 @@ export const ListProjectsResponseItem = zod.object({
         .number()
         .nullish()
         .describe(
-          "Annual AC energy production (kWh). Uses PVWatts when available; otherwise state fallback.",
+          "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
         ),
       pvwattsSolradAnnual: zod
         .number()
@@ -283,7 +290,7 @@ export const ListProjectsResponseItem = zod.object({
         .number()
         .optional()
         .describe(
-          "Array design factor applied after design PSH. Hybrid uses 1.08; off-grid seasonal correction is represented by winterPshFactor.",
+          "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
         ),
       batteryTempDeratingPct: zod
         .number()
@@ -305,6 +312,13 @@ export const ListProjectsResponseItem = zod.object({
     .describe(
       "Stripe Checkout Session ID associated with the successful payment.",
     ),
+  stripePriceId: zod.string().nullish(),
+  entitlementType: zod.string().nullish(),
+  selectedPlan: zod.string().nullish(),
+  paidAmount: zod.number().nullish(),
+  reportCredits: zod.number().optional(),
+  creditsUsed: zod.number().optional(),
+  paymentStatus: zod.string().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -363,9 +377,16 @@ export const CreateProjectBody = zod.object({
     .nullish()
     .describe("Geocoded longitude of the property address."),
   locationAccuracy: zod
-    .string()
+    .union([
+      zod.literal("exact_address"),
+      zod.literal("approximate_zip"),
+      zod.literal("approximate_city"),
+      zod.literal("manual_coordinates"),
+      zod.literal("failed"),
+      zod.literal(null),
+    ])
     .nullish()
-    .describe("'exact' | 'zip' | 'city' | 'manual'"),
+    .describe("Geocode precision."),
   useManualCoords: zod
     .boolean()
     .optional()
@@ -436,10 +457,17 @@ export const GetProjectResponse = zod.object({
       "Geocoded longitude of the property address. Null until geocoding runs.",
     ),
   locationAccuracy: zod
-    .string()
+    .union([
+      zod.literal("exact_address"),
+      zod.literal("approximate_zip"),
+      zod.literal("approximate_city"),
+      zod.literal("manual_coordinates"),
+      zod.literal("failed"),
+      zod.literal(null),
+    ])
     .nullish()
     .describe(
-      "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+      "Geocode precision: exact address, ZIP approximation, city approximation, manual coordinates, or failed.",
     ),
   useManualCoords: zod
     .boolean()
@@ -543,13 +571,13 @@ export const GetProjectResponse = zod.object({
         .number()
         .optional()
         .describe(
-          "Legacy field. Surge is handled in inverter sizing, not battery kWh.",
+          "Motor-start surge headroom added to usable kWh (% of autonomy load)",
         ),
       batteryWeatherReservePct: zod
         .number()
         .optional()
         .describe(
-          "Battery energy reserve added to autonomy load (%)",
+          "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
         ),
       batteryEffectiveDodPct: zod
         .number()
@@ -598,7 +626,7 @@ export const GetProjectResponse = zod.object({
         .array(zod.number())
         .nullish()
         .describe(
-          "12-element array of monthly AC production (kWh). Uses PVWatts when available; otherwise state seasonal fallback.",
+          "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
         ),
       pvwattsSolradMonthly: zod
         .array(zod.number())
@@ -610,7 +638,7 @@ export const GetProjectResponse = zod.object({
         .number()
         .nullish()
         .describe(
-          "Annual AC energy production (kWh). Uses PVWatts when available; otherwise state fallback.",
+          "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
         ),
       pvwattsSolradAnnual: zod
         .number()
@@ -644,7 +672,7 @@ export const GetProjectResponse = zod.object({
         .number()
         .optional()
         .describe(
-          "Array design factor applied after design PSH. Hybrid uses 1.08; off-grid seasonal correction is represented by winterPshFactor.",
+          "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
         ),
       batteryTempDeratingPct: zod
         .number()
@@ -666,6 +694,13 @@ export const GetProjectResponse = zod.object({
     .describe(
       "Stripe Checkout Session ID associated with the successful payment.",
     ),
+  stripePriceId: zod.string().nullish(),
+  entitlementType: zod.string().nullish(),
+  selectedPlan: zod.string().nullish(),
+  paidAmount: zod.number().nullish(),
+  reportCredits: zod.number().optional(),
+  creditsUsed: zod.number().optional(),
+  paymentStatus: zod.string().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -731,9 +766,16 @@ export const UpdateProjectBody = zod.object({
     .nullish()
     .describe("Geocoded longitude of the property address."),
   locationAccuracy: zod
-    .string()
+    .union([
+      zod.literal("exact_address"),
+      zod.literal("approximate_zip"),
+      zod.literal("approximate_city"),
+      zod.literal("manual_coordinates"),
+      zod.literal("failed"),
+      zod.literal(null),
+    ])
     .nullish()
-    .describe("'exact' | 'zip' | 'city' | 'manual'"),
+    .describe("Geocode precision."),
   useManualCoords: zod
     .boolean()
     .optional()
@@ -797,10 +839,17 @@ export const UpdateProjectResponse = zod.object({
       "Geocoded longitude of the property address. Null until geocoding runs.",
     ),
   locationAccuracy: zod
-    .string()
+    .union([
+      zod.literal("exact_address"),
+      zod.literal("approximate_zip"),
+      zod.literal("approximate_city"),
+      zod.literal("manual_coordinates"),
+      zod.literal("failed"),
+      zod.literal(null),
+    ])
     .nullish()
     .describe(
-      "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+      "Geocode precision: exact address, ZIP approximation, city approximation, manual coordinates, or failed.",
     ),
   useManualCoords: zod
     .boolean()
@@ -904,13 +953,13 @@ export const UpdateProjectResponse = zod.object({
         .number()
         .optional()
         .describe(
-          "Legacy field. Surge is handled in inverter sizing, not battery kWh.",
+          "Motor-start surge headroom added to usable kWh (% of autonomy load)",
         ),
       batteryWeatherReservePct: zod
         .number()
         .optional()
         .describe(
-          "Battery energy reserve added to autonomy load (%)",
+          "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
         ),
       batteryEffectiveDodPct: zod
         .number()
@@ -959,7 +1008,7 @@ export const UpdateProjectResponse = zod.object({
         .array(zod.number())
         .nullish()
         .describe(
-          "12-element array of monthly AC production (kWh). Uses PVWatts when available; otherwise state seasonal fallback.",
+          "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
         ),
       pvwattsSolradMonthly: zod
         .array(zod.number())
@@ -971,7 +1020,7 @@ export const UpdateProjectResponse = zod.object({
         .number()
         .nullish()
         .describe(
-          "Annual AC energy production (kWh). Uses PVWatts when available; otherwise state fallback.",
+          "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
         ),
       pvwattsSolradAnnual: zod
         .number()
@@ -1005,7 +1054,7 @@ export const UpdateProjectResponse = zod.object({
         .number()
         .optional()
         .describe(
-          "Array design factor applied after design PSH. Hybrid uses 1.08; off-grid seasonal correction is represented by winterPshFactor.",
+          "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
         ),
       batteryTempDeratingPct: zod
         .number()
@@ -1027,6 +1076,13 @@ export const UpdateProjectResponse = zod.object({
     .describe(
       "Stripe Checkout Session ID associated with the successful payment.",
     ),
+  stripePriceId: zod.string().nullish(),
+  entitlementType: zod.string().nullish(),
+  selectedPlan: zod.string().nullish(),
+  paidAmount: zod.number().nullish(),
+  reportCredits: zod.number().optional(),
+  creditsUsed: zod.number().optional(),
+  paymentStatus: zod.string().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1102,10 +1158,17 @@ export const RegeocodeProjectResponse = zod.object({
       "Geocoded longitude of the property address. Null until geocoding runs.",
     ),
   locationAccuracy: zod
-    .string()
+    .union([
+      zod.literal("exact_address"),
+      zod.literal("approximate_zip"),
+      zod.literal("approximate_city"),
+      zod.literal("manual_coordinates"),
+      zod.literal("failed"),
+      zod.literal(null),
+    ])
     .nullish()
     .describe(
-      "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+      "Geocode precision: exact address, ZIP approximation, city approximation, manual coordinates, or failed.",
     ),
   useManualCoords: zod
     .boolean()
@@ -1209,13 +1272,13 @@ export const RegeocodeProjectResponse = zod.object({
         .number()
         .optional()
         .describe(
-          "Legacy field. Surge is handled in inverter sizing, not battery kWh.",
+          "Motor-start surge headroom added to usable kWh (% of autonomy load)",
         ),
       batteryWeatherReservePct: zod
         .number()
         .optional()
         .describe(
-          "Battery energy reserve added to autonomy load (%)",
+          "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
         ),
       batteryEffectiveDodPct: zod
         .number()
@@ -1264,7 +1327,7 @@ export const RegeocodeProjectResponse = zod.object({
         .array(zod.number())
         .nullish()
         .describe(
-          "12-element array of monthly AC production (kWh). Uses PVWatts when available; otherwise state seasonal fallback.",
+          "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
         ),
       pvwattsSolradMonthly: zod
         .array(zod.number())
@@ -1276,7 +1339,7 @@ export const RegeocodeProjectResponse = zod.object({
         .number()
         .nullish()
         .describe(
-          "Annual AC energy production (kWh). Uses PVWatts when available; otherwise state fallback.",
+          "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
         ),
       pvwattsSolradAnnual: zod
         .number()
@@ -1310,7 +1373,7 @@ export const RegeocodeProjectResponse = zod.object({
         .number()
         .optional()
         .describe(
-          "Array design factor applied after design PSH. Hybrid uses 1.08; off-grid seasonal correction is represented by winterPshFactor.",
+          "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
         ),
       batteryTempDeratingPct: zod
         .number()
@@ -1332,6 +1395,13 @@ export const RegeocodeProjectResponse = zod.object({
     .describe(
       "Stripe Checkout Session ID associated with the successful payment.",
     ),
+  stripePriceId: zod.string().nullish(),
+  entitlementType: zod.string().nullish(),
+  selectedPlan: zod.string().nullish(),
+  paidAmount: zod.number().nullish(),
+  reportCredits: zod.number().optional(),
+  creditsUsed: zod.number().optional(),
+  paymentStatus: zod.string().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1436,13 +1506,13 @@ export const CalculateProjectResponse = zod.object({
     .number()
     .optional()
     .describe(
-      "Legacy field. Surge is handled in inverter sizing, not battery kWh.",
+      "Motor-start surge headroom added to usable kWh (% of autonomy load)",
     ),
   batteryWeatherReservePct: zod
     .number()
     .optional()
     .describe(
-      "Battery energy reserve added to autonomy load (%)",
+      "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
     ),
   batteryEffectiveDodPct: zod
     .number()
@@ -1489,7 +1559,7 @@ export const CalculateProjectResponse = zod.object({
     .array(zod.number())
     .nullish()
     .describe(
-      "12-element array of monthly AC production (kWh). Uses PVWatts when available; otherwise state seasonal fallback.",
+      "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
     ),
   pvwattsSolradMonthly: zod
     .array(zod.number())
@@ -1501,7 +1571,7 @@ export const CalculateProjectResponse = zod.object({
     .number()
     .nullish()
     .describe(
-      "Annual AC energy production (kWh). Uses PVWatts when available; otherwise state fallback.",
+      "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
     ),
   pvwattsSolradAnnual: zod
     .number()
@@ -1535,7 +1605,7 @@ export const CalculateProjectResponse = zod.object({
     .number()
     .optional()
     .describe(
-      "Array design factor applied after design PSH. Hybrid uses 1.08; off-grid seasonal correction is represented by winterPshFactor.",
+      "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
     ),
   batteryTempDeratingPct: zod
     .number()
@@ -1561,13 +1631,35 @@ export const CreateProjectCheckoutSessionResponse = zod.object({
 });
 
 /**
+ * @summary Create a Stripe Checkout session for a selected paid report plan
+ */
+export const CreateStripeCheckoutSessionBody = zod.object({
+  projectId: zod.number(),
+  accessToken: zod.string(),
+  selectedPlan: zod.enum([
+    "homeowner_report",
+    "property_pack",
+    "contractor_annual",
+    "contractor_lifetime_beta",
+  ]),
+});
+
+export const CreateStripeCheckoutSessionResponse = zod.object({
+  url: zod
+    .string()
+    .describe(
+      "Stripe-hosted Checkout URL to redirect the user to for payment.",
+    ),
+});
+
+/**
  * @summary Quick stateless solar proposal estimate (no DB write)
  */
 export const createProposalEstimateBodyStateMin = 2;
 export const createProposalEstimateBodyStateMax = 2;
 
 export const createProposalEstimateBodyPanelWattageDefault = 440;
-export const createProposalEstimateBodyEfficiencyFactorDefault = 0.86;
+export const createProposalEstimateBodyEfficiencyFactorDefault = 0.78;
 export const createProposalEstimateBodyIncludeBatteryDefault = false;
 export const createProposalEstimateBodyBatteryBackupHoursDefault = 8;
 
@@ -1685,10 +1777,17 @@ export const GetProjectsSummaryResponse = zod.object({
           "Geocoded longitude of the property address. Null until geocoding runs.",
         ),
       locationAccuracy: zod
-        .string()
+        .union([
+          zod.literal("exact_address"),
+          zod.literal("approximate_zip"),
+          zod.literal("approximate_city"),
+          zod.literal("manual_coordinates"),
+          zod.literal("failed"),
+          zod.literal(null),
+        ])
         .nullish()
         .describe(
-          "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates",
+          "Geocode precision: exact address, ZIP approximation, city approximation, manual coordinates, or failed.",
         ),
       useManualCoords: zod
         .boolean()
@@ -1800,13 +1899,13 @@ export const GetProjectsSummaryResponse = zod.object({
             .number()
             .optional()
             .describe(
-              "Legacy field. Surge is handled in inverter sizing, not battery kWh.",
+              "Motor-start surge headroom added to usable kWh (% of autonomy load)",
             ),
           batteryWeatherReservePct: zod
             .number()
             .optional()
             .describe(
-              "Battery energy reserve added to autonomy load (%)",
+              "Cloudy-day autonomy buffer added on top of surge-adjusted load (%)",
             ),
           batteryEffectiveDodPct: zod
             .number()
@@ -1855,7 +1954,7 @@ export const GetProjectsSummaryResponse = zod.object({
             .array(zod.number())
             .nullish()
             .describe(
-              "12-element array of monthly AC production (kWh). Uses PVWatts when available; otherwise state seasonal fallback.",
+              "12-element array of monthly AC production (kWh) from PVWatts. Null if PVWatts unavailable.",
             ),
           pvwattsSolradMonthly: zod
             .array(zod.number())
@@ -1867,7 +1966,7 @@ export const GetProjectsSummaryResponse = zod.object({
             .number()
             .nullish()
             .describe(
-              "Annual AC energy production (kWh). Uses PVWatts when available; otherwise state fallback.",
+              "Annual AC energy production (kWh) from PVWatts. Null if PVWatts unavailable.",
             ),
           pvwattsSolradAnnual: zod
             .number()
@@ -1901,7 +2000,7 @@ export const GetProjectsSummaryResponse = zod.object({
             .number()
             .optional()
             .describe(
-              "Array design factor applied after design PSH. Hybrid uses 1.08; off-grid seasonal correction is represented by winterPshFactor.",
+              "Array design safety factor applied: 1.15 for off-grid, 1.08 for hybrid, 1.0 for grid-tied.",
             ),
           batteryTempDeratingPct: zod
             .number()
@@ -1923,6 +2022,13 @@ export const GetProjectsSummaryResponse = zod.object({
         .describe(
           "Stripe Checkout Session ID associated with the successful payment.",
         ),
+      stripePriceId: zod.string().nullish(),
+      entitlementType: zod.string().nullish(),
+      selectedPlan: zod.string().nullish(),
+      paidAmount: zod.number().nullish(),
+      reportCredits: zod.number().optional(),
+      creditsUsed: zod.number().optional(),
+      paymentStatus: zod.string().optional(),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),

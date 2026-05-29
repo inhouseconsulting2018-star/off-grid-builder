@@ -200,6 +200,33 @@ paths:
         "500":
           description: Stripe not configured (STRIPE_PRICE_ID missing)
 
+  /stripe/create-checkout-session:
+    post:
+      operationId: createStripeCheckoutSession
+      tags: [payments]
+      summary: Create a Stripe Checkout session for a selected paid report plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StripeCheckoutSessionRequest"
+      responses:
+        "200":
+          description: Checkout session URL to redirect the user to
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutSessionResult"
+        "400":
+          description: Invalid project ID or project already paid
+        "403":
+          description: Invalid project access token
+        "404":
+          description: Project not found
+        "500":
+          description: Stripe price ID or connector is not configured
+
   /proposals/estimate:
     post:
       operationId: createProposalEstimate
@@ -373,7 +400,8 @@ components:
           description: "Geocoded longitude of the property address. Null until geocoding runs."
         locationAccuracy:
           type: ["string", "null"]
-          description: "'exact' = street-level geocode, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered coordinates"
+          enum: [exact_address, approximate_zip, approximate_city, manual_coordinates, failed, null]
+          description: "Geocode precision: exact address, ZIP approximation, city approximation, manual coordinates, or failed."
         useManualCoords:
           type: boolean
           description: "When true the map uses lat/lon directly without re-geocoding."
@@ -386,6 +414,20 @@ components:
         stripeSessionId:
           type: ["string", "null"]
           description: "Stripe Checkout Session ID associated with the successful payment."
+        stripePriceId:
+          type: ["string", "null"]
+        entitlementType:
+          type: ["string", "null"]
+        selectedPlan:
+          type: ["string", "null"]
+        paidAmount:
+          type: ["integer", "null"]
+        reportCredits:
+          type: integer
+        creditsUsed:
+          type: integer
+        paymentStatus:
+          type: string
         createdAt:
           type: string
           format: date-time
@@ -488,7 +530,8 @@ components:
           description: "Geocoded longitude of the property address."
         locationAccuracy:
           type: ["string", "null"]
-          description: "'exact' | 'zip' | 'city' | 'manual'"
+          enum: [exact_address, approximate_zip, approximate_city, manual_coordinates, failed, null]
+          description: "Geocode precision."
         useManualCoords:
           type: boolean
           description: "When true the map uses lat/lon directly without re-geocoding."
@@ -569,7 +612,8 @@ components:
           description: "Geocoded longitude of the property address."
         locationAccuracy:
           type: ["string", "null"]
-          description: "'exact' | 'zip' | 'city' | 'manual'"
+          enum: [exact_address, approximate_zip, approximate_city, manual_coordinates, failed, null]
+          description: "Geocode precision."
         useManualCoords:
           type: boolean
           description: "When true the map uses lat/lon directly without re-geocoding."
@@ -772,6 +816,21 @@ components:
         url:
           type: string
           description: "Stripe-hosted Checkout URL to redirect the user to for payment."
+
+    StripeCheckoutSessionRequest:
+      type: object
+      required:
+        - projectId
+        - accessToken
+        - selectedPlan
+      properties:
+        projectId:
+          type: integer
+        accessToken:
+          type: string
+        selectedPlan:
+          type: string
+          enum: [homeowner_report, property_pack, contractor_annual, contractor_lifetime_beta]
 
     ProposalEstimateInput:
       type: object
