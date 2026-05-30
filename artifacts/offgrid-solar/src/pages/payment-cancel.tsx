@@ -7,6 +7,10 @@ export default function PaymentCancel() {
   const search = useSearch();
   const params = new URLSearchParams(search);
   const projectId = params.get("projectId");
+  const accessToken = params.get("accessToken");
+  const resultsHref = projectId
+    ? `/results/${projectId}${accessToken ? `?accessToken=${encodeURIComponent(accessToken)}` : ""}`
+    : null;
 
   return (
     <AppLayout>
@@ -26,8 +30,8 @@ export default function PaymentCancel() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          {projectId && (
-            <Link href={`/results/${projectId}`}>
+          {resultsHref && (
+            <Link href={resultsHref}>
               <Button size="lg" className="gap-2 w-full sm:w-auto">
                 <ArrowLeft className="h-4 w-4" />
                 Back to Report

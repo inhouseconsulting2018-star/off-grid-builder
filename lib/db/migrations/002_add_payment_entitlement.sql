@@ -8,6 +8,8 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS entitlement_type text;
 -- Report credit tracking
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_credits   integer NOT NULL DEFAULT 0;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS credits_used     integer NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS contractor_status boolean NOT NULL DEFAULT false;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS contractor_plan   text;
 
 -- Plan + payment detail snapshot
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS selected_plan    text;

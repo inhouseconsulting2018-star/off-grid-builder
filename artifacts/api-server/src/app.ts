@@ -1,12 +1,11 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
-import { eq } from "drizzle-orm";
-import { db, projectsTable } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./utils/logger";
 import { WebhookHandlers } from "./services/payments/webhookHandlers";
 import { constructStripeEvent } from "./services/payments/stripeClient";
+import { unlockProjectFromCheckoutSession, updateProjectFromSubscription } from "./services/payments/entitlements";
 
 const app: Express = express();
 
@@ -36,40 +35,17 @@ app.post(
       if (event.type === "checkout.session.completed") {
         const session = event.data.object as {
           id: string;
-          payment_status: string;
+          payment_status?: string | null;
+          customer_details?: { email?: string | null } | null;
+          customer_email?: string | null;
           amount_total?: number | null;
-          metadata?: Record<string, string>;
+          metadata?: Record<string, string> | null;
         };
-        const projectId = parseInt(session.metadata?.projectId ?? "", 10);
-        const productType = session.metadata?.productType ?? "homeowner";
-
-        if (!isNaN(projectId) && session.payment_status === "paid") {
-          const creditsMap: Record<string, number> = {
-            homeowner:           1,
-            property_pack:       3,
-            contractor_annual:   50,
-            contractor_lifetime: 100,
-          };
-          const reportCredits = creditsMap[productType] ?? 1;
-
-          await db
-            .update(projectsTable)
-            .set({
-              paidAt:          new Date(),
-              stripeSessionId: session.id,
-              paymentStatus:   "paid",
-              selectedPlan:    productType,
-              entitlementType: productType,
-              reportCredits,
-              paidAmount:      session.amount_total ?? null,
-            })
-            .where(eq(projectsTable.id, projectId));
-
-          logger.info(
-            { projectId, sessionId: session.id, productType, reportCredits },
-            "Project unlocked via Stripe payment"
-          );
-        }
+        const result = await unlockProjectFromCheckoutSession(session, {
+          protocol: req.protocol,
+          host: req.get("host") ?? "localhost",
+        });
+        if (result) logger.info({ ...result, sessionId: session.id }, "Project unlocked via Stripe payment");
       }
 
       // ── payment_intent.payment_failed — log failed payments ─────────────────
@@ -81,31 +57,24 @@ app.post(
         );
       }
 
-      // ── Subscription lifecycle — contractor_annual plan ──────────────────────
-      // stripe-replit-sync keeps stripe.subscriptions in sync automatically.
-      // We log state changes here; full per-project entitlement revocation requires
-      // stripeSubscriptionId stored on the project (future enhancement).
-      if (event.type === "customer.subscription.created") {
-        const sub = event.data.object as { id: string; status: string; customer: string };
-        logger.info({ subscriptionId: sub.id, customerId: sub.customer, status: sub.status }, "Stripe subscription created");
-      }
-
-      if (event.type === "customer.subscription.updated") {
-        const sub = event.data.object as { id: string; status: string; customer: string };
-        logger.info({ subscriptionId: sub.id, customerId: sub.customer, status: sub.status }, "Stripe subscription updated");
-        // If subscription moves to past_due or unpaid, log a warning
-        if (sub.status === "past_due" || sub.status === "unpaid") {
-          logger.warn({ subscriptionId: sub.id, status: sub.status }, "Stripe subscription payment past due");
+      if (
+        event.type === "customer.subscription.created" ||
+        event.type === "customer.subscription.updated" ||
+        event.type === "customer.subscription.deleted"
+      ) {
+        const sub = event.data.object as { id: string; status?: string | null; metadata?: Record<string, string> | null };
+        const result = await updateProjectFromSubscription(sub);
+        if (result) {
+          logger.info({ ...result, subscriptionId: sub.id, eventType: event.type }, "Stripe subscription status updated");
         }
       }
 
-      if (event.type === "customer.subscription.deleted") {
-        const sub = event.data.object as { id: string; status: string; customer: string };
-        logger.warn({ subscriptionId: sub.id, customerId: sub.customer }, "Stripe subscription cancelled — manual entitlement review may be needed");
-      }
-
       // Also sync event data via stripe-replit-sync (products, customers, etc.)
-      await WebhookHandlers.processWebhook(req.body as Buffer, sig);
+      try {
+        await WebhookHandlers.processWebhook(req.body as Buffer, sig);
+      } catch (error) {
+        logger.warn({ err: error }, "Stripe-Replit sync failed after entitlement update");
+      }
 
       res.status(200).json({ received: true });
     } catch (error: unknown) {

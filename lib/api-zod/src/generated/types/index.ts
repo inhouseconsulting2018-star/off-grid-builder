@@ -8,8 +8,6 @@
 
 export * from "./calculationResult";
 export * from "./checkoutSessionResult";
-export * from "./createProjectCheckoutSessionBody";
-export * from "./createProjectCheckoutSessionBodyProductType";
 export * from "./healthStatus";
 export * from "./project";
 export * from "./projectBatteryChemistry";

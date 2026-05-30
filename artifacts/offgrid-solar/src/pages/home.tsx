@@ -79,6 +79,27 @@ export default function Home() {
           </div>
         </div>
 
+        <div id="pricing" className="w-full pb-16 sm:pb-20">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl sm:text-3xl font-bold">Paid report pricing</h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              ["Homeowner Full Report", "$19", "one-time", "1 full report credit"],
+              ["Property Pack", "$39", "one-time", "3 full report credits"],
+              ["Contractor Annual", "$199/year", "subscription", "Contractor access + 50 credits"],
+              ["Contractor Lifetime Beta", "$299", "one-time", "Contractor access + 100 credits"],
+            ].map(([name, price, cadence, detail]) => (
+              <div key={name} className="rounded-xl border bg-card p-5">
+                <h3 className="font-semibold">{name}</h3>
+                <div className="mt-3 text-3xl font-extrabold text-primary">{price}</div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mt-1">{cadence}</div>
+                <p className="text-sm text-muted-foreground mt-4">{detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* How it works */}
         <div className="w-full pb-16 sm:pb-20">
           <div className="text-center mb-10">
