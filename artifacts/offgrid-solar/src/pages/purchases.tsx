@@ -34,9 +34,11 @@ function formatCents(cents: number | null): string {
 
 function planLabel(plan: string | null): string {
   switch (plan) {
+    case "homeowner_report":
     case "homeowner":           return "Homeowner";
     case "property_pack":       return "Property Pack";
     case "contractor_annual":   return "Contractor Annual";
+    case "contractor_lifetime_beta":
     case "contractor_lifetime": return "Contractor Lifetime";
     default:                    return plan ?? "Unknown";
   }

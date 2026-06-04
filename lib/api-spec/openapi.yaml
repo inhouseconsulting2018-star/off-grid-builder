@@ -193,6 +193,10 @@ paths:
             schema:
               type: object
               properties:
+                selectedPlan:
+                  type: string
+                  enum: [homeowner_report, property_pack, contractor_annual, contractor_lifetime_beta]
+                  default: homeowner_report
                 productType:
                   type: string
                   enum: [homeowner, property_pack, contractor_annual, contractor_lifetime]

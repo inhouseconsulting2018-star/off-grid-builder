@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, projectsTable } from "@workspace/db";
+import { env } from "../../config/env";
 import { getPlanForWebhook, type CheckoutPlan } from "./plans";
 import { deliverReportEmail } from "../reports/reportDeliveryService";
 
@@ -52,10 +53,11 @@ export async function unlockProjectFromCheckoutSession(
 
   const plan = getPlanForWebhook(session.metadata?.selectedPlan);
   const update = buildEntitlementUpdate(session, plan);
-  const reportUrl = `${options.protocol}://${options.host}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
+  const baseOrigin = env.frontendUrl?.replace(/\/$/, "") ?? `${options.protocol}://${options.host}`;
+  const reportUrl = `${baseOrigin}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
   const reportDeliveryStatus = update.purchaserEmail
     ? await deliverReportEmail({ projectId, email: update.purchaserEmail, reportUrl })
-    : "unavailable";
+    : "not_sent";
 
   await db
     .update(projectsTable)

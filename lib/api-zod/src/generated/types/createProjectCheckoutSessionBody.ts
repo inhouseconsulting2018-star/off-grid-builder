@@ -6,7 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CreateProjectCheckoutSessionBodyProductType } from "./createProjectCheckoutSessionBodyProductType";
+import type { CreateProjectCheckoutSessionBodySelectedPlan } from "./createProjectCheckoutSessionBodySelectedPlan";
 
 export type CreateProjectCheckoutSessionBody = {
+  selectedPlan?: CreateProjectCheckoutSessionBodySelectedPlan;
   productType?: CreateProjectCheckoutSessionBodyProductType;
 };
