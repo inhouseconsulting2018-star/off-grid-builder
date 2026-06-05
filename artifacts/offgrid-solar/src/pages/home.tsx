@@ -87,8 +87,8 @@ export default function Home() {
             {[
               ["Homeowner Full Report", "$19", "one-time", "1 full report credit"],
               ["Property Pack", "$39", "one-time", "3 full report credits"],
-              ["Contractor Annual", "$199/year", "subscription", "Contractor access + 50 credits"],
-              ["Contractor Lifetime Beta", "$299", "one-time", "Contractor access + 100 credits"],
+              ["Contractor Annual", "$149/year", "subscription", "Contractor access + 50 credits"],
+              ["Contractor Lifetime Beta", "$199", "one-time", "Contractor access + 100 credits"],
             ].map(([name, price, cadence, detail]) => (
               <div key={name} className="rounded-xl border bg-card p-5">
                 <h3 className="font-semibold">{name}</h3>

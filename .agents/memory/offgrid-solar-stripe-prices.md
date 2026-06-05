@@ -9,8 +9,8 @@ Four pricing tiers, all managed in `artifacts/api-server/src/routes/projects.ts`
 |----------------------|---------|---------|--------------------------------------|
 | homeowner            | 1       | $19     | STRIPE_HOMEOWNER_REPORT_PRICE_ID     |
 | property_pack        | 3       | $39     | STRIPE_PROPERTY_PACK_PRICE_ID        |
-| contractor_annual    | 50      | $199/yr | STRIPE_CONTRACTOR_ANNUAL_PRICE_ID    |
-| contractor_lifetime  | 100     | $299    | STRIPE_CONTRACTOR_LIFETIME_PRICE_ID  |
+| contractor_annual    | 50      | $149/yr | STRIPE_CONTRACTOR_ANNUAL_PRICE_ID    |
+| contractor_lifetime  | 100     | $199    | STRIPE_CONTRACTOR_LIFETIME_PRICE_ID  |
 
 `env.ts` exports each of these. The webhook handler reads `metadata.selectedPlan` and `metadata.creditAmount` to set all entitlement columns on payment completion.
 

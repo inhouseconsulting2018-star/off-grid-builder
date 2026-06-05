@@ -48,8 +48,8 @@ export function getCheckoutPlans(): Record<CheckoutPlanId, CheckoutPlan> {
     contractor_annual: {
       id: "contractor_annual",
       name: "Contractor Annual Access",
-      priceLabel: "$199/year",
-      amountCents: 19900,
+      priceLabel: "$149/year",
+      amountCents: 14900,
       includedCredits: 50,
       contractorStatus: true,
       checkoutMode: "subscription",
@@ -59,8 +59,8 @@ export function getCheckoutPlans(): Record<CheckoutPlanId, CheckoutPlan> {
     contractor_lifetime_beta: {
       id: "contractor_lifetime_beta",
       name: "Contractor Lifetime Beta",
-      priceLabel: "$299 one-time",
-      amountCents: 29900,
+      priceLabel: "$199 one-time",
+      amountCents: 19900,
       includedCredits: 100,
       contractorStatus: true,
       checkoutMode: "payment",

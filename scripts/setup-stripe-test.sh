@@ -93,10 +93,10 @@ property_product=$(create_product "Property Pack" "Three full report credits for
 property_price=$(create_price "$property_product" 3900 "property_pack")
 
 annual_product=$(create_product "Contractor Annual Access" "Annual contractor access with 50 full report credits." "contractor_annual")
-annual_price=$(create_price "$annual_product" 19900 "contractor_annual" "year")
+annual_price=$(create_price "$annual_product" 14900 "contractor_annual" "year")
 
 lifetime_product=$(create_product "Contractor Lifetime Beta" "Founding contractor beta plan with 100 full report credits and core calculator access." "contractor_lifetime_beta")
-lifetime_price=$(create_price "$lifetime_product" 29900 "contractor_lifetime_beta")
+lifetime_price=$(create_price "$lifetime_product" 19900 "contractor_lifetime_beta")
 
 echo "Creating webhook endpoint for:"
 echo "  ${PUBLIC_BASE_URL}/api/stripe/webhook"

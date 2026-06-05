@@ -117,7 +117,7 @@ run("Stripe webhook entitlement update unlocks selected plan credits", () => {
   const update = buildEntitlementUpdate({
     id: "cs_test_123",
     payment_status: "paid",
-    amount_total: 29_900,
+    amount_total: 19_900,
     metadata: { selectedPlan: "contractor_lifetime_beta", stripePriceId: "price_test" },
   }, plan);
   assert.equal(update.paymentStatus, "paid");

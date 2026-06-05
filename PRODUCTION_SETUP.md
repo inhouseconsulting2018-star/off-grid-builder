@@ -15,7 +15,7 @@ Set all of these in the **Replit Secrets** tab (not `.env` files — those are f
 | `ADMIN_TOKEN` | ✅ | Bearer token for admin-only endpoints — generate with `openssl rand -hex 32` |
 | `STRIPE_SECRET_KEY` | ✅ | Stripe secret key (`sk_live_...` for production, `sk_test_...` for testing) |
 | `STRIPE_PUBLISHABLE_KEY` | ✅ | Stripe publishable key (`pk_live_...` or `pk_test_...`) |
-| `STRIPE_PRICE_ID` | ✅ | Price ID for the $49 one-time report unlock (see Stripe Setup below) |
+| `STRIPE_PRICE_ID` | ✅ | Legacy fallback price ID for the $19 homeowner full report (see Stripe Setup below) |
 | `STRIPE_WEBHOOK_SECRET` | ✅ | Webhook signing secret — required in production to verify payment events |
 | `PVWATTS_API_KEY` | Optional | NREL PVWatts v8 API key for real solar production data. Without it, calculations fall back to state-based estimates. Free key at [developer.nrel.gov](https://developer.nrel.gov/signup/) |
 

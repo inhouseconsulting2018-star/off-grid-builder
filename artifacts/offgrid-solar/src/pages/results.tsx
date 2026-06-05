@@ -1189,7 +1189,7 @@ export default function Results() {
                   {/* Contractor Annual */}
                   <div className="flex flex-col gap-3 p-4 rounded-xl border bg-white dark:bg-background text-left">
                     <div className="font-semibold text-sm">Contractor Annual</div>
-                    <div className="text-2xl font-extrabold">$199<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
+                    <div className="text-2xl font-extrabold">$149<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />50 report credits</li>
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Contractor reports</li>
@@ -1213,7 +1213,7 @@ export default function Results() {
                   <div className="flex flex-col gap-3 p-4 rounded-xl border border-primary/40 bg-primary/5 dark:bg-background text-left relative">
                     <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-primary text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">Beta Offer</div>
                     <div className="font-semibold text-sm">Contractor Lifetime</div>
-                    <div className="text-2xl font-extrabold text-primary">$299<span className="text-sm font-normal text-muted-foreground"> one-time</span></div>
+                    <div className="text-2xl font-extrabold text-primary">$199<span className="text-sm font-normal text-muted-foreground"> one-time</span></div>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />100 report credits</li>
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Lifetime access</li>
