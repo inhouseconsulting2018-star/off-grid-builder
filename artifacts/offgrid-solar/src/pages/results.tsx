@@ -18,7 +18,7 @@ import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
 import { createProjectCheckoutSession } from "@/services/projectService";
 import {
-  ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  BarChart, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine, Line, Legend,
 } from "recharts";
 
