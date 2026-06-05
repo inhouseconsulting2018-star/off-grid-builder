@@ -147,7 +147,7 @@ export default function Wizard() {
         },
       });
 
-      const token = project.accessToken ?? "";
+      const token = ((project as { accessToken?: string }).accessToken) ?? "";
       try { sessionStorage.setItem(`project-token-${project.id}`, token); } catch { /* ignore */ }
 
       setIsCalculating(true);

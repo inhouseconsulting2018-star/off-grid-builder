@@ -1,0 +1,129 @@
+Final pricing correction and launch patch cleanup.
+
+Current context:
+The final activation work is on branch:
+
+codex/final-production-activation
+
+The original final activation commit was:
+
+7aba83313f4f49e40aa73673cd294627cc4c6dbe
+
+But after that patch, additional review-prep fixes were made, so the old exported patch is outdated.
+
+Important pricing correction:
+The intended launch pricing is:
+
+Free Preview: $0
+Homeowner Full Report: $19 one-time
+Property Pack: $39 for 3 reports
+Contractor Annual Access: $149/year
+Contractor Lifetime Beta: $199 one-time beta access
+
+The old pricing must be removed everywhere:
+- Contractor Annual must NOT be $199/year
+- Contractor Lifetime Beta must NOT be $299 one-time
+
+Update every repo reference to the correct launch pricing:
+
+Contractor Annual:
+$149/year
+14900 cents
+
+Contractor Lifetime Beta:
+$199 one-time
+19900 cents
+
+Update all related files and references, including but not limited to:
+
+- artifacts/api-server/src/services/payments/plans.ts
+- frontend pricing page/cards/buttons/copy
+- admin purchases labels
+- purchases.tsx
+- Stripe setup scripts
+- docs/live-stripe-setup.md
+- docs/manual-paid-report-qa-checklist.md
+- docs/paid-launch-migration-notes.md
+- OpenAPI schema
+- generated API types
+- paywall tests
+- setup/seed scripts
+- report/payment/marketing copy
+
+Do not change:
+- Free Preview: $0
+- Homeowner Full Report: $19
+- Property Pack: $39 for 3 reports
+- selectedPlan IDs
+- Stripe env var names
+- webhook route
+- checkout route
+- paywall security logic
+- unpaid report/PDF blocking
+- range-only free preview logic
+
+Also preserve the review-prep fixes already made:
+- entitlements.ts should use configured FRONTEND_URL for report email links when available
+- no-email report delivery status should remain not_sent
+- admin purchases should label both old and new plan IDs
+- OpenAPI and generated API types should include selectedPlan checkout field
+
+After changes:
+
+1. Confirm git status shows only intended files changed.
+2. Run:
+   ./node_modules/.bin/tsc --build --pretty false
+   ./node_modules/.bin/tsc -p artifacts/api-server/tsconfig.json --noEmit --pretty false
+   ./node_modules/.bin/tsc -p artifacts/offgrid-solar/tsconfig.json --noEmit --pretty false
+   ./node_modules/.bin/tsc -p scripts/tsconfig.json --noEmit --pretty false
+   scripts/node_modules/.bin/tsx scripts/src/pvwatts-qa.test.ts
+   DATABASE_URL=postgres://user:pass@localhost:5432/test scripts/node_modules/.bin/tsx scripts/src/paywall-qa.test.ts
+
+3. Commit all final fixes with message:
+
+Align contractor launch pricing and finalize activation patch
+
+4. Give me the final commit SHA.
+
+5. Export a new complete patch that includes:
+   - the original final production activation/paywall stabilization work
+   - the review-prep fixes
+   - the $149/year contractor annual pricing
+   - the $199 lifetime beta pricing
+
+Name it:
+
+final-production-activation-complete.patch
+
+6. Export a new bundle:
+
+final-production-activation-complete.bundle
+
+7. Do not track the patch or bundle in git.
+
+8. If GitHub auth works, push the branch and open a PR:
+
+source branch:
+codex/final-production-activation
+
+target branch:
+launch-mvp
+
+PR title:
+Final production activation and launch pricing
+
+9. If GitHub auth still does not work, do not force it. Give me:
+   - final branch name
+   - final commit SHA
+   - changed files
+   - tests passed
+   - confirmation $149/year is used everywhere for Contractor Annual
+   - confirmation $199 is used everywhere for Contractor Lifetime Beta
+   - confirmation old $199/year annual and old $299 beta are gone
+   - downloadable final-production-activation-complete.patch
+   - downloadable final-production-activation-complete.bundle
+
+Do not move tags.
+Do not switch Stripe live.
+Do not redeploy.
+Do not weaken paywall/security.

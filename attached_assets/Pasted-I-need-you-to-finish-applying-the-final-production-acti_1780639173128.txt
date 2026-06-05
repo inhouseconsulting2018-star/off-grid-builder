@@ -1,0 +1,101 @@
+I need you to finish applying the final production activation work to my GitHub repo and prepare it for PR.
+
+Repository:
+inhouseconsulting2018-star/off-grid-builder
+
+Target branch:
+launch-mvp
+
+Working branch to create:
+codex/final-production-activation
+
+I have uploaded this patch file into the Replit project:
+
+final-production-activation-complete.patch
+
+Tasks:
+
+1. Confirm the repo is clean.
+2. Fetch latest origin.
+3. Create or reset a working branch from origin/launch-mvp:
+
+codex/final-production-activation
+
+4. Apply the uploaded patch:
+
+final-production-activation-complete.patch
+
+5. If patch conflicts happen, resolve them carefully without weakening security or paywall logic.
+
+6. Confirm the final launch pricing is exactly:
+
+Free Preview: $0
+Homeowner Full Report: $19 one-time
+Property Pack: $39 for 3 reports
+Contractor Annual Access: $149/year
+Contractor Lifetime Beta: $199 one-time beta access
+
+7. Confirm old prices are gone:
+- Contractor Annual must NOT be $199/year
+- Contractor Lifetime Beta must NOT be $299
+
+8. Confirm the paywall still works:
+- free preview only shows ranges
+- unpaid full report blocked
+- unpaid PDF blocked
+- paid entitlement unlocks full report
+- paid entitlement unlocks PDF
+- no paid BOM/full report data generated client-side before payment
+
+9. Confirm Stripe checkout uses:
+- selectedPlan
+- correct Stripe price env vars
+- projectId metadata
+- accessToken metadata
+- production domain https://offgridsolarbuilders.com
+
+10. Confirm webhook:
+- /api/stripe/webhook exists
+- signature verification required
+- checkout.session.completed unlocks entitlement
+- subscription events handled safely
+
+11. Confirm .replit and repo files contain no real secrets.
+
+12. Run:
+./node_modules/.bin/tsc --build --pretty false
+./node_modules/.bin/tsc -p artifacts/api-server/tsconfig.json --noEmit --pretty false
+./node_modules/.bin/tsc -p artifacts/offgrid-solar/tsconfig.json --noEmit --pretty false
+./node_modules/.bin/tsc -p scripts/tsconfig.json --noEmit --pretty false
+scripts/node_modules/.bin/tsx scripts/src/pvwatts-qa.test.ts
+DATABASE_URL=postgres://user:pass@localhost:5432/test scripts/node_modules/.bin/tsx scripts/src/paywall-qa.test.ts
+
+13. Commit with message:
+
+Final production activation and launch pricing
+
+14. Push branch:
+
+codex/final-production-activation
+
+15. Open a PR into:
+
+launch-mvp
+
+PR title:
+Final production activation and launch pricing
+
+16. If push or PR creation fails, give me:
+- exact error
+- final commit SHA
+- changed files
+- tests passed
+- whether branch is clean
+- exact next step to push manually
+
+Do not move tags.
+Do not switch Stripe live.
+Do not redeploy yet.
+Do not commit .env files.
+Do not commit secrets.
+Do not weaken paywall/security.

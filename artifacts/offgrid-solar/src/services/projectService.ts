@@ -19,6 +19,14 @@ export function regeocodeProject(
   );
 }
 
-export function createProjectCheckoutSession(projectId: number): Promise<{ url?: string }> {
-  return apiPost<{ url?: string }>(`/projects/${projectId}/create-checkout-session`);
+export function createProjectCheckoutSession(
+  projectId: number,
+  accessToken: string,
+  selectedPlan = "homeowner_report",
+): Promise<{ url?: string }> {
+  return apiPost<{ url?: string }>("/stripe/create-checkout-session", {
+    projectId,
+    accessToken,
+    selectedPlan,
+  });
 }
