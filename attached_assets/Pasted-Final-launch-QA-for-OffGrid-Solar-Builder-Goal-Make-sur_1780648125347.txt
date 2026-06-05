@@ -1,0 +1,106 @@
+Final launch QA for OffGrid Solar Builder.
+
+Goal:
+Make sure the app is 100% ready to accept test payments and unlock paid reports before marketing.
+
+Branch:
+launch-mvp
+
+Confirm the final complete patch has been applied and merged.
+
+Required pricing:
+Free Preview: $0
+Homeowner Full Report: $19 one-time
+Property Pack: $39 for 3 reports
+Contractor Annual Access: $149/year
+Contractor Lifetime Beta: $199 one-time beta access
+
+Verify old prices are gone:
+- Contractor Annual must not be $199/year
+- Contractor Lifetime Beta must not be $299
+
+Run full QA:
+
+1. Confirm no secrets are committed:
+- ADMIN_TOKEN
+- STRIPE_SECRET_KEY
+- STRIPE_WEBHOOK_SECRET
+- NREL_API_KEY
+- database credentials
+- OpenAI or Anthropic keys
+
+2. Confirm Replit Secrets required:
+- DATABASE_URL
+- ADMIN_TOKEN
+- STRIPE_SECRET_KEY
+- STRIPE_WEBHOOK_SECRET
+- STRIPE_HOMEOWNER_REPORT_PRICE_ID
+- STRIPE_PROPERTY_PACK_PRICE_ID
+- STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
+- STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
+- STRIPE_PRICE_ID
+- NREL_API_KEY
+- FRONTEND_URL=https://offgridsolarbuilders.com
+
+3. Confirm Stripe checkout:
+- /api/stripe/create-checkout-session works
+- selectedPlan works
+- projectId metadata included
+- accessToken metadata included
+- success URL goes to offgridsolarbuilders.com
+- cancel URL goes to offgridsolarbuilders.com
+
+4. Confirm Stripe webhook:
+- /api/stripe/webhook exists
+- raw body is used for signature verification
+- checkout.session.completed unlocks the project
+- subscription events are handled safely
+- failed payment does not unlock anything
+
+5. Confirm paywall:
+- free preview only shows ranges
+- no exact BOM in free preview
+- no full report before payment
+- no PDF before payment
+- paid test checkout unlocks full report
+- paid test checkout unlocks PDF
+
+6. Confirm frontend:
+- home page loads
+- wizard works
+- pricing page shows correct prices
+- checkout buttons work
+- payment success page preserves projectId and accessToken
+- payment cancel page works
+- projects page does not blank
+- report page shows locked cards before payment
+
+7. Confirm database:
+- migration 002_add_payment_entitlement.sql has been applied
+- old projects without accessToken are handled safely
+- payment fields exist
+- paidAt, selectedPlan, paymentStatus, reportCredits update after webhook
+
+8. Run:
+./node_modules/.bin/tsc --build --pretty false
+./node_modules/.bin/tsc -p artifacts/api-server/tsconfig.json --noEmit --pretty false
+./node_modules/.bin/tsc -p artifacts/offgrid-solar/tsconfig.json --noEmit --pretty false
+./node_modules/.bin/tsc -p scripts/tsconfig.json --noEmit --pretty false
+scripts/node_modules/.bin/tsx scripts/src/pvwatts-qa.test.ts
+DATABASE_URL=postgres://user:pass@localhost:5432/test scripts/node_modules/.bin/tsx scripts/src/paywall-qa.test.ts
+
+9. Give me a final launch report:
+- branch
+- commit SHA
+- tests passed
+- secrets clean
+- Stripe test readiness
+- webhook readiness
+- DB migration status
+- final blockers
+- whether it is safe to redeploy
+- whether it is safe to begin soft marketing
+
+Do not switch Stripe live.
+Do not move tags.
+Do not weaken paywall.
