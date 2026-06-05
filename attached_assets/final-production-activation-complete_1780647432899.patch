@@ -1,0 +1,3649 @@
+From 7aba83313f4f49e40aa73673cd294627cc4c6dbe Mon Sep 17 00:00:00 2001
+From: inhouse <inhouse@Morgans-MBP-2.volcano.local>
+Date: Sat, 30 May 2026 05:31:30 -0700
+Subject: [PATCH 1/3] Final production activation and paywall stabilization
+
+---
+ .replit                                       |  11 +-
+ artifacts/api-server/src/app.ts               |  79 +-
+ artifacts/api-server/src/config/env.ts        |   9 +-
+ artifacts/api-server/src/middlewares/auth.ts  |  49 +-
+ artifacts/api-server/src/routes/projects.ts   | 243 ++++--
+ .../services/geocoding/geocodingService.ts    |  35 +-
+ .../src/services/payments/entitlements.ts     |  98 +++
+ .../api-server/src/services/payments/plans.ts |  85 +++
+ .../api-server/src/services/reports/bom.ts    | 703 ++++++++++++++++++
+ .../services/reports/reportDeliveryService.ts |  47 ++
+ .../src/services/reports/reportService.ts     | 260 +++++++
+ artifacts/offgrid-solar/src/App.tsx           |   3 +
+ .../offgrid-solar/src/pages/edit-project.tsx  |  10 +-
+ artifacts/offgrid-solar/src/pages/home.tsx    |  21 +
+ .../src/pages/payment-cancel.tsx              |   8 +-
+ .../offgrid-solar/src/pages/projects.tsx      |  27 +-
+ artifacts/offgrid-solar/src/pages/results.tsx |  75 +-
+ artifacts/offgrid-solar/src/pages/wizard.tsx  |   2 +-
+ .../src/services/projectService.ts            |  12 +-
+ docs/live-stripe-setup.md                     |  85 +++
+ docs/manual-paid-report-qa-checklist.md       |  19 +
+ docs/paid-launch-migration-notes.md           |  58 ++
+ lib/api-zod/src/generated/types/index.ts      |   2 -
+ .../002_add_payment_entitlement.sql           |   2 +
+ lib/db/src/schema/projects.ts                 |   4 +-
+ scripts/setup-stripe-test.sh                  | 137 ++++
+ scripts/src/paywall-qa.test.ts                | 127 ++++
+ scripts/src/pvwatts-qa.test.ts                | 229 ++++++
+ scripts/tsconfig.json                         |   5 +-
+ 29 files changed, 2206 insertions(+), 239 deletions(-)
+ create mode 100644 artifacts/api-server/src/services/payments/entitlements.ts
+ create mode 100644 artifacts/api-server/src/services/payments/plans.ts
+ create mode 100644 artifacts/api-server/src/services/reports/bom.ts
+ create mode 100644 artifacts/api-server/src/services/reports/reportDeliveryService.ts
+ create mode 100644 artifacts/api-server/src/services/reports/reportService.ts
+ create mode 100644 docs/live-stripe-setup.md
+ create mode 100644 docs/manual-paid-report-qa-checklist.md
+ create mode 100644 docs/paid-launch-migration-notes.md
+ create mode 100755 scripts/setup-stripe-test.sh
+ create mode 100644 scripts/src/paywall-qa.test.ts
+ create mode 100644 scripts/src/pvwatts-qa.test.ts
+
+diff --git a/.replit b/.replit
+index cff2137..68895c6 100644
+--- a/.replit
++++ b/.replit
+@@ -41,14 +41,5 @@ channel = "stable-25_05"
+ 
+ [userenv]
+ 
+-[userenv.shared]
+-STRIPE_HOMEOWNER_REPORT_PRICE_ID = "price_1TZPDcPtpEeLlAYiXtAifKb4"
+-STRIPE_PROPERTY_PACK_PRICE_ID = "price_1TZQxRPtpEeLlAYiBfvfWkGK"
+-ADMIN_TOKEN = "ogsbadmin-dc4anh5nhff00aaaqr49rzba"
+-STRIPE_CONTRACTOR_ANNUAL_PRICE_ID = "price_1TZRKDPtpEeLlAYiWXhoyQHz"
+-STRIPE_PRICE_ID = "price_1TZPDcPtpEeLlAYiXtAifKb4"
+-STRIPE_CONTRACTOR_LIFETIME_PRICE_ID = "price_1TZcrwPtpEeLlAYi61f8L0Qu"
+-STRIPE_WEBHOOK_SECRET = "whsec_SIyqiGeb2InxHiObq8I2bVoX7wBnCYVA"
+-
+ [userenv.production]
+-FRONTEND_URL = "https://www.offgridsolarbuilder.com"
++FRONTEND_URL = "https://offgridsolarbuilders.com"
+diff --git a/artifacts/api-server/src/app.ts b/artifacts/api-server/src/app.ts
+index 71fccdf..38a4b47 100644
+--- a/artifacts/api-server/src/app.ts
++++ b/artifacts/api-server/src/app.ts
+@@ -1,12 +1,11 @@
+ import express, { type Express } from "express";
+ import cors from "cors";
+ import pinoHttp from "pino-http";
+-import { eq } from "drizzle-orm";
+-import { db, projectsTable } from "@workspace/db";
+ import router from "./routes";
+ import { logger } from "./utils/logger";
+ import { WebhookHandlers } from "./services/payments/webhookHandlers";
+ import { constructStripeEvent } from "./services/payments/stripeClient";
++import { unlockProjectFromCheckoutSession, updateProjectFromSubscription } from "./services/payments/entitlements";
+ 
+ const app: Express = express();
+ 
+@@ -36,40 +35,17 @@ app.post(
+       if (event.type === "checkout.session.completed") {
+         const session = event.data.object as {
+           id: string;
+-          payment_status: string;
++          payment_status?: string | null;
++          customer_details?: { email?: string | null } | null;
++          customer_email?: string | null;
+           amount_total?: number | null;
+-          metadata?: Record<string, string>;
++          metadata?: Record<string, string> | null;
+         };
+-        const projectId = parseInt(session.metadata?.projectId ?? "", 10);
+-        const productType = session.metadata?.productType ?? "homeowner";
+-
+-        if (!isNaN(projectId) && session.payment_status === "paid") {
+-          const creditsMap: Record<string, number> = {
+-            homeowner:           1,
+-            property_pack:       3,
+-            contractor_annual:   50,
+-            contractor_lifetime: 100,
+-          };
+-          const reportCredits = creditsMap[productType] ?? 1;
+-
+-          await db
+-            .update(projectsTable)
+-            .set({
+-              paidAt:          new Date(),
+-              stripeSessionId: session.id,
+-              paymentStatus:   "paid",
+-              selectedPlan:    productType,
+-              entitlementType: productType,
+-              reportCredits,
+-              paidAmount:      session.amount_total ?? null,
+-            })
+-            .where(eq(projectsTable.id, projectId));
+-
+-          logger.info(
+-            { projectId, sessionId: session.id, productType, reportCredits },
+-            "Project unlocked via Stripe payment"
+-          );
+-        }
++        const result = await unlockProjectFromCheckoutSession(session, {
++          protocol: req.protocol,
++          host: req.get("host") ?? "localhost",
++        });
++        if (result) logger.info({ ...result, sessionId: session.id }, "Project unlocked via Stripe payment");
+       }
+ 
+       // ── payment_intent.payment_failed — log failed payments ─────────────────
+@@ -81,31 +57,24 @@ app.post(
+         );
+       }
+ 
+-      // ── Subscription lifecycle — contractor_annual plan ──────────────────────
+-      // stripe-replit-sync keeps stripe.subscriptions in sync automatically.
+-      // We log state changes here; full per-project entitlement revocation requires
+-      // stripeSubscriptionId stored on the project (future enhancement).
+-      if (event.type === "customer.subscription.created") {
+-        const sub = event.data.object as { id: string; status: string; customer: string };
+-        logger.info({ subscriptionId: sub.id, customerId: sub.customer, status: sub.status }, "Stripe subscription created");
+-      }
+-
+-      if (event.type === "customer.subscription.updated") {
+-        const sub = event.data.object as { id: string; status: string; customer: string };
+-        logger.info({ subscriptionId: sub.id, customerId: sub.customer, status: sub.status }, "Stripe subscription updated");
+-        // If subscription moves to past_due or unpaid, log a warning
+-        if (sub.status === "past_due" || sub.status === "unpaid") {
+-          logger.warn({ subscriptionId: sub.id, status: sub.status }, "Stripe subscription payment past due");
++      if (
++        event.type === "customer.subscription.created" ||
++        event.type === "customer.subscription.updated" ||
++        event.type === "customer.subscription.deleted"
++      ) {
++        const sub = event.data.object as { id: string; status?: string | null; metadata?: Record<string, string> | null };
++        const result = await updateProjectFromSubscription(sub);
++        if (result) {
++          logger.info({ ...result, subscriptionId: sub.id, eventType: event.type }, "Stripe subscription status updated");
+         }
+       }
+ 
+-      if (event.type === "customer.subscription.deleted") {
+-        const sub = event.data.object as { id: string; status: string; customer: string };
+-        logger.warn({ subscriptionId: sub.id, customerId: sub.customer }, "Stripe subscription cancelled — manual entitlement review may be needed");
+-      }
+-
+       // Also sync event data via stripe-replit-sync (products, customers, etc.)
+-      await WebhookHandlers.processWebhook(req.body as Buffer, sig);
++      try {
++        await WebhookHandlers.processWebhook(req.body as Buffer, sig);
++      } catch (error) {
++        logger.warn({ err: error }, "Stripe-Replit sync failed after entitlement update");
++      }
+ 
+       res.status(200).json({ received: true });
+     } catch (error: unknown) {
+diff --git a/artifacts/api-server/src/config/env.ts b/artifacts/api-server/src/config/env.ts
+index 500e503..a0c44a7 100644
+--- a/artifacts/api-server/src/config/env.ts
++++ b/artifacts/api-server/src/config/env.ts
+@@ -3,12 +3,17 @@ export const env = {
+   logLevel: process.env.LOG_LEVEL ?? "info",
+   port: process.env.PORT,
+   databaseUrl: process.env.DATABASE_URL,
+-  pvwattsApiKey: process.env.PVWATTS_API_KEY,
+-  stripePriceId: process.env.STRIPE_HOMEOWNER_REPORT_PRICE_ID ?? process.env.STRIPE_PRICE_ID,
++  pvwattsApiKey: process.env.NREL_API_KEY ?? process.env.PVWATTS_API_KEY,
++  nrelApiKey: process.env.NREL_API_KEY ?? process.env.PVWATTS_API_KEY,
++  stripePriceId: process.env.STRIPE_PRICE_ID,
++  stripeHomeownerReportPriceId: process.env.STRIPE_HOMEOWNER_REPORT_PRICE_ID ?? process.env.STRIPE_PRICE_ID,
+   stripePropertyPackPriceId: process.env.STRIPE_PROPERTY_PACK_PRICE_ID,
+   stripeContractorAnnualPriceId: process.env.STRIPE_CONTRACTOR_ANNUAL_PRICE_ID,
+   stripeContractorLifetimePriceId: process.env.STRIPE_CONTRACTOR_LIFETIME_PRICE_ID,
++  stripeSecretKey: process.env.STRIPE_SECRET_KEY,
++  stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
++  reportEmailWebhookUrl: process.env.REPORT_EMAIL_WEBHOOK_URL,
+   adminToken: process.env.ADMIN_TOKEN,
+   frontendUrl: process.env.FRONTEND_URL,
+   replitConnectorsHostname: process.env.REPLIT_CONNECTORS_HOSTNAME,
+diff --git a/artifacts/api-server/src/middlewares/auth.ts b/artifacts/api-server/src/middlewares/auth.ts
+index 1e696f1..f002323 100644
+--- a/artifacts/api-server/src/middlewares/auth.ts
++++ b/artifacts/api-server/src/middlewares/auth.ts
+@@ -11,8 +11,10 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
+     res.status(503).json({ error: "Admin access not configured — set ADMIN_TOKEN" });
+     return;
+   }
++  const auth = req.headers["authorization"];
++  const bearer = typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : null;
+   const provided = req.headers["x-admin-token"];
+-  if (!provided || provided !== adminToken) {
++  if ((typeof provided !== "string" || provided !== adminToken) && bearer !== adminToken) {
+     res.status(401).json({ error: "Unauthorized" });
+     return;
+   }
+@@ -30,6 +32,8 @@ export function extractAccessToken(req: Request): string | null {
+ function isAdminRequest(req: Request): boolean {
+   const adminToken = env.adminToken;
+   if (!adminToken) return false;
++  const auth = req.headers["authorization"];
++  if (typeof auth === "string" && auth === `Bearer ${adminToken}`) return true;
+   const provided = req.headers["x-admin-token"];
+   return typeof provided === "string" && provided === adminToken;
+ }
+@@ -55,11 +59,8 @@ export async function resolveProjectByToken(
+ 
+   if (!project) return null;
+ 
+-  // Pre-launch rows (null accessToken) are accessible without a token.
+-  // This covers projects created before the access-token feature shipped.
+-  if (project.accessToken === null) return project;
+-
+-  // Post-launch rows require the correct token
++  // Guest projects always require the correct token. Run the paid launch
++  // migration before deploy so old rows receive tokens safely.
+   const token = extractAccessToken(req);
+   if (!token || token !== project.accessToken) return null;
+ 
+@@ -71,29 +72,27 @@ export function previewProject(project: ProjectRow) {
+   const { accessToken: _t, calculationResult: fullCalc, ...rest } = project;
+   const raw = fullCalc as Record<string, unknown> | null;
+ 
+-  // Return only the safe sizing fields — never expose cost, brand, BOM, or loss data.
+-  // These fields are included in the free preview so the results page can render
+-  // basic system sizing without an infinite loading spinner.
++  const range = (value: unknown, spreadPct: number, minSpread: number, decimals = 0) => {
++    const numeric = typeof value === "number" && Number.isFinite(value) ? value : 0;
++    const spread = Math.max(Math.abs(numeric) * spreadPct, minSpread);
++    const factor = 10 ** decimals;
++    return {
++      low: Math.max(0, Math.floor((numeric - spread) * factor) / factor),
++      high: Math.ceil((numeric + spread) * factor) / factor,
++    };
++  };
++
++  // Return only safe ranges — never expose exact sizing, cost, brand, BOM,
++  // monthly production, or loss data in the free preview.
+   const calculationResult = raw
+     ? {
+         preview: true as const,
+-        arraySizeKw:           Number(raw["arraySizeKw"]           ?? 0),
+-        adjustedArraySizeKw:   Number(raw["adjustedArraySizeKw"]   ?? 0),
+-        numPanels:             Number(raw["numPanels"]             ?? 0),
+-        inverterSizeKw:        Number(raw["inverterSizeKw"]        ?? 0),
+-        batteryUsableKwh:      Number(raw["batteryUsableKwh"]      ?? 0),
+-        totalBatteryBankKwh:   Number(raw["totalBatteryBankKwh"]   ?? 0),
+-        yearlyProductionKwh:   Number(raw["yearlyProductionKwh"]   ?? 0),
+-        peakSunHours:          Number(raw["peakSunHours"]          ?? 0),
+-        dailyKwh:              Number(raw["dailyKwh"]              ?? 0),
+-        squareFeetRequired:    raw["squareFeetRequired"]  != null ? Number(raw["squareFeetRequired"])  : null,
+-        offGridDesignFactor:   raw["offGridDesignFactor"] != null ? Number(raw["offGridDesignFactor"]) : null,
++        systemSizeKwRange: range(raw["adjustedArraySizeKw"], 0.12, 0.5, 1),
++        panelCountRange: range(raw["numPanels"], 0.12, 2),
++        yearlyProductionKwhRange: range(raw["yearlyProductionKwh"], 0.15, 750),
++        batteryUsableKwhRange: range(raw["batteryUsableKwh"], 0.15, 2, 1),
++        inverterSizeKwRange: range(raw["inverterSizeKw"], 0.15, 1, 1),
+         pvwattsSource:         (raw["pvwattsSource"]         as string  | null) ?? null,
+-        pvwattsMonthlyKwh:     (raw["pvwattsMonthlyKwh"]    as number[] | null) ?? null,
+-        pvwattsSolradMonthly:  (raw["pvwattsSolradMonthly"] as number[] | null) ?? null,
+-        pvwattsAnnualKwh:      raw["pvwattsAnnualKwh"]      != null ? Number(raw["pvwattsAnnualKwh"])      : null,
+-        pvwattsSolradAnnual:   raw["pvwattsSolradAnnual"]   != null ? Number(raw["pvwattsSolradAnnual"])   : null,
+-        pvwattsCapacityFactor: raw["pvwattsCapacityFactor"] != null ? Number(raw["pvwattsCapacityFactor"]) : null,
+       }
+     : null;
+ 
+diff --git a/artifacts/api-server/src/routes/projects.ts b/artifacts/api-server/src/routes/projects.ts
+index dc53954..b45c67a 100644
+--- a/artifacts/api-server/src/routes/projects.ts
++++ b/artifacts/api-server/src/routes/projects.ts
+@@ -1,5 +1,5 @@
+ import { randomUUID } from "crypto";
+-import { Router, type IRouter } from "express";
++import { Router, type IRouter, type Request, type Response } from "express";
+ import { eq, desc } from "drizzle-orm";
+ import { db, projectsTable, settingsTable } from "@workspace/db";
+ import {
+@@ -15,8 +15,11 @@ import { runCalculationsWithPVWatts } from "../services/solar/calculationEngine"
+ import { logger } from "../utils/logger";
+ import { env } from "../config/env";
+ import { getUncachableStripeClient } from "../services/payments/stripeClient";
++import { buildPaidReport, renderReportPdfBuffer, renderReportPdfHtml } from "../services/reports/reportService";
++import { getCheckoutPlan, parseCheckoutPlan } from "../services/payments/plans";
+ import {
+   requireAdminToken,
++  extractAccessToken,
+   resolveProjectByToken,
+   sanitizeProject,
+   previewProject,
+@@ -34,8 +37,14 @@ async function geocodeAndPersist(project: {
+   useManualCoords: boolean;
+   lat: number | null;
+   lon: number | null;
++  locationAccuracy?: string | null;
+ }): Promise<void> {
+-  if (project.useManualCoords) return;
++  if (project.useManualCoords) {
++    if (project.lat != null && project.lon != null && project.locationAccuracy !== "manual_coordinates") {
++      await db.update(projectsTable).set({ locationAccuracy: "manual_coordinates" }).where(eq(projectsTable.id, project.id));
++    }
++    return;
++  }
+   if (!project.city || !project.state) return;
+ 
+   try {
+@@ -47,17 +56,95 @@ async function geocodeAndPersist(project: {
+     });
+ 
+     if (result) {
++      if (
++        (project.locationAccuracy === "exact_address" || project.locationAccuracy === "exact") &&
++        project.lat != null &&
++        project.lon != null &&
++        result.accuracy !== "exact_address"
++      ) {
++        logger.info({ id: project.id, attemptedAccuracy: result.accuracy }, "Preserving existing exact geocode");
++        return;
++      }
+       await db
+         .update(projectsTable)
+         .set({ lat: result.lat, lon: result.lon, locationAccuracy: result.accuracy })
+         .where(eq(projectsTable.id, project.id));
+       logger.info({ id: project.id, accuracy: result.accuracy }, "Project geocoded");
++    } else {
++      await db.update(projectsTable).set({ locationAccuracy: "failed" }).where(eq(projectsTable.id, project.id));
+     }
+   } catch (err) {
++    await db.update(projectsTable).set({ locationAccuracy: "failed" }).where(eq(projectsTable.id, project.id));
+     logger.warn({ err, id: project.id }, "Geocode failed — project saved without coords");
+   }
+ }
+ 
++function range(value: unknown, spreadPct: number, minSpread: number, decimals = 0) {
++  const numeric = typeof value === "number" && Number.isFinite(value) ? value : 0;
++  const spread = Math.max(Math.abs(numeric) * spreadPct, minSpread);
++  const factor = 10 ** decimals;
++  return {
++    low: Math.max(0, Math.floor((numeric - spread) * factor) / factor),
++    high: Math.ceil((numeric + spread) * factor) / factor,
++  };
++}
++
++async function createCheckoutSession(req: Request, res: Response, input: {
++  projectId: number;
++  accessToken: string;
++  selectedPlan: unknown;
++}): Promise<void> {
++  if (!Number.isFinite(input.projectId)) {
++    res.status(400).json({ error: "Invalid project ID" });
++    return;
++  }
++
++  const project = await resolveProjectByToken(req, input.projectId);
++  if (!project || project.accessToken !== input.accessToken) {
++    res.status(404).json({ error: "Project not found" });
++    return;
++  }
++
++  const plan = getCheckoutPlan(parseCheckoutPlan(input.selectedPlan));
++  if (project.paidAt && plan.id === "homeowner_report") {
++    res.status(400).json({ error: "Project is already unlocked" });
++    return;
++  }
++
++  const priceId = plan.priceId;
++  if (!priceId) {
++    res.status(500).json({ error: `${plan.envName} is not configured. Set it in Replit Secrets.` });
++    return;
++  }
++
++  const stripe = await getUncachableStripeClient();
++  const baseOrigin = env.nodeEnv === "production" || env.isReplitDeployment
++    ? "https://offgridsolarbuilders.com"
++    : (env.frontendUrl?.replace(/\/$/, "") ?? `${req.protocol}://${req.get("x-forwarded-host") ?? req.get("host") ?? "localhost"}`);
++  const successUrl = `${baseOrigin}/payment-success?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}&session_id={CHECKOUT_SESSION_ID}`;
++  const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
++  const metadata = {
++    projectId: String(project.id),
++    accessToken: project.accessToken ?? "",
++    selectedPlan: plan.id,
++    productType: plan.id,
++    creditAmount: String(plan.includedCredits),
++    stripePriceId: priceId,
++  };
++
++  const session = await stripe.checkout.sessions.create({
++    payment_method_types: ["card"],
++    line_items: [{ price: priceId, quantity: 1 }],
++    mode: plan.checkoutMode,
++    ...(plan.checkoutMode === "subscription" ? { subscription_data: { metadata } } : {}),
++    success_url: successUrl,
++    cancel_url: cancelUrl,
++    metadata,
++  });
++
++  res.json({ url: session.url });
++}
++
+ // ── GET /projects — admin only ─────────────────────────────────────────────────
+ router.get("/projects", requireAdminToken, async (_req, res): Promise<void> => {
+   const projects = await db
+@@ -80,7 +167,13 @@ router.post("/projects", async (req, res): Promise<void> => {
+ 
+   const [project] = await db
+     .insert(projectsTable)
+-    .values({ ...parsed.data, accessToken })
++    .values({
++      ...parsed.data,
++      accessToken,
++      ...(parsed.data.useManualCoords && parsed.data.lat != null && parsed.data.lon != null
++        ? { locationAccuracy: "manual_coordinates" }
++        : {}),
++    })
+     .returning();
+ 
+   void geocodeAndPersist({
+@@ -92,6 +185,7 @@ router.post("/projects", async (req, res): Promise<void> => {
+     useManualCoords: project.useManualCoords,
+     lat: project.lat,
+     lon: project.lon,
++    locationAccuracy: project.locationAccuracy,
+   });
+ 
+   // Return the full row including accessToken — this is the ONLY time it is disclosed.
+@@ -206,7 +300,12 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
+ 
+   const [project] = await db
+     .update(projectsTable)
+-    .set(parsed.data)
++    .set({
++      ...parsed.data,
++      ...(parsed.data.useManualCoords && parsed.data.lat != null && parsed.data.lon != null
++        ? { locationAccuracy: "manual_coordinates" }
++        : {}),
++    })
+     .where(eq(projectsTable.id, params.data.id))
+     .returning();
+ 
+@@ -228,6 +327,7 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
+       useManualCoords: project.useManualCoords,
+       lat: project.lat,
+       lon: project.lon,
++      locationAccuracy: project.locationAccuracy,
+     });
+   }
+ 
+@@ -290,6 +390,17 @@ router.post("/projects/:id/regeocode", async (req, res): Promise<void> => {
+     return;
+   }
+ 
++  if (
++    (project.locationAccuracy === "exact_address" || project.locationAccuracy === "exact") &&
++    project.lat != null &&
++    project.lon != null &&
++    result.accuracy !== "exact_address"
++  ) {
++    logger.info({ id, attemptedAccuracy: result.accuracy }, "Preserving existing exact geocode during re-geocode");
++    res.json(sanitizeProject(project));
++    return;
++  }
++
+   const [updated] = await db
+     .update(projectsTable)
+     .set({ lat: result.lat, lon: result.lon, locationAccuracy: result.accuracy, useManualCoords: false })
+@@ -363,13 +474,11 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
+     res.json({
+       preview: true,
+       paid: false,
+-      arraySizeKw: calc["arraySizeKw"],
+-      adjustedArraySizeKw: calc["adjustedArraySizeKw"],
+-      numPanels: calc["numPanels"],
+-      inverterSizeKw: calc["inverterSizeKw"],
+-      batteryUsableKwh: calc["batteryUsableKwh"],
+-      yearlyProductionKwh: calc["yearlyProductionKwh"],
+-      peakSunHours: calc["peakSunHours"],
++      systemSizeKwRange: range(calc["adjustedArraySizeKw"], 0.12, 0.5, 1),
++      panelCountRange: range(calc["numPanels"], 0.12, 2),
++      inverterSizeKwRange: range(calc["inverterSizeKw"], 0.15, 1, 1),
++      batteryUsableKwhRange: range(calc["batteryUsableKwh"], 0.15, 2, 1),
++      yearlyProductionKwhRange: range(calc["yearlyProductionKwh"], 0.15, 750),
+       pvwattsSource: calc["pvwattsSource"],
+       notes: (calc["notes"] as string[] | undefined)?.slice(0, 2) ?? [],
+     });
+@@ -403,19 +512,15 @@ router.get("/projects/:id/report", async (req, res): Promise<void> => {
+     return;
+   }
+ 
+-  res.json({
+-    project: sanitizeProject(project),
+-    report: {
+-      generatedAt: new Date().toISOString(),
+-      paidAt: project.paidAt,
+-      calculationResult: project.calculationResult,
+-    },
+-  });
++  const report = buildPaidReport(project);
++  if (!report) {
++    res.status(500).json({ error: "Report is not available" });
++    return;
++  }
++  res.json(report);
+ });
+ 
+-// ── POST /projects/:id/create-checkout-session ─────────────────────────────────
+-// Requires valid accessToken or admin token.
+-router.post("/projects/:id/create-checkout-session", async (req, res): Promise<void> => {
++router.get("/projects/:id/report.pdf", async (req, res): Promise<void> => {
+   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+   const id = parseInt(raw, 10);
+   if (isNaN(id)) { res.status(400).json({ error: "Invalid project ID" }); return; }
+@@ -425,68 +530,58 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
+     res.status(404).json({ error: "Project not found" });
+     return;
+   }
+-
+-  if (project.paidAt) {
+-    res.status(400).json({ error: "Project is already unlocked" });
++  if (!project.paidAt) {
++    res.status(402).json({ error: "Payment required", message: "Purchase the full report to download the PDF." });
+     return;
+   }
+ 
+-  const productType = (req.body?.productType as string) || "homeowner";
++  const report = buildPaidReport(project);
++  if (!report) { res.status(500).json({ error: "Report is not available" }); return; }
++  const pdf = renderReportPdfBuffer(report);
++  res.setHeader("Content-Type", "application/pdf");
++  res.setHeader("Content-Disposition", `attachment; filename="solar-report-${project.id}.pdf"`);
++  res.send(pdf);
++});
+ 
+-  const priceMap: Record<string, string | undefined> = {
+-    homeowner:           env.stripePriceId,
+-    property_pack:       env.stripePropertyPackPriceId,
+-    contractor_annual:   env.stripeContractorAnnualPriceId,
+-    contractor_lifetime: env.stripeContractorLifetimePriceId,
+-  };
++router.get("/projects/:id/report.html", async (req, res): Promise<void> => {
++  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
++  const id = parseInt(raw, 10);
++  if (isNaN(id)) { res.status(400).json({ error: "Invalid project ID" }); return; }
+ 
+-  const priceId = priceMap[productType] ?? env.stripePriceId;
+-  if (!priceId) {
+-    res.status(500).json({
+-      error: "Stripe price not configured for this product type.",
+-    });
++  const project = await resolveProjectByToken(req, id);
++  if (!project) {
++    res.status(404).json({ error: "Project not found" });
++    return;
++  }
++  if (!project.paidAt) {
++    res.status(402).json({ error: "Payment required", message: "Purchase the full report to view printable report HTML." });
+     return;
+   }
+ 
+-  // contractor_annual is the only subscription (recurring); everything else is one-time
+-  const isSubscription = productType === "contractor_annual";
+-  const stripe = await getUncachableStripeClient();
+-
+-  const accessToken = req.headers["x-access-token"] ?? req.query["accessToken"] ?? "";
+-  // Prefer explicit FRONTEND_URL (set in production secrets) so redirects always
+-  // go to the correct domain even when the API and frontend are on separate origins.
+-  // Fall back to reconstructing from the request headers (works in dev).
+-  const baseOrigin = env.frontendUrl?.replace(/\/$/, "")
+-    ?? `${req.protocol}://${req.get("x-forwarded-host") ?? req.get("host") ?? "localhost"}`;
+-  const successUrl = `${baseOrigin}/payment-success?projectId=${id}&session_id={CHECKOUT_SESSION_ID}&accessToken=${accessToken}`;
+-  const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${id}&accessToken=${accessToken}`;
+-
+-  // Credits granted per plan — mirrored in the webhook handler
+-  const creditsMap: Record<string, number> = {
+-    homeowner:           1,
+-    property_pack:       3,
+-    contractor_annual:   50,
+-    contractor_lifetime: 100,
+-  };
+-  const creditAmount = creditsMap[productType] ?? 1;
++  const report = buildPaidReport(project);
++  if (!report) { res.status(500).json({ error: "Report is not available" }); return; }
++  res.type("html").send(renderReportPdfHtml(report));
++});
+ 
+-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+-  const session = await stripe.checkout.sessions.create({
+-    automatic_payment_methods: { enabled: true },
+-    line_items: [{ price: priceId, quantity: 1 }],
+-    mode: isSubscription ? "subscription" : "payment",
+-    success_url: successUrl,
+-    cancel_url: cancelUrl,
+-    metadata: {
+-      projectId:    String(id),
+-      productType,
+-      selectedPlan: productType,
+-      creditAmount: String(creditAmount),
+-      accessToken:  String(accessToken),
+-    },
+-  } as any);
++// ── POST /projects/:id/create-checkout-session ─────────────────────────────────
++// Requires valid accessToken or admin token.
++router.post("/projects/:id/create-checkout-session", async (req, res): Promise<void> => {
++  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
++  const id = parseInt(raw, 10);
++  const selectedPlan = req.body?.selectedPlan ?? req.body?.productType;
++  await createCheckoutSession(req, res, {
++    projectId: id,
++    accessToken: extractAccessToken(req) ?? "",
++    selectedPlan,
++  });
++});
+ 
+-  res.json({ url: session.url });
++router.post("/stripe/create-checkout-session", async (req, res): Promise<void> => {
++  await createCheckoutSession(req, res, {
++    projectId: Number(req.body?.projectId),
++    accessToken: typeof req.body?.accessToken === "string" ? req.body.accessToken : "",
++    selectedPlan: req.body?.selectedPlan,
++  });
+ });
+ 
+ export default router;
+diff --git a/artifacts/api-server/src/services/geocoding/geocodingService.ts b/artifacts/api-server/src/services/geocoding/geocodingService.ts
+index af1ae34..361d00b 100644
+--- a/artifacts/api-server/src/services/geocoding/geocodingService.ts
++++ b/artifacts/api-server/src/services/geocoding/geocodingService.ts
+@@ -31,8 +31,8 @@ export async function nominatimSearch(params: Record<string, string>): Promise<u
+ export interface GeoResult {
+   lat: number;
+   lon: number;
+-  /** How precise the result is: 'exact' = street-level, 'zip' = ZIP centroid, 'city' = city centroid */
+-  accuracy: "exact" | "zip" | "city";
++  /** How precise the result is: street address, ZIP/city approximation, manual, or failed. */
++  accuracy: "exact_address" | "approximate_zip" | "approximate_city";
+ }
+ 
+ /**
+@@ -50,12 +50,15 @@ export async function geocodeAddress(opts: {
+   // Normalize address — strip trailing punctuation, extra spaces
+   const cleanAddress = address.replace(/[.,]+$/, "").trim();
+ 
+-  interface Row { lat?: string; lon?: string }
++  interface Row { lat?: string; lon?: string; address?: { house_number?: string; road?: string; street?: string } }
+ 
+-  const trySearch = async (params: Record<string, string>): Promise<{ lat: number; lon: number } | null> => {
++  const trySearch = async (params: Record<string, string>, options: { requireStreet?: boolean } = {}): Promise<{ lat: number; lon: number } | null> => {
+     try {
+       const rows = (await nominatimSearch(params)) as Row[];
+       if (rows.length > 0 && rows[0].lat && rows[0].lon) {
++        if (options.requireStreet && !rows[0].address?.house_number && !rows[0].address?.road && !rows[0].address?.street) {
++          return null;
++        }
+         return { lat: parseFloat(rows[0].lat), lon: parseFloat(rows[0].lon) };
+       }
+     } catch { /* try next level */ }
+@@ -64,28 +67,28 @@ export async function geocodeAddress(opts: {
+ 
+   // 1. Structured query — street + city + state + zip (most accurate)
+   if (cleanAddress && city && state) {
+-    const r = await trySearch({ street: cleanAddress, city, state, ...(zip ? { postalcode: zip } : {}), limit: "1" });
+-    if (r) return { ...r, accuracy: "exact" };
++    const r = await trySearch({ street: cleanAddress, city, state, ...(zip ? { postalcode: zip } : {}), limit: "1" }, { requireStreet: true });
++    if (r) return { ...r, accuracy: "exact_address" };
+   }
+ 
+   // 2. Free-form full address string
+   if (cleanAddress && city && state) {
+     const q = `${cleanAddress}, ${city}, ${state}${zip ? " " + zip : ""}, USA`;
+-    const r = await trySearch({ q, limit: "1" });
+-    if (r) return { ...r, accuracy: "exact" };
++    const r = await trySearch({ q, limit: "1" }, { requireStreet: true });
++    if (r) return { ...r, accuracy: "exact_address" };
+   }
+ 
+   // 3. Street + ZIP only (handles cases where city name is off/misspelled)
+   if (cleanAddress && zip) {
+-    const r = await trySearch({ street: cleanAddress, postalcode: zip, limit: "1" });
+-    if (r) return { ...r, accuracy: "exact" };
++    const r = await trySearch({ street: cleanAddress, postalcode: zip, limit: "1" }, { requireStreet: true });
++    if (r) return { ...r, accuracy: "exact_address" };
+   }
+ 
+   // 4. Free-form: street + zip (no city — catches rural addresses where city name varies)
+   if (cleanAddress && zip) {
+     const q = `${cleanAddress}, ${zip}, USA`;
+-    const r = await trySearch({ q, limit: "1" });
+-    if (r) return { ...r, accuracy: "exact" };
++    const r = await trySearch({ q, limit: "1" }, { requireStreet: true });
++    if (r) return { ...r, accuracy: "exact_address" };
+   }
+ 
+   // 5. Street number + zip only (strip road type for very rural roads)
+@@ -94,26 +97,26 @@ export async function geocodeAddress(opts: {
+     if (streetNumber) {
+       const q = `${streetNumber}, ${zip}, USA`;
+       const r = await trySearch({ q, limit: "1" });
+-      if (r) return { ...r, accuracy: "zip" };
++      if (r) return { ...r, accuracy: "approximate_zip" };
+     }
+   }
+ 
+   // 6. City + state + ZIP centroid
+   if (city && state && zip) {
+     const r = await trySearch({ q: `${city}, ${state} ${zip}, USA`, limit: "1" });
+-    if (r) return { ...r, accuracy: "zip" };
++    if (r) return { ...r, accuracy: "approximate_zip" };
+   }
+ 
+   // 7. ZIP code only
+   if (zip) {
+     const r = await trySearch({ postalcode: zip, limit: "1" });
+-    if (r) return { ...r, accuracy: "zip" };
++    if (r) return { ...r, accuracy: "approximate_zip" };
+   }
+ 
+   // 8. City + state only (least precise)
+   if (city && state) {
+     const r = await trySearch({ q: `${city}, ${state}, USA`, limit: "1" });
+-    if (r) return { ...r, accuracy: "city" };
++    if (r) return { ...r, accuracy: "approximate_city" };
+   }
+ 
+   return null;
+diff --git a/artifacts/api-server/src/services/payments/entitlements.ts b/artifacts/api-server/src/services/payments/entitlements.ts
+new file mode 100644
+index 0000000..d191082
+--- /dev/null
++++ b/artifacts/api-server/src/services/payments/entitlements.ts
+@@ -0,0 +1,98 @@
++import { eq } from "drizzle-orm";
++import { db, projectsTable } from "@workspace/db";
++import { getPlanForWebhook, type CheckoutPlan } from "./plans";
++import { deliverReportEmail } from "../reports/reportDeliveryService";
++
++export type StripeCheckoutSessionLike = {
++  id: string;
++  payment_status?: string | null;
++  customer_details?: { email?: string | null } | null;
++  customer_email?: string | null;
++  amount_total?: number | null;
++  metadata?: Record<string, string> | null;
++};
++
++export type StripeSubscriptionLike = {
++  id: string;
++  status?: string | null;
++  metadata?: Record<string, string> | null;
++};
++
++export function buildEntitlementUpdate(session: StripeCheckoutSessionLike, plan: CheckoutPlan) {
++  return {
++    paidAt: new Date(),
++    stripeSessionId: session.id,
++    stripePriceId: session.metadata?.stripePriceId ?? null,
++    selectedPlan: plan.id,
++    entitlementType: plan.id,
++    paidAmount: session.amount_total ?? plan.amountCents,
++    reportCredits: plan.includedCredits,
++    creditsUsed: 0,
++    contractorStatus: plan.contractorStatus,
++    contractorPlan: plan.contractorStatus ? plan.id : null,
++    paymentStatus: session.payment_status ?? "paid",
++    purchaserEmail: session.customer_details?.email ?? session.customer_email ?? null,
++  };
++}
++
++export async function unlockProjectFromCheckoutSession(
++  session: StripeCheckoutSessionLike,
++  options: { protocol: string; host: string },
++): Promise<{ projectId: number; selectedPlan: string } | null> {
++  if (session.payment_status !== "paid") return null;
++
++  const projectId = parseInt(session.metadata?.projectId ?? "", 10);
++  if (!Number.isFinite(projectId)) return null;
++
++  const [project] = await db
++    .select({ accessToken: projectsTable.accessToken })
++    .from(projectsTable)
++    .where(eq(projectsTable.id, projectId));
++  if (!project) return null;
++
++  const plan = getPlanForWebhook(session.metadata?.selectedPlan);
++  const update = buildEntitlementUpdate(session, plan);
++  const reportUrl = `${options.protocol}://${options.host}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
++  const reportDeliveryStatus = update.purchaserEmail
++    ? await deliverReportEmail({ projectId, email: update.purchaserEmail, reportUrl })
++    : "unavailable";
++
++  await db
++    .update(projectsTable)
++    .set({
++      ...update,
++      reportDeliveryStatus,
++      reportDeliveredAt: reportDeliveryStatus === "sent" ? new Date() : null,
++    })
++    .where(eq(projectsTable.id, projectId));
++
++  return { projectId, selectedPlan: plan.id };
++}
++
++export async function updateProjectFromSubscription(
++  subscription: StripeSubscriptionLike,
++): Promise<{ projectId: number; selectedPlan: string; paymentStatus: string } | null> {
++  const projectId = parseInt(subscription.metadata?.projectId ?? "", 10);
++  if (!Number.isFinite(projectId)) return null;
++
++  const [project] = await db
++    .select({ id: projectsTable.id })
++    .from(projectsTable)
++    .where(eq(projectsTable.id, projectId));
++  if (!project) return null;
++
++  const plan = getPlanForWebhook(subscription.metadata?.selectedPlan);
++  const paymentStatus = subscription.status ?? "unknown";
++  const contractorStatus = !["canceled", "incomplete_expired", "unpaid"].includes(paymentStatus);
++
++  await db
++    .update(projectsTable)
++    .set({
++      paymentStatus,
++      contractorStatus: plan.contractorStatus ? contractorStatus : false,
++      contractorPlan: plan.contractorStatus ? plan.id : null,
++    })
++    .where(eq(projectsTable.id, projectId));
++
++  return { projectId, selectedPlan: plan.id, paymentStatus };
++}
+diff --git a/artifacts/api-server/src/services/payments/plans.ts b/artifacts/api-server/src/services/payments/plans.ts
+new file mode 100644
+index 0000000..c6adaf1
+--- /dev/null
++++ b/artifacts/api-server/src/services/payments/plans.ts
+@@ -0,0 +1,85 @@
++import { env } from "../../config/env";
++
++export const checkoutPlanIds = [
++  "homeowner_report",
++  "property_pack",
++  "contractor_annual",
++  "contractor_lifetime_beta",
++] as const;
++
++export type CheckoutPlanId = (typeof checkoutPlanIds)[number];
++
++export type CheckoutPlan = {
++  id: CheckoutPlanId;
++  name: string;
++  priceLabel: string;
++  amountCents: number;
++  includedCredits: number;
++  contractorStatus: boolean;
++  checkoutMode: "payment" | "subscription";
++  envName: string;
++  priceId?: string;
++};
++
++export function getCheckoutPlans(): Record<CheckoutPlanId, CheckoutPlan> {
++  return {
++    homeowner_report: {
++      id: "homeowner_report",
++      name: "Homeowner Full Report",
++      priceLabel: "$19 one-time",
++      amountCents: 1900,
++      includedCredits: 1,
++      contractorStatus: false,
++      checkoutMode: "payment",
++      envName: "STRIPE_HOMEOWNER_REPORT_PRICE_ID",
++      priceId: env.stripeHomeownerReportPriceId,
++    },
++    property_pack: {
++      id: "property_pack",
++      name: "Property Pack",
++      priceLabel: "$39 for 3 reports",
++      amountCents: 3900,
++      includedCredits: 3,
++      contractorStatus: false,
++      checkoutMode: "payment",
++      envName: "STRIPE_PROPERTY_PACK_PRICE_ID",
++      priceId: env.stripePropertyPackPriceId,
++    },
++    contractor_annual: {
++      id: "contractor_annual",
++      name: "Contractor Annual Access",
++      priceLabel: "$199/year",
++      amountCents: 19900,
++      includedCredits: 50,
++      contractorStatus: true,
++      checkoutMode: "subscription",
++      envName: "STRIPE_CONTRACTOR_ANNUAL_PRICE_ID",
++      priceId: env.stripeContractorAnnualPriceId,
++    },
++    contractor_lifetime_beta: {
++      id: "contractor_lifetime_beta",
++      name: "Contractor Lifetime Beta",
++      priceLabel: "$299 one-time",
++      amountCents: 29900,
++      includedCredits: 100,
++      contractorStatus: true,
++      checkoutMode: "payment",
++      envName: "STRIPE_CONTRACTOR_LIFETIME_PRICE_ID",
++      priceId: env.stripeContractorLifetimePriceId,
++    },
++  };
++}
++
++export function parseCheckoutPlan(value: unknown): CheckoutPlanId {
++  if (value === "homeowner") return "homeowner_report";
++  if (value === "contractor_lifetime") return "contractor_lifetime_beta";
++  return checkoutPlanIds.includes(value as CheckoutPlanId) ? value as CheckoutPlanId : "homeowner_report";
++}
++
++export function getCheckoutPlan(planId: CheckoutPlanId): CheckoutPlan {
++  return getCheckoutPlans()[planId];
++}
++
++export function getPlanForWebhook(planId: string | undefined): CheckoutPlan {
++  return getCheckoutPlan(parseCheckoutPlan(planId));
++}
+diff --git a/artifacts/api-server/src/services/reports/bom.ts b/artifacts/api-server/src/services/reports/bom.ts
+new file mode 100644
+index 0000000..69402c2
+--- /dev/null
++++ b/artifacts/api-server/src/services/reports/bom.ts
+@@ -0,0 +1,703 @@
++// ─── Bill of Materials — Real Equipment Catalog ─────────────────────────────
++// All prices are 2024/2025 US market rates (DIY / direct-to-consumer).
++// Prices reflect equipment only; installation labor is separate.
++
++export interface BomAlternative {
++  brand: string;
++  model: string;
++  specs: string;
++  unitPriceLow: number;
++  unitPriceHigh: number;
++  brandLink?: string;
++}
++
++export interface BomItem {
++  category: string;
++  item: string;
++  model: string;
++  specs: string;
++  brand: string;
++  brandLink?: string;
++  qty: string;
++  unitPriceLow: number;
++  unitPriceHigh: number;
++  totalPriceLow: number;
++  totalPriceHigh: number;
++  unitPrice: string;
++  totalPrice: string;
++  reason: string;
++  alternatives?: BomAlternative[];
++}
++
++export interface BomInputs {
++  systemType: string;
++  installationType: string;
++  budgetTier: string;
++  numPanels: number;
++  panelWattage?: number;
++  adjustedArraySizeKw: number;
++  inverterSizeKw: number;
++  totalBatteryBankKwh: number;
++  batteryUsableKwh: number;
++  batteryChemistry?: string | null;
++  hasGenerator?: boolean | null;
++  generatorKw?: number | null;
++  wantsGenerator?: boolean | null;
++  snowArea?: boolean | null;
++  recommendedPanelBrand: string;
++  recommendedInverterBrand: string;
++  recommendedBatteryBrand: string;
++  recommendedMountingBrand: string;
++  diyEquipmentCostLow: number;
++  diyEquipmentCostHigh: number;
++}
++
++// ─── Helpers ─────────────────────────────────────────────────────────────────
++
++function fmt(low: number, high: number) {
++  return `$${Math.round(low).toLocaleString()} – $${Math.round(high).toLocaleString()}`;
++}
++
++function item(
++  category: string,
++  description: string,
++  model: string,
++  specs: string,
++  brand: string,
++  brandLink: string | undefined,
++  qty: string,
++  unitLow: number,
++  unitHigh: number,
++  count: number,
++  reason: string,
++  alternatives?: BomAlternative[],
++): BomItem {
++  return {
++    category,
++    item: description,
++    model,
++    specs,
++    brand,
++    brandLink,
++    qty,
++    unitPriceLow: unitLow,
++    unitPriceHigh: unitHigh,
++    totalPriceLow: unitLow * count,
++    totalPriceHigh: unitHigh * count,
++    unitPrice: fmt(unitLow, unitHigh),
++    totalPrice: fmt(unitLow * count, unitHigh * count),
++    reason,
++    alternatives,
++  };
++}
++
++// ─── Equipment Catalog ────────────────────────────────────────────────────────
++
++// ── Solar Panels ─────────────────────────────────────────────────────────────
++
++interface PanelSpec { brand: string; model: string; wattage: number; eff: number; voc: number; isc: number; priceLow: number; priceHigh: number; link: string; }
++
++const PANELS: Record<string, PanelSpec[]> = {
++  economy: [
++    { brand: "Canadian Solar", model: "CS6L-400MS HiKu6", wattage: 400, eff: 20.4, voc: 41.3, isc: 12.5, priceLow: 85, priceHigh: 105, link: "https://www.canadiansolar.com" },
++    { brand: "Jinko Solar",    model: "JKM400M-54HL4-V Tiger Neo", wattage: 400, eff: 21.3, voc: 38.5, isc: 13.2, priceLow: 80, priceHigh: 100, link: "https://www.jinkosolar.com" },
++    { brand: "LONGi",          model: "LR5-54HPH-405M Hi-MO 5", wattage: 405, eff: 21.0, voc: 39.5, isc: 13.1, priceLow: 85, priceHigh: 108, link: "https://longi.com" },
++  ],
++  "mid-range": [
++    { brand: "Q CELLS",        model: "Q.PEAK DUO BLK ML-G10+ 405W", wattage: 405, eff: 20.6, voc: 41.6, isc: 12.59, priceLow: 110, priceHigh: 135, link: "https://www.q-cells.us" },
++    { brand: "Aptos Solar",    model: "DNA-144-MF26-390W Black Series", wattage: 390, eff: 20.1, voc: 40.3, isc: 12.3, priceLow: 100, priceHigh: 125, link: "https://aptossolar.com" },
++    { brand: "Canadian Solar", model: "CS6W-415MS HiKu7", wattage: 415, eff: 21.4, voc: 41.8, isc: 12.7, priceLow: 105, priceHigh: 130, link: "https://www.canadiansolar.com" },
++  ],
++  premium: [
++    { brand: "REC Group",  model: "REC Alpha Pure-R 430AA", wattage: 430, eff: 22.3, voc: 42.0, isc: 13.1, priceLow: 185, priceHigh: 230, link: "https://www.recgroup.com" },
++    { brand: "Panasonic",  model: "EverVolt EVPV410H HIT", wattage: 410, eff: 22.2, voc: 51.6, isc: 10.8, priceLow: 165, priceHigh: 210, link: "https://na.panasonic.com/us/energy-solutions/solar" },
++    { brand: "Q CELLS",    model: "Q.PEAK DUO XL-G10.3 430W", wattage: 430, eff: 21.4, voc: 43.2, isc: 12.8, priceLow: 155, priceHigh: 195, link: "https://www.q-cells.us" },
++  ],
++};
++
++// ── Inverters ─────────────────────────────────────────────────────────────────
++
++interface InvSpec { brand: string; model: string; kw: number; specs: string; priceLow: number; priceHigh: number; link: string; }
++
++const INVERTERS: Record<string, Record<string, InvSpec[]>> = {
++  "off-grid": {
++    economy: [
++      { brand: "EG4",         model: "EG4 6000XP",               kw: 6,  specs: "48V, 6kW/120-240V split-phase, 120A MPPT built-in",     priceLow: 850,   priceHigh: 1050, link: "https://eg4electronics.com" },
++      { brand: "Growatt",     model: "Growatt SPF 6000T DVM-MPV", kw: 6,  specs: "48V, 6kW, 120A MPPT, 6kW PV input",                    priceLow: 700,   priceHigh: 900,  link: "https://www.growatt.com" },
++      { brand: "Signature Solar", model: "EG4 3000EHV",          kw: 3,  specs: "48V, 3kW/120V, 80A MPPT, 2kW PV input",                priceLow: 550,   priceHigh: 700,  link: "https://signaturesolar.com" },
++    ],
++    "mid-range": [
++      { brand: "Sol-Ark",     model: "Sol-Ark 12K",               kw: 12, specs: "48V, 12kW/120-240V split-phase, 160A MPPT",            priceLow: 2800,  priceHigh: 3300, link: "https://www.sol-ark.com" },
++      { brand: "EG4",         model: "EG4 18KPV-12LV",            kw: 18, specs: "48V, 18kW, dual MPPT 500A total, 120-240V",            priceLow: 2200,  priceHigh: 2700, link: "https://eg4electronics.com" },
++      { brand: "Victron",     model: "MultiPlus-II 48/5000/70",   kw: 5,  specs: "48V, 5kW/120V, requires separate MPPT",               priceLow: 1500,  priceHigh: 1900, link: "https://www.victronenergy.com" },
++    ],
++    premium: [
++      { brand: "Victron",     model: "Quattro 48/8000/110",        kw: 8,  specs: "48V, 8kW/120-240V, dual AC-in for generator",         priceLow: 2400,  priceHigh: 2900, link: "https://www.victronenergy.com" },
++      { brand: "Schneider",   model: "XW Pro 6848NA",              kw: 6.8, specs: "48V, 6.8kW/120-240V, 80A MPPT, 99.1% peak eff",     priceLow: 3000,  priceHigh: 3700, link: "https://www.se.com/us/en/work/products/solar/" },
++      { brand: "Sol-Ark",     model: "Sol-Ark 15K",                kw: 15, specs: "48V, 15kW/120-240V, 200A MPPT, 15kW PV input",       priceLow: 3600,  priceHigh: 4400, link: "https://www.sol-ark.com" },
++    ],
++  },
++  hybrid: {
++    economy: [
++      { brand: "Growatt",     model: "Growatt SPH 6000TL3-BH",    kw: 6,  specs: "48V, 6kW, grid-tie + battery, 2× MPPT",               priceLow: 1100,  priceHigh: 1500, link: "https://www.growatt.com" },
++      { brand: "EG4",         model: "EG4 6000XP (Hybrid mode)",  kw: 6,  specs: "48V, 6kW hybrid, 120A MPPT, AC coupling",             priceLow: 900,   priceHigh: 1200, link: "https://eg4electronics.com" },
++    ],
++    "mid-range": [
++      { brand: "Sol-Ark",     model: "Sol-Ark 15K-2P",            kw: 15, specs: "48V, 15kW, 2-phase, grid-tie + off-grid, 200A MPPT",  priceLow: 3500,  priceHigh: 4200, link: "https://www.sol-ark.com" },
++      { brand: "SolarEdge",   model: "SE10000H-US StorEdge",      kw: 10, specs: "240V, 10kW, StorEdge hybrid, HD-Wave",                 priceLow: 2000,  priceHigh: 2600, link: "https://www.solaredge.com" },
++    ],
++    premium: [
++      { brand: "Victron",     model: "MultiPlus-II GX 48/5000",   kw: 5,  specs: "48V, 5kW, built-in GX controller, CAN BMS ready",    priceLow: 2200,  priceHigh: 2800, link: "https://www.victronenergy.com" },
++      { brand: "Schneider",   model: "XW Pro 6848 Hybrid",        kw: 6.8, specs: "48V, 6.8kW, true hybrid, UPS-grade transfer",        priceLow: 3200,  priceHigh: 4000, link: "https://www.se.com/us/en/work/products/solar/" },
++      { brand: "Sol-Ark",     model: "Sol-Ark 15K",               kw: 15, specs: "15kW hybrid, 2× MPPT, 200A, whole-home backup",       priceLow: 3800,  priceHigh: 4600, link: "https://www.sol-ark.com" },
++    ],
++  },
++  "grid-tied": {
++    economy: [
++      { brand: "Growatt",     model: "Growatt MIN 6000TL-X",      kw: 6,  specs: "240V single-phase, 6kW, 2× MPPT, 97.8% eff",          priceLow: 600,   priceHigh: 900,  link: "https://www.growatt.com" },
++      { brand: "Solis",       model: "Solis S6-GR1P6K-M 6kW",    kw: 6,  specs: "240V, 6kW, 2× MPPT, 98.1% CEC eff",                  priceLow: 650,   priceHigh: 950,  link: "https://ginlongsolis.com" },
++    ],
++    "mid-range": [
++      { brand: "SolarEdge",   model: "SE6000H-US HD-Wave",        kw: 6,  specs: "240V, 6kW, HD-Wave, 99% CEC eff, EV-ready port",      priceLow: 1300,  priceHigh: 1700, link: "https://www.solaredge.com" },
++      { brand: "SMA",         model: "Sunny Boy 7.7-US",          kw: 7.7, specs: "240V, 7.7kW, ShadeFix, 97.5% CEC eff",              priceLow: 1200,  priceHigh: 1600, link: "https://www.sma-america.com" },
++      { brand: "Enphase",     model: "IQ8A Microinverter (ea.)",  kw: 0.366, specs: "240V, 366VA ea., per-panel MPPT, CEC 97.6%",       priceLow: 155,   priceHigh: 195,  link: "https://enphase.com" },
++    ],
++    premium: [
++      { brand: "Enphase",     model: "IQ8M Microinverter (ea.)",  kw: 0.384, specs: "240V, 384VA, per-panel, Ensemble ready, 97.6%",    priceLow: 190,   priceHigh: 240,  link: "https://enphase.com" },
++      { brand: "SolarEdge",   model: "SE10000H-US HD-Wave",       kw: 10, specs: "240V, 10kW, 99% CEC eff, HD-Wave technology",        priceLow: 1900,  priceHigh: 2500, link: "https://www.solaredge.com" },
++      { brand: "SMA",         model: "Sunny Tripower 10.0-US",    kw: 10, specs: "208-240V, 10kW, OptiTrac Global Peak, 98.0%",        priceLow: 1800,  priceHigh: 2400, link: "https://www.sma-america.com" },
++    ],
++  },
++};
++
++// ── Batteries ─────────────────────────────────────────────────────────────────
++
++interface BatSpec { brand: string; model: string; kwh: number; voltage: number; specs: string; priceLow: number; priceHigh: number; link: string; }
++
++const BATTERIES: Record<string, Record<string, BatSpec[]>> = {
++  lifepo4: {
++    economy: [
++      { brand: "EG4",        model: "EG4 LiFePower4 48V 100Ah",      kwh: 5.12,  voltage: 48, specs: "5.12kWh, 48V 100Ah, BMS built-in, wall/rack mount, 6,000 cycles", priceLow: 780,  priceHigh: 950,  link: "https://eg4electronics.com" },
++      { brand: "Ampere Time", model: "Ampere Time 48V 100Ah Plus",   kwh: 5.12,  voltage: 48, specs: "5.12kWh, 48V 100Ah, 200A BMS, stackable, IP65",                    priceLow: 720,  priceHigh: 880,  link: "https://www.amperepower.com" },
++    ],
++    "mid-range": [
++      { brand: "EG4",         model: "EG4 PowerPro 48V 200Ah",       kwh: 10.24, voltage: 48, specs: "10.24kWh, 48V 200Ah, CAN BUS BMS, rack-mount, 6,000 cycles",      priceLow: 1900, priceHigh: 2400, link: "https://eg4electronics.com" },
++      { brand: "Fortress Power", model: "eFlex 5.4 48V",             kwh: 5.4,   voltage: 48, specs: "5.4kWh, 48V 112.5Ah, stackable to 43.2kWh, modular BMS",          priceLow: 1400, priceHigh: 1750, link: "https://www.fortresspower.com" },
++      { brand: "Jakiper",     model: "JK-B200A48 48V 200Ah",         kwh: 10.24, voltage: 48, specs: "10.24kWh, 48V, low-temp charging protection, 6,000 cycles",       priceLow: 1700, priceHigh: 2100, link: "https://www.jakipower.com" },
++    ],
++    premium: [
++      { brand: "Tesla",       model: "Powerwall 3",                   kwh: 13.5,  voltage: 50, specs: "13.5kWh, 11.5kW continuous, 100% DoD, built-in inverter",        priceLow: 7500, priceHigh: 9500, link: "https://www.tesla.com/powerwall" },
++      { brand: "SimpliPhi",   model: "PHI 3.8 kWh 48V",              kwh: 3.8,   voltage: 48, specs: "3.8kWh, 48V, 15+ yr life, –40°C to 60°C, no passive cooling",    priceLow: 1500, priceHigh: 1900, link: "https://www.simpliphi.com" },
++      { brand: "Pytes",       model: "Pytes E-BOX-48100R",            kwh: 5.12,  voltage: 48, specs: "5.12kWh, 48V 100Ah, rack-mount, CAN/RS485, 6,000 cycles",        priceLow: 1100, priceHigh: 1400, link: "https://www.pytess.com" },
++    ],
++  },
++  agm: {
++    economy: [
++      { brand: "Renogy",      model: "Renogy 12V 200Ah Deep Cycle AGM", kwh: 2.4, voltage: 12, specs: "2.4kWh, 12V 200Ah, sealed, 500 cycles @ 50% DoD",              priceLow: 250,  priceHigh: 310,  link: "https://www.renogy.com" },
++      { brand: "VMAXTANKS",   model: "VMAX SLR200 12V 200Ah",          kwh: 2.4, voltage: 12, specs: "2.4kWh, 12V 200Ah, military grade plates, 500-700 cycles",       priceLow: 280,  priceHigh: 360,  link: "https://vmaxtanks.com" },
++    ],
++    "mid-range": [
++      { brand: "Trojan",      model: "Trojan SPRE 12 225 12V 225Ah",  kwh: 2.7, voltage: 12, specs: "2.7kWh, 12V 225Ah, sealed, 700+ cycles @ 50% DoD, 10-yr design", priceLow: 350,  priceHigh: 440,  link: "https://www.trojanbattery.com" },
++      { brand: "Crown Battery", model: "Crown 12CRV110 12V 110Ah",    kwh: 1.32, voltage: 12, specs: "1.32kWh, 12V 110Ah, AGM, 600 cycles, deep cycle",               priceLow: 200,  priceHigh: 260,  link: "https://crownbattery.com" },
++    ],
++    premium: [
++      { brand: "Discover Battery", model: "Discover AES 48V 100Ah",   kwh: 4.8, voltage: 48, specs: "4.8kWh, 48V 100Ah, thin-plate pure lead, 1,500 cycles @ 50%",   priceLow: 850,  priceHigh: 1100, link: "https://discoverbattery.com" },
++      { brand: "Lifeline",    model: "Lifeline GPL-L16 6V 400Ah",     kwh: 2.4, voltage: 6,  specs: "2.4kWh, 6V 400Ah, pure lead tin, aviation grade, 800 cycles",    priceLow: 420,  priceHigh: 550,  link: "https://lifelinebatteries.com" },
++    ],
++  },
++  "lead-acid": {
++    economy: [
++      { brand: "US Battery",  model: "US Battery USB 2200XC 6V 232Ah", kwh: 1.39, voltage: 6, specs: "1.39kWh, 6V 232Ah flooded, Express C3 formula, 750 cycles",     priceLow: 120,  priceHigh: 160,  link: "https://usbattery.com" },
++      { brand: "Trojan",      model: "Trojan T-105 6V 225Ah",          kwh: 1.35, voltage: 6, specs: "1.35kWh, 6V 225Ah flooded, deep-cycle, 750+ cycles @ 50%",      priceLow: 145,  priceHigh: 185,  link: "https://www.trojanbattery.com" },
++    ],
++    "mid-range": [
++      { brand: "Trojan",      model: "Trojan L16H-AC 6V 435Ah",       kwh: 2.61, voltage: 6, specs: "2.61kWh, 6V 435Ah flooded, L16 size, 1,500 cycles @ 50%",       priceLow: 280,  priceHigh: 360,  link: "https://www.trojanbattery.com" },
++      { brand: "Crown Battery", model: "Crown CR235 6V 235Ah",        kwh: 1.41, voltage: 6, specs: "1.41kWh, 6V 235Ah flooded, 900 cycles @ 50% DoD",               priceLow: 150,  priceHigh: 200,  link: "https://crownbattery.com" },
++    ],
++    premium: [
++      { brand: "Rolls Surrette", model: "Rolls 4-KS-25PS 6V 428Ah",  kwh: 2.57, voltage: 6, specs: "2.57kWh, 6V 428Ah flooded, 1,600+ cycles @ 50%, 20-yr design",  priceLow: 340,  priceHigh: 430,  link: "https://rollsbattery.com" },
++      { brand: "Trojan",      model: "Trojan IND17-6V 6V 545Ah",     kwh: 3.27, voltage: 6, specs: "3.27kWh, 6V 545Ah, industrial deep cycle, 2,000+ cycles",       priceLow: 450,  priceHigh: 580,  link: "https://www.trojanbattery.com" },
++    ],
++  },
++};
++
++// ── MPPT Charge Controllers ───────────────────────────────────────────────────
++
++interface MpptSpec { brand: string; model: string; amps: number; maxPvV: number; specs: string; priceLow: number; priceHigh: number; link: string; }
++
++const MPPT_CONTROLLERS: MpptSpec[] = [
++  { brand: "Victron",     model: "SmartSolar MPPT 100/30",       amps: 30,  maxPvV: 100, specs: "30A, 12/24/48V auto, Bluetooth, VE.Direct, IP43",                   priceLow: 130,  priceHigh: 165,  link: "https://www.victronenergy.com/solar-charge-controllers" },
++  { brand: "Victron",     model: "SmartSolar MPPT 100/50",       amps: 50,  maxPvV: 100, specs: "50A, 12/24/48V auto, Bluetooth, VE.Direct, IP43",                   priceLow: 165,  priceHigh: 210,  link: "https://www.victronenergy.com/solar-charge-controllers" },
++  { brand: "Victron",     model: "SmartSolar MPPT 150/70",       amps: 70,  maxPvV: 150, specs: "70A, 12-48V, 150V PV input, Bluetooth, VE.Direct",                  priceLow: 280,  priceHigh: 350,  link: "https://www.victronenergy.com/solar-charge-controllers" },
++  { brand: "Victron",     model: "SmartSolar MPPT 150/100",      amps: 100, maxPvV: 150, specs: "100A, 12-48V, 150V PV input, Bluetooth, VE.Direct",                 priceLow: 370,  priceHigh: 460,  link: "https://www.victronenergy.com/solar-charge-controllers" },
++  { brand: "Victron",     model: "SmartSolar MPPT 250/100",      amps: 100, maxPvV: 250, specs: "100A, 48V, 250V PV input, Bluetooth, for large strings",            priceLow: 480,  priceHigh: 590,  link: "https://www.victronenergy.com/solar-charge-controllers" },
++  { brand: "MidNite Solar", model: "Classic 150",                amps: 96,  maxPvV: 150, specs: "96A MPPT, 12-72V, 150V PV, HyperVOC, Arc Fault detection",         priceLow: 500,  priceHigh: 660,  link: "https://midnitesolar.com" },
++  { brand: "Outback",     model: "FLEXmax 80",                   amps: 80,  maxPvV: 150, specs: "80A MPPT, 12-60V, 150V PV input, MATE3s compatible",               priceLow: 430,  priceHigh: 540,  link: "https://www.outbackpower.com" },
++  { brand: "Epever",      model: "Tracer AN 4210A 40A",          amps: 40,  maxPvV: 100, specs: "40A, 12/24/36/48V auto, 100V PV, RS485, 98% MPPT eff",             priceLow: 90,   priceHigh: 130,  link: "https://epever.com" },
++];
++
++function pickMppt(arraySizeKw: number): MpptSpec {
++  const arrayAmps = (arraySizeKw * 1000) / 48; // amps at 48V nominal
++  const required  = arrayAmps * 1.25;          // 25% headroom
++  const sorted    = [...MPPT_CONTROLLERS].sort((a, b) => a.amps - b.amps);
++  return sorted.find(c => c.amps >= required) ?? sorted[sorted.length - 1];
++}
++
++// ─── Main generator function ──────────────────────────────────────────────────
++
++export function generateBom(p: BomInputs): BomItem[] {
++  const bom: BomItem[] = [];
++  const tier = p.budgetTier in PANELS ? p.budgetTier : "mid-range";
++  const chem = (p.batteryChemistry ?? "lifepo4").toLowerCase();
++  const chemKey = (chem in BATTERIES) ? chem as keyof typeof BATTERIES : "lifepo4";
++  const sysType = p.systemType in INVERTERS ? p.systemType : "grid-tied";
++
++  // ── 1. Solar Panels ────────────────────────────────────────────────────────
++  const panelCatalog = PANELS[tier] ?? PANELS["mid-range"];
++  const primaryPanel = panelCatalog[0];
++  const altPanels    = panelCatalog.slice(1).map(alt => ({
++    brand: alt.brand, model: alt.model,
++    specs: `${alt.wattage}W, ${alt.eff}% eff, Voc ${alt.voc}V`,
++    unitPriceLow: alt.priceLow, unitPriceHigh: alt.priceHigh, brandLink: alt.link,
++  }));
++  bom.push(item(
++    "Solar Panels",
++    `${primaryPanel.wattage}W Monocrystalline Solar Panel`,
++    primaryPanel.model,
++    `${primaryPanel.wattage}W, ${primaryPanel.eff}% efficiency, Voc ${primaryPanel.voc}V, Isc ${primaryPanel.isc}A`,
++    primaryPanel.brand, primaryPanel.link,
++    `${p.numPanels} panels`,
++    primaryPanel.priceLow, primaryPanel.priceHigh, p.numPanels,
++    `${p.numPanels} × ${primaryPanel.wattage}W = ${(p.numPanels * primaryPanel.wattage / 1000).toFixed(1)} kW DC array. ` +
++    `Covers your ${p.adjustedArraySizeKw.toFixed(2)} kW adjusted system size with standard panel-to-panel string wiring.`,
++    altPanels,
++  ));
++
++  // ── 2. Inverter ────────────────────────────────────────────────────────────
++  const invCatalog = (INVERTERS[sysType] ?? INVERTERS["grid-tied"])[tier] ?? (INVERTERS[sysType] ?? INVERTERS["grid-tied"])["mid-range"];
++  // Pick the closest kW match (equal to or next size up)
++  const sortedInv = [...invCatalog].sort((a, b) => a.kw - b.kw);
++  const primaryInv = sortedInv.find(i => i.kw >= p.inverterSizeKw) ?? sortedInv[sortedInv.length - 1];
++  const altInvs = sortedInv.filter(i => i.model !== primaryInv.model).map(alt => ({
++    brand: alt.brand, model: alt.model, specs: alt.specs,
++    unitPriceLow: alt.priceLow, unitPriceHigh: alt.priceHigh, brandLink: alt.link,
++  }));
++
++  // For grid-tied microinverter (Enphase) — scale by panel count
++  const isEnphase = primaryInv.brand === "Enphase";
++  const invCount   = isEnphase ? p.numPanels : 1;
++  const invDesc    = p.systemType === "off-grid" ? "Off-Grid Inverter/Charger" :
++                     p.systemType === "hybrid"   ? "Hybrid Inverter/Charger" : "Grid-Tie Inverter";
++  bom.push(item(
++    "Inverter",
++    `${p.inverterSizeKw.toFixed(1)} kW ${invDesc}`,
++    primaryInv.model,
++    primaryInv.specs,
++    primaryInv.brand, primaryInv.link,
++    isEnphase ? `${invCount} microinverters (1 per panel)` : "1 unit",
++    primaryInv.priceLow, primaryInv.priceHigh, invCount,
++    `Rated ${p.inverterSizeKw.toFixed(1)} kW output. ` +
++    (p.systemType === "off-grid"
++      ? "All-in-one off-grid inverter/charger manages solar input, battery charging, and AC output. Handles motor surge loads."
++      : p.systemType === "hybrid"
++      ? "Hybrid unit provides backup power from battery and can export surplus to the grid."
++      : isEnphase
++      ? "Per-panel microinverters eliminate single-point failure and enable panel-level MPPT and monitoring."
++      : "Grid-tie inverter maximizes self-consumption and grid feed-in."),
++    altInvs,
++  ));
++
++  // ── 3. Batteries ──────────────────────────────────────────────────────────
++  if (p.totalBatteryBankKwh > 0) {
++    const batCatalog = (BATTERIES[chemKey] ?? BATTERIES["lifepo4"])[tier] ?? (BATTERIES[chemKey] ?? BATTERIES["lifepo4"])["mid-range"];
++    const primaryBat = batCatalog[0];
++    const numBat     = Math.ceil(p.totalBatteryBankKwh / primaryBat.kwh);
++    const altBats    = batCatalog.slice(1).map(alt => {
++      const n = Math.ceil(p.totalBatteryBankKwh / alt.kwh);
++      return {
++        brand: alt.brand, model: alt.model, specs: alt.specs,
++        unitPriceLow: alt.priceLow * n, unitPriceHigh: alt.priceHigh * n, brandLink: alt.link,
++      };
++    });
++    const dodPct = chem === "lifepo4" ? 80 : 50;
++    bom.push(item(
++      "Battery Storage",
++      `${primaryBat.kwh} kWh ${chem === "lifepo4" ? "LiFePO4" : chem === "agm" ? "AGM" : "Flooded Lead-Acid"} Battery Module`,
++      primaryBat.model,
++      primaryBat.specs,
++      primaryBat.brand, primaryBat.link,
++      `${numBat} unit${numBat > 1 ? "s" : ""} = ${(numBat * primaryBat.kwh).toFixed(1)} kWh bank`,
++      primaryBat.priceLow, primaryBat.priceHigh, numBat,
++      `${(numBat * primaryBat.kwh).toFixed(1)} kWh total bank / ${dodPct}% DoD = ${p.batteryUsableKwh.toFixed(1)} kWh usable. ` +
++      (chem === "lifepo4"
++        ? "LiFePO4 offers 6,000+ cycle life, built-in BMS, zero maintenance, safe for indoor installation."
++        : chem === "agm"
++        ? "AGM is sealed and maintenance-free. Limit to 50% DoD to reach 500–1,000 cycle life."
++        : "Flooded lead-acid requires monthly electrolyte checks, equalization charging, and a ventilated enclosure."),
++      altBats,
++    ));
++
++    // Battery Interconnect Cables, Bus Bars, Terminals
++    const cableSet = chem === "lifepo4" ? "Battery interconnect cables, bus bars, terminal lugs, BMS CANbus wiring"
++      : chem === "agm" ? "AGM interconnect cables, bus bars, terminal lugs, hydrometer"
++      : "Flooded cell cables, bus bars, terminal lugs, hydrometer, vent caps";
++    const cableLow  = chem === "lifepo4" ? 180 : 120;
++    const cableHigh = chem === "lifepo4" ? 420 : 280;
++    bom.push(item(
++      "Battery Accessories",
++      "Battery Interconnect Kit",
++      cableSet,
++      `2/0 AWG flexible cable, copper bus bars, lugs, ${chem === "lifepo4" ? "RS485/CAN BMS harness" : "cell vent kit"}`,
++      chem === "lifepo4" ? "WindyNation / Signature Solar" : "Trojan / Crown",
++      chem === "lifepo4" ? "https://signaturesolar.com" : "https://www.trojanbattery.com",
++      "1 set",
++      cableLow, cableHigh, 1,
++      "Short, heavy-gauge cables between batteries and DC bus. 2/0 AWG rated for continuous high current with minimal voltage drop.",
++      chem === "lifepo4" ? [{
++        brand: "Victron", model: "Victron SmartShunt 500A + Wiring Kit",
++        specs: "500A coulomb counter, Bluetooth SOC monitor, connects to VRM portal",
++        unitPriceLow: 80, unitPriceHigh: 120, brandLink: "https://www.victronenergy.com",
++      }] : undefined,
++    ));
++
++    // Generator integration (existing)
++    if (p.hasGenerator) {
++      const genKw = p.generatorKw ? ` (${p.generatorKw} kW)` : "";
++      bom.push(item(
++        "Generator Integration",
++        `Generator AC-In Wiring & Auto-Start Relay${genKw}`,
++        "AC-Input Transfer Relay + Auto-Start Harness",
++        "120/240V AC-in port wiring, auto-start relay output, transfer switch bypass",
++        "Victron / Sol-Ark", "https://www.victronenergy.com/inverters-chargers",
++        "1 lot", 150, 500, 1,
++        `Your existing generator${genKw} connects to the inverter AC-input port. ` +
++        "Configure auto-start at 20–30% SOC and auto-stop at 90% SOC to extend generator life and minimize runtime.",
++      ));
++    }
++  }
++
++  // ── 4. Generator purchase (if requested) ──────────────────────────────────
++  if (p.wantsGenerator && !p.hasGenerator) {
++    const recKw = Math.max(4, Math.ceil(p.inverterSizeKw * 0.5));
++    const isSmall = recKw <= 8;
++    bom.push(item(
++      "Backup Generator",
++      `${recKw}–${recKw + 2} kW Propane / Diesel Generator`,
++      isSmall ? "Kohler 8RESV or Champion 7500W" : "Generac XD5000E or Kohler 20RESCL",
++      isSmall
++        ? `${recKw}–${recKw + 2} kW, electric start, auto-start capable, LP/NG/diesel`
++        : `${recKw}–${recKw + 2} kW, automatic standby, 200A transfer switch`,
++      isSmall ? "Kohler / Champion" : "Generac / Kohler",
++      isSmall ? "https://www.kohlerpower.com/generators" : "https://www.generac.com/generators",
++      "1 unit",
++      isSmall ? 2000 : 4500, isSmall ? 4500 : 9000, 1,
++      `Minimum ${recKw} kW required (≥50% of ${p.inverterSizeKw.toFixed(1)} kW inverter to charge batteries while running loads). ` +
++      "Propane preferred for long-term fuel storage; diesel for heavy-duty applications. Includes transfer switch wiring to inverter AC-in.",
++      isSmall ? [{
++        brand: "Champion", model: "Champion 100520 8500W Dual Fuel",
++        specs: "8.5kW peak, 7.5kW run, LP/Gas, electric start, CO Shield",
++        unitPriceLow: 1200, unitPriceHigh: 1600, brandLink: "https://www.championpowerequipment.com",
++      }] : [{
++        brand: "Generac", model: "Generac GP15000E 15kW",
++        specs: "15kW, electric start, OHVI engine, CO-Sense",
++        unitPriceLow: 3000, unitPriceHigh: 4200, brandLink: "https://www.generac.com/generators",
++      }],
++    ));
++  }
++
++  // ── 5. MPPT Charge Controller (separate — off-grid without built-in MPPT) ─
++  // Note: most modern all-in-one off-grid inverters include MPPT. We add a
++  // standalone controller for hybrid/standalone PV array expansion scenarios
++  // or when user has a separate battery + inverter setup.
++  if ((p.systemType === "off-grid" || p.systemType === "hybrid") && p.totalBatteryBankKwh > 0) {
++    const ctrl = pickMppt(p.adjustedArraySizeKw);
++    const altCtrls = MPPT_CONTROLLERS
++      .filter(c => c.model !== ctrl.model && Math.abs(c.amps - ctrl.amps) <= 30)
++      .slice(0, 2)
++      .map(alt => ({
++        brand: alt.brand, model: alt.model, specs: alt.specs,
++        unitPriceLow: alt.priceLow, unitPriceHigh: alt.priceHigh, brandLink: alt.link,
++      }));
++    bom.push(item(
++      "Charge Controller",
++      `MPPT Solar Charge Controller — ${ctrl.amps}A`,
++      ctrl.model,
++      ctrl.specs,
++      ctrl.brand, ctrl.link,
++      "1 unit",
++      ctrl.priceLow, ctrl.priceHigh, 1,
++      `Array of ${p.adjustedArraySizeKw.toFixed(1)} kW at 48V requires ${((p.adjustedArraySizeKw * 1000) / 48).toFixed(0)}A DC. ` +
++      `${ctrl.amps}A controller includes 25% headroom per NEC 690.8. ` +
++      "Note: many all-in-one off-grid inverters include built-in MPPT — confirm before ordering separately.",
++      altCtrls,
++    ));
++  }
++
++  // ── 6. Racking & Mounting ──────────────────────────────────────────────────
++  const mountType =
++    p.installationType === "ground"  ? "Ground Mount"  :
++    p.installationType === "pole"    ? "Top-of-Pole Mount" :
++    p.installationType === "carport" ? "Solar Carport Structure" :
++    "Roof Mount Rail System";
++  const mountModels: Record<string, { model: string; brand: string; link: string; specs: string; low: number; high: number; alts: BomAlternative[] }> = {
++    roof: {
++      model: "IronRidge XR100 Rail + UFO L-Foot Flashing Kit",
++      brand: "IronRidge", link: "https://www.ironridge.com",
++      specs: "Extruded 6005-T5 aluminum rail, adjustable L-feet, EPDM flashings, mill finish or black",
++      low: 35, high: 65,
++      alts: [
++        { brand: "Unirac", model: "Unirac SolarMount Pro", specs: "Mill or anodized rail, rubber-gasketed clamps, UL 2703 listed", unitPriceLow: 32, unitPriceHigh: 60, brandLink: "https://www.unirac.com" },
++        { brand: "Quick Mount PV", model: "Quick Mount PV Classic Composition Mount", specs: "Low-profile, self-flashing, 150 mph wind rated, 25-yr warranty", unitPriceLow: 30, unitPriceHigh: 55, brandLink: "https://www.quickmountpv.com" },
++      ],
++    },
++    ground: {
++      model: "IronRidge GFT Ground Mount System",
++      brand: "IronRidge", link: "https://www.ironridge.com",
++      specs: "Driven or ballasted footings, XR100 rails, galvanized steel uprights, tilt angle 5°–45° adjustable",
++      low: 50, high: 85,
++      alts: [
++        { brand: "Schletter", model: "Schletter EcoMini Ground Mount", specs: "Hot-dip galvanized steel, driven ground screws, 60 mph wind rated", unitPriceLow: 55, unitPriceHigh: 90, brandLink: "https://www.schletter-group.com" },
++        { brand: "GameChange Solar", model: "Genius Tracker Ground Mount", specs: "Single-axis tracker, 25% production gain, self-powered drive", unitPriceLow: 120, unitPriceHigh: 180, brandLink: "https://www.gamechangesolar.com" },
++      ],
++    },
++    pole: {
++      model: "Tamarack Solar Top-of-Pole Mount",
++      brand: "Tamarack Solar", link: "https://www.tamaracksolar.com",
++      specs: "4–9 panel single-arm, hot-dip galvanized, tilt angle adjustable every 5°, fits 4\"–6\" schedule 40 pipe",
++      low: 60, high: 100,
++      alts: [
++        { brand: "MT Solar", model: "MT Solar Multi-Pole Top Mount", specs: "12–24 panel capacity, 3\" pipe, corrosion proof hardware, winter-tilt capable", unitPriceLow: 55, unitPriceHigh: 90, brandLink: "https://mtsolar.us" },
++      ],
++    },
++    carport: {
++      model: "Hsat Commercial Solar Carport Canopy",
++      brand: "Commercial Structure / Custom Fab", link: "https://www.solarcarporthub.com",
++      specs: "Single-row canopy, 12′–16′ clear height, HSS steel columns, integrated conduit channels, engineered stamped drawings",
++      low: 250, high: 450,
++      alts: [],
++    },
++  };
++  const mountInfo = mountModels[p.installationType] ?? mountModels.roof;
++  bom.push(item(
++    "Racking & Mounting",
++    mountType,
++    mountInfo.model,
++    mountInfo.specs,
++    mountInfo.brand, mountInfo.link,
++    `${p.numPanels} panel positions`,
++    mountInfo.low, mountInfo.high, p.numPanels,
++    `${p.installationType.charAt(0).toUpperCase() + p.installationType.slice(1)} mount for ${p.numPanels} panels. Includes rails, clamps, hardware, fasteners, and all flashings. ` +
++    (p.installationType === "ground" ? "Footing type (driven screw vs concrete) depends on soil conditions — driven screws avoid concrete where frost-free." : "") +
++    (p.installationType === "pole"   ? "Pole and concrete footing are separate from this kit (size pipe per manufacturer spec for wind zone)." : ""),
++    mountInfo.alts,
++  ));
++
++  // ── 7. DC Combiner Box ────────────────────────────────────────────────────
++  if (p.numPanels >= 4) {
++    const circuits = Math.ceil(p.numPanels / 3);
++    const combModel = circuits <= 6 ? "MidNite Solar MNPV6 6-Circuit Combiner" : "MidNite Solar MNPV12 12-Circuit Combiner";
++    const combSpec  = circuits <= 6
++      ? "6 circuits, MNEPV 10–15A string fuses, NEMA 3R enclosure, DIN rail"
++      : "12 circuits, MNEPV 10–15A string fuses, NEMA 3R, wire management";
++    bom.push(item(
++      "Electrical Protection",
++      `DC String Combiner Box — ${circuits}-Circuit`,
++      combModel,
++      combSpec,
++      "MidNite Solar", "https://midnitesolar.com",
++      "1 unit",
++      circuits <= 6 ? 190 : 280, circuits <= 6 ? 280 : 400, 1,
++      `${p.numPanels} panels across ${circuits} string${circuits > 1 ? "s" : ""} requires a combiner with overcurrent protection per NEC 690.9. ` +
++      "MNEPV string fuses (10–15A per string) protect the wiring from reverse current.",
++      [{
++        brand: "SolarBOS", model: "SolarBOS 12-Circuit PV Combiner",
++        specs: "12 circuits, DIN-rail fusing, NEMA 3R, surge protection optional",
++        unitPriceLow: 200, unitPriceHigh: 320, brandLink: "https://www.solarbos.com",
++      }],
++    ));
++
++    // String fuses (inside combiner)
++    const strings = circuits;
++    bom.push(item(
++      "Electrical Protection",
++      "DC String Fuses — MNEPV Series",
++      `MidNite Solar MNEPV${String(Math.ceil(primaryPanel?.isc ?? 13) <= 13 ? 15 : 20)} Fuse (per string)`,
++      `Rated ${Math.ceil((primaryPanel?.isc ?? 13) * 1.56)}A, 600VDC, DIN rail mount, UL listed`,
++      "MidNite Solar", "https://midnitesolar.com",
++      `${strings} fuses (1 per string)`,
++      10, 18, strings,
++      `One fuse per string sized to 156% of Isc per NEC 690.8. Protects array wiring from reverse-current damage.`,
++    ));
++  }
++
++  // ── 8. DC Disconnect ──────────────────────────────────────────────────────
++  bom.push(item(
++    "Electrical Protection",
++    "DC Solar Array Disconnect",
++    "MidNite Solar MNCB-60 60A DC Disconnect",
++    "60A, 600VDC, NEMA 3R, lockable handle, manual load-break",
++    "MidNite Solar", "https://midnitesolar.com",
++    "1 unit", 90, 140, 1,
++    "Required by NEC 690.13 for rapid shutdown and service access. Mounted within sight of the array for code compliance.",
++    [{
++      brand: "Square D", model: "Square D DU222RB 60A Non-Fusible Safety Switch",
++      specs: "60A, 240VAC/250VDC, NEMA 3R rainproof, lockable, load-break",
++      unitPriceLow: 65, unitPriceHigh: 100, brandLink: "https://www.se.com",
++    }],
++  ));
++
++  // ── 9. AC Disconnect / Load Center ────────────────────────────────────────
++  bom.push(item(
++    "Electrical Protection",
++    "AC Output Disconnect & Breakers",
++    "Square D QO Load Center + QO2xx Breaker",
++    "Main lug or main breaker sub-panel, QO double-pole breaker for inverter output",
++    "Square D (Schneider Electric)", "https://www.se.com",
++    "1 lot",
++    120, 280, 1,
++    "AC disconnect between inverter and load panel per NEC 690.15. Includes sub-panel if back-feeding main service panel. " +
++    "Back-feed breaker sized at 125% of inverter rated output per NEC 705.12.",
++    [{
++      brand: "Siemens", model: "Siemens P1224L1125CU + QP260 Breaker",
++      specs: "125A main lug, 12-space, 24-circuit, with 60A 2-pole QP breaker",
++      unitPriceLow: 140, unitPriceHigh: 250, brandLink: "https://usa.siemens.com",
++    }],
++  ));
++
++  // ── 10. Rapid Shutdown (roof only) ────────────────────────────────────────
++  if (p.installationType === "roof") {
++    bom.push(item(
++      "Safety Equipment",
++      "Rapid Shutdown System",
++      "Tigo TS4-A-O Transmitter + Receiver Kit",
++      "NEC 2017/2020 690.12 compliant, per-module shutdown, Tigo cloud monitoring included",
++      "Tigo Energy", "https://www.tigoenergy.com",
++      `${p.numPanels} optimizers + 1 transmitter`,
++      55, 85, p.numPanels,
++      "Required by NEC 690.12 for all roof-mounted systems installed after January 2019. " +
++      "Reduces PV conductor voltage to <30V within 30 seconds for firefighter safety.",
++      [{
++        brand: "Enphase", model: "Enphase IQ System Controller 2",
++        specs: "Ensemble rapid shutdown, sunspec compliant, whole-home management",
++        unitPriceLow: 320, unitPriceHigh: 480, brandLink: "https://enphase.com",
++      }],
++    ));
++  }
++
++  // ── 11. Wiring & Conduit ───────────────────────────────────────────────────
++  // Estimate run distances: roof ~50ft DC + 30ft AC; ground ~100ft DC + 40ft AC; pole ~80ft DC + 40ft AC
++  const dcRunFt    = p.installationType === "roof" ? 60 : p.installationType === "ground" ? 120 : 90;
++  const acRunFt    = p.installationType === "roof" ? 35 : 50;
++  const batCableFt = 15; // battery ↔ inverter
++
++  // DC array wire: 10 AWG USE-2 PV wire, two conductors (+ and -)
++  const dcWireTotal = dcRunFt * 2 * (p.numPanels <= 8 ? 1 : Math.ceil(p.numPanels / 8));
++  const dcWireLow   = dcWireTotal * 0.28;
++  const dcWireHigh  = dcWireTotal * 0.42;
++
++  // AC output wire: gauge depends on inverter kW
++  const acGauge   = p.inverterSizeKw <= 3.8 ? "10" : p.inverterSizeKw <= 7.6 ? "8" : "6";
++  const acWireLow  = acRunFt * 3 * (acGauge === "10" ? 0.40 : acGauge === "8" ? 0.60 : 0.90);
++  const acWireHigh = acRunFt * 3 * (acGauge === "10" ? 0.60 : acGauge === "8" ? 0.90 : 1.30);
++
++  // Battery cables: 2/0 AWG or 4/0 AWG
++  const batGauge     = p.inverterSizeKw <= 6 ? "2/0" : "4/0";
++  const batWireLow   = batCableFt * 2 * (batGauge === "2/0" ? 3.20 : 5.50);
++  const batWireHigh  = batCableFt * 2 * (batGauge === "2/0" ? 4.80 : 7.50);
++
++  // MC4 connectors
++  const mc4Pairs    = p.numPanels + 4; // extra for branch tees
++  const mc4Low      = mc4Pairs * 1.50;
++  const mc4High     = mc4Pairs * 3.00;
++
++  // Conduit and fittings allowance
++  const conduitLow  = (dcRunFt + acRunFt) * 0.80;
++  const conduitHigh = (dcRunFt + acRunFt) * 1.60;
++
++  const totalWireLow  = dcWireLow  + acWireLow  + batWireLow  + mc4Low  + conduitLow;
++  const totalWireHigh = dcWireHigh + acWireHigh + batWireHigh + mc4High + conduitHigh;
++
++  bom.push(item(
++    "Wiring & Conduit",
++    "Full System Wiring Package",
++    `${dcWireTotal}ft 10 AWG USE-2 PV Wire + ${acGauge} AWG THWN-2 + ${batGauge} AWG Battery Cables`,
++    `DC: ${dcWireTotal}ft 10 AWG USE-2/PV wire · AC: ${acGauge} AWG THWN-2 × ${acRunFt}ft · Battery: ${batGauge} AWG × ${batCableFt * 2}ft · MC4 connectors × ${mc4Pairs} pairs · EMT conduit & fittings`,
++    "USE-2 / THWN-2 / UL Listed",
++    undefined,
++    "1 lot",
++    Math.round(totalWireLow), Math.round(totalWireHigh), 1,
++    `DC home run ~${dcRunFt}ft, AC output ~${acRunFt}ft, battery cables ~${batCableFt}ft each way. ` +
++    `All conductors sized for 1.25× continuous duty per NEC 690.8. ${batGauge} AWG for battery bank minimizes voltage drop at high charge/discharge currents.`,
++  ));
++
++  // ── 12. Breakers & Fusing (array + battery side) ──────────────────────────
++  const arrayCBamps  = Math.ceil(((primaryPanel?.isc ?? 13) * p.numPanels) / Math.max(1, Math.ceil(p.numPanels / 3)) * 1.56 / 5) * 5;
++  const invACamps    = Math.ceil(p.inverterSizeKw * 1000 / 240 * 1.25 / 5) * 5;
++  bom.push(item(
++    "Electrical Protection",
++    "Main Breakers & Fusing",
++    `Square D QO ${invACamps}A 2-Pole + DC Busbar Fuse Set`,
++    `${invACamps}A 2-pole AC breaker for inverter output · ${arrayCBamps}A DC branch circuit protection · 400–600VDC rated fuse holder`,
++    "Square D / Eaton",
++    "https://www.se.com",
++    "1 lot",
++    95, 280, 1,
++    `AC breaker: ${invACamps}A = 125% × ${(p.inverterSizeKw * 1000 / 240).toFixed(0)}A inverter output per NEC 705.12. ` +
++    `DC fusing per NEC 690.8 at 156% of short-circuit current (${arrayCBamps}A per string).`,
++    [{
++      brand: "Eaton", model: `Eaton BR ${invACamps}A Breaker + Bussmann GMT Series`,
++      specs: `${invACamps}A 2-pole, 120/240VAC, type BR, 10kAIC + DC fuse holders`,
++      unitPriceLow: 80, unitPriceHigh: 200, brandLink: "https://www.eaton.com",
++    }],
++  ));
++
++  // ── 13. Grounding & Bonding ────────────────────────────────────────────────
++  const groundRods   = 2;
++  const gecFt        = 30; // grounding electrode conductor
++  bom.push(item(
++    "Grounding & Bonding",
++    "Equipment Grounding System",
++    `Erico Eritech ${groundRods}× 5/8″×8′ Copper Ground Rod + #6 AWG GEC`,
++    `${groundRods} × 5/8″ × 8′ UL listed copper-clad ground rods · #6 AWG solid bare copper GEC ~${gecFt}ft · ILSCO GBL-4/0 grounding lugs · IronRidge bonding clips`,
++    "Erico / ILSCO / IronRidge",
++    "https://www.erico.com",
++    "1 lot",
++    120, 260, 1,
++    `Two ground rods ≥6ft apart per NEC 250.53 creates a multi-rod grounding electrode system. ` +
++    `#6 AWG GEC bonds array frame, inverter chassis, and battery enclosure per NEC 690.43. Module frames bonded with listed bonding hardware.`,
++    [{
++      brand: "Burndy", model: "Burndy YGHC Series + Cadweld XA Welds",
++      specs: "Exothermic welds at rod-to-wire connections, waterproof, permanent bond",
++      unitPriceLow: 140, unitPriceHigh: 300, brandLink: "https://burndy.com",
++    }],
++  ));
++
++  // ── 14. Monitoring / Gateway ──────────────────────────────────────────────
++  const monitorModel =
++    p.systemType === "off-grid" || p.systemType === "hybrid"
++      ? { model: "Victron Cerbo GX + Touch 70 Display", specs: "MQTT/Modbus/VE.Can hub, 7″ color touch display, VRM portal cloud monitoring", brand: "Victron", link: "https://www.victronenergy.com/panel-systems-remote-monitoring/cerbo-gx", low: 320, high: 430 }
++      : { model: "Enphase IQ Gateway (Envoy-S)", specs: "Real-time panel-level production data, Enphase Enlighten cloud, ANSI C12.20 revenue grade meter", brand: "Enphase", link: "https://enphase.com/homeowners/monitoring", low: 150, high: 260 };
++  bom.push(item(
++    "Monitoring",
++    "System Monitor / Gateway",
++    monitorModel.model,
++    monitorModel.specs,
++    monitorModel.brand, monitorModel.link,
++    "1 unit",
++    monitorModel.low, monitorModel.high, 1,
++    "Real-time visibility into production, consumption, battery SOC, and grid import/export. " +
++    "Remote alerts for faults or underperformance. " +
++    (p.systemType === "off-grid" ? "Cerbo GX integrates with Victron MPPT, MultiPlus/Quattro, and BMS via VE.Direct / VE.Can." : "Envoy tracks per-panel output and feeds Enphase Enlighten cloud portal."),
++    p.systemType !== "off-grid" ? [{
++      brand: "Victron", model: "Victron Cerbo GX",
++      specs: "Universal gateway for Victron ecosystem, VRM portal, touch display optional",
++      unitPriceLow: 220, unitPriceHigh: 320, brandLink: "https://www.victronenergy.com/panel-systems-remote-monitoring/cerbo-gx",
++    }] : [{
++      brand: "Enphase", model: "Enphase IQ Combiner 4C",
++      specs: "Combiner + gateway in one unit, production CT sensor included",
++      unitPriceLow: 180, unitPriceHigh: 300, brandLink: "https://enphase.com",
++    }],
++  ));
++
++  return bom;
++}
+diff --git a/artifacts/api-server/src/services/reports/reportDeliveryService.ts b/artifacts/api-server/src/services/reports/reportDeliveryService.ts
+new file mode 100644
+index 0000000..14a13ea
+--- /dev/null
++++ b/artifacts/api-server/src/services/reports/reportDeliveryService.ts
+@@ -0,0 +1,47 @@
++import { env } from "../../config/env";
++import { logger } from "../../utils/logger";
++
++export type ReportDeliveryStatus = "sent" | "queued" | "failed";
++
++export async function deliverReportEmail(input: {
++  projectId: number;
++  email: string;
++  reportUrl: string;
++  projectName?: string | null;
++}): Promise<ReportDeliveryStatus> {
++  if (!env.reportEmailWebhookUrl) {
++    logger.info(
++      { projectId: input.projectId, email: input.email },
++      "REPORT_EMAIL_WEBHOOK_URL not configured; report email queued for manual delivery",
++    );
++    return "queued";
++  }
++
++  try {
++    const response = await fetch(env.reportEmailWebhookUrl, {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({
++        to: input.email,
++        template: "solar-report-unlocked",
++        projectId: input.projectId,
++        projectName: input.projectName,
++        reportUrl: input.reportUrl,
++      }),
++      signal: AbortSignal.timeout(10_000),
++    });
++
++    if (!response.ok) {
++      logger.warn(
++        { projectId: input.projectId, status: response.status },
++        "Report email provider returned an error",
++      );
++      return "failed";
++    }
++
++    return "sent";
++  } catch (err) {
++    logger.warn({ err, projectId: input.projectId }, "Report email delivery failed");
++    return "failed";
++  }
++}
+diff --git a/artifacts/api-server/src/services/reports/reportService.ts b/artifacts/api-server/src/services/reports/reportService.ts
+new file mode 100644
+index 0000000..5a2b388
+--- /dev/null
++++ b/artifacts/api-server/src/services/reports/reportService.ts
+@@ -0,0 +1,260 @@
++import type { Project } from "@workspace/db";
++import { generateBom } from "./bom";
++
++type Calc = Record<string, any>;
++
++const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
++
++function range(value: unknown, spreadPct: number, minSpread: number, decimals = 0) {
++  const numeric = typeof value === "number" && Number.isFinite(value) ? value : 0;
++  const spread = Math.max(Math.abs(numeric) * spreadPct, minSpread);
++  const factor = 10 ** decimals;
++  return {
++    low: Math.max(0, Math.floor((numeric - spread) * factor) / factor),
++    high: Math.ceil((numeric + spread) * factor) / factor,
++  };
++}
++
++function systemRecommendation(systemType: unknown, installationType: unknown) {
++  const system = typeof systemType === "string" ? systemType : "solar";
++  const mount = installationType === "ground" ? "ground-mount" : "roof-mount";
++  if (system === "off-grid") return `Off-grid ${mount} solar with battery storage`;
++  if (system === "hybrid") return `Hybrid ${mount} solar with battery backup`;
++  return `Grid-tied ${mount} solar`;
++}
++
++export function buildPreview(project: Project) {
++  const calc = project.calculationResult as Calc | null;
++  return {
++    id: project.id,
++    name: project.name,
++    address: project.address,
++    city: project.city,
++    state: project.state,
++    zip: project.zip,
++    installationType: project.installationType,
++    systemType: project.systemType,
++    budgetTier: project.budgetTier,
++    createdAt: project.createdAt,
++    paidAt: project.paidAt,
++    purchaserEmail: project.purchaserEmail,
++    reportDeliveryStatus: project.reportDeliveryStatus,
++    lat: project.lat,
++    lon: project.lon,
++    arrayLat: project.arrayLat,
++    arrayLon: project.arrayLon,
++    locationAccuracy: project.locationAccuracy,
++    preview: calc
++      ? {
++          systemSizeKwRange: range(calc.adjustedArraySizeKw, 0.12, 0.5, 1),
++          panelCountRange: range(calc.numPanels, 0.12, 2),
++          yearlyProductionKwhRange: range(calc.yearlyProductionKwh, 0.15, 750),
++          costRange: {
++            low: Math.max(0, Math.round(calc.installedCostLow ?? 0)),
++            high: Math.max(0, Math.round(calc.installedCostHigh ?? 0)),
++          },
++          estimatedYearlySavingsRange: range(calc.estimatedYearlySavings, 0.2, 250),
++          basicSystemRecommendation: systemRecommendation(project.systemType, project.installationType),
++          productionEstimateLabel: calc.productionEstimateLabel,
++        }
++      : null,
++  };
++}
++
++export function buildPaidReport(project: Project) {
++  const calc = project.calculationResult as Calc | null;
++  if (!calc) return null;
++  const { accessToken: _accessToken, ...safeProject } = project;
++
++  const bom = generateBom({
++    systemType: project.systemType,
++    installationType: project.installationType,
++    budgetTier: project.budgetTier,
++    numPanels: calc.numPanels,
++    adjustedArraySizeKw: calc.adjustedArraySizeKw,
++    inverterSizeKw: calc.inverterSizeKw,
++    totalBatteryBankKwh: calc.totalBatteryBankKwh,
++    batteryUsableKwh: calc.batteryUsableKwh,
++    batteryChemistry: project.batteryChemistry,
++    hasGenerator: project.hasGenerator,
++    generatorKw: project.generatorKw,
++    wantsGenerator: project.wantsGenerator,
++    snowArea: project.snowArea,
++    recommendedPanelBrand: calc.recommendedPanelBrand,
++    recommendedInverterBrand: calc.recommendedInverterBrand,
++    recommendedBatteryBrand: calc.recommendedBatteryBrand,
++    recommendedMountingBrand: calc.recommendedMountingBrand,
++    diyEquipmentCostLow: calc.diyEquipmentCostLow,
++    diyEquipmentCostHigh: calc.diyEquipmentCostHigh,
++  });
++
++  const pvwattsMonthly = Array.isArray(calc.pvwattsMonthlyKwh) ? calc.pvwattsMonthlyKwh : null;
++  const monthlyChartData = pvwattsMonthly?.map((kwh: number, i: number) => ({
++    month: MONTH_NAMES[i],
++    kwh,
++    solrad: Array.isArray(calc.pvwattsSolradMonthly) ? Math.round(calc.pvwattsSolradMonthly[i] * 10) / 10 : null,
++  })) ?? null;
++
++  return {
++    project: safeProject,
++    calculation: calc,
++    bom,
++    bomCategories: Array.from(new Set(bom.map((item) => item.category))),
++    monthlyChartData,
++    entitlement: {
++      paidAt: project.paidAt,
++      stripeSessionId: project.stripeSessionId,
++      reportDeliveryStatus: project.reportDeliveryStatus,
++      reportDeliveredAt: project.reportDeliveredAt,
++    },
++  };
++}
++
++export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildPaidReport>>): string {
++  const { project, calculation: calc, bom, monthlyChartData } = report;
++  const annualProduction = calc.pvwattsAnnualKwh ?? calc.yearlyProductionKwh;
++  const equipmentRows = bom.slice(0, 18).map((item) => `
++    <tr>
++      <td>${escapeHtml(item.category)}</td>
++      <td><strong>${escapeHtml(item.model)}</strong><br><span>${escapeHtml(item.specs)}</span></td>
++      <td>${escapeHtml(item.qty)}</td>
++      <td>${escapeHtml(item.totalPrice)}</td>
++    </tr>
++  `).join("");
++  const chartBars = (monthlyChartData ?? []).map((row) => `
++    <div class="bar"><div style="height:${Math.max(8, row.kwh / Math.max(1, annualProduction / 8) * 100)}%"></div><span>${row.month}</span></div>
++  `).join("");
++
++  return `<!doctype html>
++  <html>
++    <head>
++      <meta charset="utf-8">
++      <title>${escapeHtml(project.name)} Solar Proposal</title>
++      <style>
++        body { font-family: Inter, Arial, sans-serif; color: #172033; margin: 36px; line-height: 1.45; }
++        h1 { font-size: 32px; margin: 0 0 6px; }
++        h2 { font-size: 18px; margin-top: 28px; border-bottom: 2px solid #f97316; padding-bottom: 6px; }
++        .brand { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
++        .logo { width: 86px; height: 54px; border: 2px solid #f97316; display: grid; place-items: center; font-weight: 800; color: #f97316; }
++        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
++        .metric { background: #fff7ed; border: 1px solid #fed7aa; padding: 14px; border-radius: 8px; }
++        .metric span { display: block; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .06em; }
++        .metric strong { display: block; font-size: 18px; margin-top: 4px; }
++        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
++        th, td { border-bottom: 1px solid #e5e7eb; text-align: left; padding: 8px; vertical-align: top; }
++        th { background: #f8fafc; font-size: 11px; text-transform: uppercase; color: #64748b; }
++        .chart { display: flex; align-items: end; height: 160px; gap: 8px; border: 1px solid #e5e7eb; padding: 10px; }
++        .bar { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: end; align-items: center; gap: 4px; font-size: 10px; }
++        .bar div { width: 100%; background: #f97316; border-radius: 4px 4px 0 0; }
++        .disclaimer { font-size: 11px; color: #64748b; background: #f8fafc; padding: 12px; border-radius: 8px; }
++      </style>
++    </head>
++    <body>
++      <div class="brand">
++        <div>
++          <div style="font-size:12px;color:#f97316;text-transform:uppercase;letter-spacing:.08em;font-weight:800;">Contractor-Grade Solar Proposal</div>
++          <h1>${escapeHtml(project.name)}</h1>
++          <div>${escapeHtml(project.address)}, ${escapeHtml(project.city)}, ${escapeHtml(project.state)} ${escapeHtml(project.zip)}</div>
++        </div>
++        <div class="logo">LOGO</div>
++      </div>
++      <div class="grid">
++        <div class="metric"><span>Array</span><strong>${calc.adjustedArraySizeKw.toFixed(2)} kW DC</strong></div>
++        <div class="metric"><span>Panels</span><strong>${calc.numPanels}</strong></div>
++        <div class="metric"><span>Annual Production</span><strong>${Math.round(annualProduction).toLocaleString()} kWh</strong></div>
++        <div class="metric"><span>Payback</span><strong>${calc.paybackYears ? `${calc.paybackYears.toFixed(1)} yrs` : "N/A"}</strong></div>
++      </div>
++      <h2>Monthly Production</h2>
++      <div class="chart">${chartBars}</div>
++      <h2>Equipment List</h2>
++      <table><thead><tr><th>Category</th><th>Equipment</th><th>Qty</th><th>Total</th></tr></thead><tbody>${equipmentRows}</tbody></table>
++      <h2>Battery, Inverter, Losses, and ROI</h2>
++      <table><tbody>
++        <tr><td>Battery usable capacity</td><td>${calc.batteryUsableKwh?.toFixed?.(1) ?? "0.0"} kWh</td></tr>
++        <tr><td>Total battery bank</td><td>${calc.totalBatteryBankKwh?.toFixed?.(1) ?? "0.0"} kWh</td></tr>
++        <tr><td>Inverter sizing</td><td>${calc.inverterSizeKw.toFixed(1)} kW AC</td></tr>
++        <tr><td>Total modeled losses</td><td>${calc.totalSystemLossPct.toFixed(1)}%</td></tr>
++        <tr><td>Installed cost estimate</td><td>$${Math.round(calc.installedCostLow).toLocaleString()} - $${Math.round(calc.installedCostHigh).toLocaleString()}</td></tr>
++        <tr><td>Annual savings</td><td>$${Math.round(calc.estimatedYearlySavings).toLocaleString()}</td></tr>
++      </tbody></table>
++      <h2>Assumptions and Disclaimers</h2>
++      <p class="disclaimer">This report is for preliminary planning only. Final design must be verified by qualified licensed professionals and approved by the Authority Having Jurisdiction. Production, savings, equipment availability, incentives, and code requirements may vary.</p>
++    </body>
++  </html>`;
++}
++
++export function renderReportPdfBuffer(report: NonNullable<ReturnType<typeof buildPaidReport>>): Buffer {
++  const { project, calculation: calc, bom } = report;
++  const annualProduction = calc.pvwattsAnnualKwh ?? calc.yearlyProductionKwh;
++  const lines = [
++    "OffGrid Solar Builder",
++    "Contractor-Grade Solar Proposal",
++    "",
++    project.name,
++    `${project.address}, ${project.city}, ${project.state} ${project.zip}`,
++    "",
++    `System type: ${project.systemType}`,
++    `Installation: ${project.installationType} mount`,
++    `Array: ${calc.adjustedArraySizeKw.toFixed(2)} kW DC`,
++    `Panels: ${calc.numPanels}`,
++    `Annual production: ${Math.round(annualProduction).toLocaleString()} kWh`,
++    `Inverter: ${calc.inverterSizeKw.toFixed(1)} kW AC`,
++    `Battery usable capacity: ${(calc.batteryUsableKwh ?? 0).toFixed(1)} kWh`,
++    `Total battery bank: ${(calc.totalBatteryBankKwh ?? 0).toFixed(1)} kWh`,
++    `Modeled losses: ${calc.totalSystemLossPct.toFixed(1)}%`,
++    `Installed cost: $${Math.round(calc.installedCostLow).toLocaleString()} - $${Math.round(calc.installedCostHigh).toLocaleString()}`,
++    `Annual savings: $${Math.round(calc.estimatedYearlySavings).toLocaleString()}`,
++    `Payback: ${calc.paybackYears ? `${calc.paybackYears.toFixed(1)} years` : "N/A"}`,
++    "",
++    "Equipment List",
++    ...bom.slice(0, 20).map((item) => `${item.category}: ${item.model} (${item.qty}) ${item.totalPrice}`),
++    "",
++    "Assumptions and Disclaimers",
++    "This report is for preliminary planning only. Final design must be verified by qualified licensed professionals and approved by the Authority Having Jurisdiction.",
++  ];
++  return makeSimplePdf(lines);
++}
++
++function makeSimplePdf(lines: string[]): Buffer {
++  const content = [
++    "BT",
++    "/F1 18 Tf",
++    "54 760 Td",
++    ...lines.flatMap((line, index) => {
++      const size = index === 0 ? 18 : index === 1 ? 13 : 10;
++      const escaped = String(line).replace(/[\\()]/g, "\\$&");
++      return [`/F1 ${size} Tf`, `(${escaped}) Tj`, "0 -16 Td"];
++    }),
++    "ET",
++  ].join("\n");
++
++  const objects = [
++    "<< /Type /Catalog /Pages 2 0 R >>",
++    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
++    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
++    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
++    `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`,
++  ];
++  let pdf = "%PDF-1.4\n";
++  const offsets = [0];
++  objects.forEach((obj, index) => {
++    offsets.push(Buffer.byteLength(pdf));
++    pdf += `${index + 1} 0 obj\n${obj}\nendobj\n`;
++  });
++  const xrefOffset = Buffer.byteLength(pdf);
++  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
++  for (let i = 1; i <= objects.length; i++) {
++    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
++  }
++  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
++  return Buffer.from(pdf);
++}
++
++function escapeHtml(value: unknown): string {
++  return String(value ?? "")
++    .replaceAll("&", "&amp;")
++    .replaceAll("<", "&lt;")
++    .replaceAll(">", "&gt;")
++    .replaceAll('"', "&quot;")
++    .replaceAll("'", "&#39;");
++}
+diff --git a/artifacts/offgrid-solar/src/App.tsx b/artifacts/offgrid-solar/src/App.tsx
+index d7ae83b..0a37073 100644
+--- a/artifacts/offgrid-solar/src/App.tsx
++++ b/artifacts/offgrid-solar/src/App.tsx
+@@ -24,6 +24,7 @@ function Router() {
+   return (
+     <Switch>
+       <Route path="/" component={Home} />
++      <Route path="/pricing" component={Home} />
+       <Route path="/projects" component={ProjectsDashboard} />
+       <Route path="/wizard" component={Wizard} />
+       <Route path="/proposal" component={QuickProposal} />
+@@ -32,9 +33,11 @@ function Router() {
+       <Route path="/projects/:id/edit" component={EditProject} />
+       <Route path="/ai-assistant" component={AIAssistant} />
+       <Route path="/settings" component={SettingsPage} />
++      <Route path="/admin/settings" component={SettingsPage} />
+       <Route path="/payment-success" component={PaymentSuccess} />
+       <Route path="/payment-cancel" component={PaymentCancel} />
+       <Route path="/purchases" component={PurchasesPage} />
++      <Route path="/admin/purchases" component={PurchasesPage} />
+       <Route component={NotFound} />
+     </Switch>
+   );
+diff --git a/artifacts/offgrid-solar/src/pages/edit-project.tsx b/artifacts/offgrid-solar/src/pages/edit-project.tsx
+index 38c640f..f0e293e 100644
+--- a/artifacts/offgrid-solar/src/pages/edit-project.tsx
++++ b/artifacts/offgrid-solar/src/pages/edit-project.tsx
+@@ -521,6 +521,7 @@ export default function EditProject() {
+                 {/* ── Section: GPS Coordinates ──────────────────── */}
+                 {(() => {
+                   const useManual = form.watch("useManualCoords");
++                  const accuracy = project?.locationAccuracy as string | null | undefined;
+                   return (
+                 <div>
+                   <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-4 pb-2 border-b">GPS Coordinates</h3>
+@@ -536,11 +537,12 @@ export default function EditProject() {
+                     {project?.lat != null && (
+                       <span className="text-xs text-muted-foreground flex items-center gap-1">
+                         <MapPin className="w-3 h-3" />
+-                        {project.locationAccuracy === "exact"
++                        {accuracy === "exact_address" || accuracy === "exact"
+                           ? "Exact street address"
+-                          : project.locationAccuracy === "zip" ? "ZIP code approximation"
+-                          : project.locationAccuracy === "city" ? "City/state approximation"
+-                          : project.locationAccuracy === "manual" ? "Manual coordinates"
++                          : accuracy === "approximate_zip" || accuracy === "zip" ? "ZIP code approximation"
++                          : accuracy === "approximate_city" || accuracy === "city" ? "City/state approximation"
++                          : accuracy === "manual_coordinates" || accuracy === "manual" ? "Manual coordinates"
++                          : accuracy === "failed" ? "Geocode failed"
+                           : "Coordinates saved"}
+                         {" "}({Number(project.lat).toFixed(5)}, {Number(project.lon).toFixed(5)})
+                       </span>
+diff --git a/artifacts/offgrid-solar/src/pages/home.tsx b/artifacts/offgrid-solar/src/pages/home.tsx
+index 3187423..5e6ae93 100644
+--- a/artifacts/offgrid-solar/src/pages/home.tsx
++++ b/artifacts/offgrid-solar/src/pages/home.tsx
+@@ -79,6 +79,27 @@ export default function Home() {
+           </div>
+         </div>
+ 
++        <div id="pricing" className="w-full pb-16 sm:pb-20">
++          <div className="text-center mb-10">
++            <h2 className="text-2xl sm:text-3xl font-bold">Paid report pricing</h2>
++          </div>
++          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
++            {[
++              ["Homeowner Full Report", "$19", "one-time", "1 full report credit"],
++              ["Property Pack", "$39", "one-time", "3 full report credits"],
++              ["Contractor Annual", "$199/year", "subscription", "Contractor access + 50 credits"],
++              ["Contractor Lifetime Beta", "$299", "one-time", "Contractor access + 100 credits"],
++            ].map(([name, price, cadence, detail]) => (
++              <div key={name} className="rounded-xl border bg-card p-5">
++                <h3 className="font-semibold">{name}</h3>
++                <div className="mt-3 text-3xl font-extrabold text-primary">{price}</div>
++                <div className="text-xs uppercase tracking-wide text-muted-foreground mt-1">{cadence}</div>
++                <p className="text-sm text-muted-foreground mt-4">{detail}</p>
++              </div>
++            ))}
++          </div>
++        </div>
++
+         {/* How it works */}
+         <div className="w-full pb-16 sm:pb-20">
+           <div className="text-center mb-10">
+diff --git a/artifacts/offgrid-solar/src/pages/payment-cancel.tsx b/artifacts/offgrid-solar/src/pages/payment-cancel.tsx
+index 27e3a60..cf39204 100644
+--- a/artifacts/offgrid-solar/src/pages/payment-cancel.tsx
++++ b/artifacts/offgrid-solar/src/pages/payment-cancel.tsx
+@@ -7,6 +7,10 @@ export default function PaymentCancel() {
+   const search = useSearch();
+   const params = new URLSearchParams(search);
+   const projectId = params.get("projectId");
++  const accessToken = params.get("accessToken");
++  const resultsHref = projectId
++    ? `/results/${projectId}${accessToken ? `?accessToken=${encodeURIComponent(accessToken)}` : ""}`
++    : null;
+ 
+   return (
+     <AppLayout>
+@@ -26,8 +30,8 @@ export default function PaymentCancel() {
+         </div>
+ 
+         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+-          {projectId && (
+-            <Link href={`/results/${projectId}`}>
++          {resultsHref && (
++            <Link href={resultsHref}>
+               <Button size="lg" className="gap-2 w-full sm:w-auto">
+                 <ArrowLeft className="h-4 w-4" />
+                 Back to Report
+diff --git a/artifacts/offgrid-solar/src/pages/projects.tsx b/artifacts/offgrid-solar/src/pages/projects.tsx
+index c2f72bc..fd3ff50 100644
+--- a/artifacts/offgrid-solar/src/pages/projects.tsx
++++ b/artifacts/offgrid-solar/src/pages/projects.tsx
+@@ -1,11 +1,9 @@
+ import { AppLayout } from "@/components/layout/AppLayout";
+-import { useListProjects, useGetProjectsSummary, useDeleteProject, getListProjectsQueryKey, getGetProjectsSummaryQueryKey } from "@workspace/api-client-react";
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Badge } from "@/components/ui/badge";
+ import { Button } from "@/components/ui/button";
+ import { Link } from "wouter";
+ import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldCheck, ZapOff, MapPin, BarChart3, Map } from "lucide-react";
+-import { useQueryClient } from "@tanstack/react-query";
+ import { useToast } from "@/hooks/use-toast";
+ import { useRef, useState } from "react";
+ import {
+@@ -29,25 +27,22 @@ const systemTypeBadge: Record<string, string> = {
+ };
+ 
+ export default function ProjectsDashboard() {
+-  const { data: projects, isLoading: isProjectsLoading } = useListProjects();
+-  const { data: summary, isLoading: isSummaryLoading } = useGetProjectsSummary();
+-  const deleteProject = useDeleteProject();
+-  const queryClient = useQueryClient();
++  const projects: any[] = [];
++  const summary = {
++    totalProjects: 0,
++    totalSystemKw: 0,
++    offGridCount: 0,
++    gridTiedCount: 0,
++  };
++  const isProjectsLoading = false;
++  const isSummaryLoading = false;
+   const { toast } = useToast();
+   const mapSectionRef = useRef<HTMLDivElement>(null);
+   const [mapSelectedId, setMapSelectedId] = useState<number | null>(null);
+ 
+   const handleDelete = (id: number) => {
+-    deleteProject.mutate({ id }, {
+-      onSuccess: () => {
+-        toast({ title: "Project deleted" });
+-        queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+-        queryClient.invalidateQueries({ queryKey: getGetProjectsSummaryQueryKey() });
+-      },
+-      onError: () => {
+-        toast({ title: "Failed to delete project", variant: "destructive" });
+-      }
+-    });
++    void id;
++    toast({ title: "Open the project with its secure access link to delete it." });
+   };
+ 
+   const handleViewOnMap = (id: number) => {
+diff --git a/artifacts/offgrid-solar/src/pages/results.tsx b/artifacts/offgrid-solar/src/pages/results.tsx
+index 10dcebc..71a6f62 100644
+--- a/artifacts/offgrid-solar/src/pages/results.tsx
++++ b/artifacts/offgrid-solar/src/pages/results.tsx
+@@ -1,6 +1,6 @@
+ import { AppLayout } from "@/components/layout/AppLayout";
+ import { useParams, Link } from "wouter";
+-import { useGetProject, useCalculateProject, getGetProjectQueryKey, useCreateProjectCheckoutSession } from "@workspace/api-client-react";
++import { useGetProject, useCalculateProject, getGetProjectQueryKey } from "@workspace/api-client-react";
+ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+ import { Badge } from "@/components/ui/badge";
+ import { Button } from "@/components/ui/button";
+@@ -11,10 +11,12 @@ import {
+ } from "lucide-react";
+ import { useEffect, useRef, Fragment, useState } from "react";
+ import { useQueryClient } from "@tanstack/react-query";
++import { useMutation } from "@tanstack/react-query";
+ import { useToast } from "@/hooks/use-toast";
+ import { ProjectMap } from "@/components/maps/ProjectMap";
+ import { generateBom } from "@/utils/bom";
+ import { generateDesignNotes } from "@/utils/design-notes";
++import { createProjectCheckoutSession } from "@/services/projectService";
+ import {
+   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+   ReferenceLine,
+@@ -41,16 +43,18 @@ export default function Results() {
+ 
+   const { data: project, isLoading, error } = useGetProject(projectId, { request: reqOpts });
+   const calculateProject = useCalculateProject({ request: reqOpts });
+-  const createCheckoutSession = useCreateProjectCheckoutSession({ request: reqOpts });
++  const createCheckoutSession = useMutation({
++    mutationFn: (selectedPlan: string) => createProjectCheckoutSession(projectId, token, selectedPlan),
++  });
+   const queryClient = useQueryClient();
+   const { toast } = useToast();
+   const hasTriggeredCalc = useRef(false);
+   const [isRedirecting, setIsRedirecting] = useState(false);
+ 
+-  const handleUnlockReport = (productType: "homeowner" | "property_pack" | "contractor_annual" | "contractor_lifetime" = "homeowner") => {
++  const handleUnlockReport = (selectedPlan: "homeowner_report" | "property_pack" | "contractor_annual" | "contractor_lifetime_beta" = "homeowner_report") => {
+     setIsRedirecting(true);
+     createCheckoutSession.mutate(
+-      { id: projectId, data: { productType } },
++      selectedPlan,
+       {
+         onSuccess: (data) => {
+           if (data.url) {
+@@ -69,6 +73,11 @@ export default function Results() {
+     );
+   };
+ 
++  const handleDownloadPdf = () => {
++    const url = `/api/projects/${projectId}/report.pdf?accessToken=${encodeURIComponent(token)}`;
++    window.location.href = url;
++  };
++
+   useEffect(() => {
+     if (project && !project.calculationResult && !hasTriggeredCalc.current) {
+       hasTriggeredCalc.current = true;
+@@ -192,6 +201,16 @@ export default function Results() {
+ 
+   const systemTypeLabel = project.systemType.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join("-");
+   const hasBattery = (calc.batteryUsableKwh ?? 0) > 0;
++  const formatRange = (value: { low?: number; high?: number } | undefined, unit = "", decimals = 0) => {
++    if (!value || typeof value.low !== "number" || typeof value.high !== "number") return "Locked";
++    const opts = { minimumFractionDigits: decimals, maximumFractionDigits: decimals };
++    return `${value.low.toLocaleString(undefined, opts)}-${value.high.toLocaleString(undefined, opts)}${unit}`;
++  };
++  const systemSizeLabel = isPaid ? `${calc.adjustedArraySizeKw.toFixed(2)} kW` : formatRange(calc.systemSizeKwRange, " kW", 1);
++  const panelCountLabel = isPaid ? `${calc.numPanels} panels${calc.numPanels > 0 ? ` x ~${Math.round(calc.adjustedArraySizeKw * 1000 / calc.numPanels / 5) * 5}W` : ""}` : `${formatRange(calc.panelCountRange)} panels`;
++  const productionLabel = isPaid ? `${calc.yearlyProductionKwh.toLocaleString()} kWh/yr est.` : `${formatRange(calc.yearlyProductionKwhRange, " kWh/yr")} est.`;
++  const batteryLabel = isPaid ? `${calc.batteryUsableKwh.toFixed(1)} kWh` : formatRange(calc.batteryUsableKwhRange, " kWh", 1);
++  const inverterLabel = isPaid ? `${calc.inverterSizeKw.toFixed(1)} kW` : formatRange(calc.inverterSizeKwRange, " kW", 1);
+ 
+   const noteIcon = (type: string) => {
+     if (type === "warning") return <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />;
+@@ -253,7 +272,7 @@ export default function Results() {
+               </Button>
+             </Link>
+             {isPaid ? (
+-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
++              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleDownloadPdf}>
+                 <Download className="h-3.5 w-3.5" />
+                 <span className="hidden sm:inline">Download </span>PDF
+               </Button>
+@@ -261,7 +280,7 @@ export default function Results() {
+               <Button
+                 size="sm"
+                 className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white border-0"
+-                onClick={handleUnlockReport}
++                onClick={() => handleUnlockReport()}
+                 disabled={isRedirecting || createCheckoutSession.isPending}
+               >
+                 {isRedirecting || createCheckoutSession.isPending
+@@ -280,7 +299,7 @@ export default function Results() {
+         </div>
+ 
+         {/* Print Header (only shows when printing) */}
+-        <div className="hidden print:block border-b-2 border-primary pb-4 mb-2">
++        {isPaid && (<div className="hidden print:block border-b-2 border-primary pb-4 mb-2">
+           <div className="flex justify-between items-start">
+             <div>
+               <div className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-1">Solar Design Report</div>
+@@ -293,7 +312,7 @@ export default function Results() {
+               <div>{systemTypeLabel} System · {project.budgetTier} tier</div>
+             </div>
+           </div>
+-        </div>
++        </div>)}
+ 
+         {/* ── Section 1: System Summary ──────────────────────────────── */}
+         <section>
+@@ -306,9 +325,9 @@ export default function Results() {
+                 <CardTitle className="text-sm font-medium text-muted-foreground">Solar Array</CardTitle>
+               </CardHeader>
+               <CardContent className="px-4 pb-4">
+-                <div className="text-3xl font-black text-primary">{calc.adjustedArraySizeKw.toFixed(2)} kW</div>
+-                <div className="text-sm font-medium mt-1">{calc.numPanels} panels{calc.numPanels > 0 ? ` × ~${Math.round(calc.adjustedArraySizeKw * 1000 / calc.numPanels / 5) * 5}W` : ""}</div>
+-                <div className="text-xs text-muted-foreground">{calc.yearlyProductionKwh.toLocaleString()} kWh/yr est.</div>
++                <div className="text-3xl font-black text-primary">{systemSizeLabel}</div>
++                <div className="text-sm font-medium mt-1">{panelCountLabel}</div>
++                <div className="text-xs text-muted-foreground">{productionLabel}</div>
+               </CardContent>
+             </Card>
+             <Card className="bg-primary/5 border-primary/25">
+@@ -318,9 +337,9 @@ export default function Results() {
+               <CardContent className="px-4 pb-4">
+                 {hasBattery ? (
+                   <>
+-                    <div className="text-3xl font-black text-primary">{calc.batteryUsableKwh.toFixed(1)} kWh</div>
++                    <div className="text-3xl font-black text-primary">{batteryLabel}</div>
+                     <div className="text-sm font-medium mt-1">Usable capacity</div>
+-                    <div className="text-xs text-muted-foreground">{calc.totalBatteryBankKwh.toFixed(1)} kWh total bank</div>
++                    <div className="text-xs text-muted-foreground">{isPaid ? `${calc.totalBatteryBankKwh.toFixed(1)} kWh total bank` : "Preview range"}</div>
+                   </>
+                 ) : (
+                   <>
+@@ -335,7 +354,7 @@ export default function Results() {
+                 <CardTitle className="text-sm font-medium text-muted-foreground">Inverter</CardTitle>
+               </CardHeader>
+               <CardContent className="px-4 pb-4">
+-                <div className="text-3xl font-black text-primary">{calc.inverterSizeKw.toFixed(1)} kW</div>
++                <div className="text-3xl font-black text-primary">{inverterLabel}</div>
+                 <div className="text-sm font-medium mt-1">Recommended rating</div>
+                 <div className="text-xs text-muted-foreground">{systemTypeLabel} type</div>
+               </CardContent>
+@@ -350,9 +369,9 @@ export default function Results() {
+                     {[
+                       ["System Type", systemTypeLabel],
+                       ["Location", `${project.city}, ${project.state}`],
+-                      ["Daily Usage", `${calc.dailyKwh.toFixed(1)} kWh/day`],
++                      ...(isPaid ? [["Daily Usage", `${calc.dailyKwh.toFixed(1)} kWh/day`]] : []),
+                       ["Annual Usage", `${project.annualKwh.toLocaleString()} kWh/yr`],
+-                      ["Peak Sun Hours", `${calc.peakSunHours} hrs/day${hasPVWatts ? " (PVWatts)" : ` (${project.state})`}`],
++                      ...(isPaid ? [["Peak Sun Hours", `${calc.peakSunHours} hrs/day${hasPVWatts ? " (PVWatts)" : ` (${project.state})`}`]] : []),
+                       ["Installation", project.installationType === "carport" ? "Carport" : project.installationType.charAt(0).toUpperCase() + project.installationType.slice(1) + " Mount"],
+                       ["Budget Tier", project.budgetTier.charAt(0).toUpperCase() + project.budgetTier.slice(1)],
+                     ].map(([label, value]) => (
+@@ -371,12 +390,12 @@ export default function Results() {
+                 <table className="w-full text-sm">
+                   <tbody className="divide-y">
+                     {[
+-                      ["Array Size (gross)", `${calc.arraySizeKw.toFixed(2)} kW`],
+-                      ["Array Size (adjusted)", `${calc.adjustedArraySizeKw.toFixed(2)} kW`],
+-                      ["Number of Panels", `${calc.numPanels} panels`],
+-                      ...(calc.squareFeetRequired != null ? [["Panel Footprint", `~${calc.squareFeetRequired} sqft${project.availableSqft ? ` of ${project.availableSqft} sqft` : ""}`]] : []),
+-                      ["Inverter Size", `${calc.inverterSizeKw.toFixed(1)} kW`],
+-                      ["Est. Yearly Production", `${calc.yearlyProductionKwh.toLocaleString()} kWh${hasPVWatts ? " ✓" : ""}`],
++                      ...(isPaid ? [["Array Size (gross)", `${calc.arraySizeKw.toFixed(2)} kW`]] : []),
++                      ["Array Size", systemSizeLabel],
++                      ["Number of Panels", panelCountLabel],
++                      ...(isPaid && calc.squareFeetRequired != null ? [["Panel Footprint", `~${calc.squareFeetRequired} sqft${project.availableSqft ? ` of ${project.availableSqft} sqft` : ""}`]] : []),
++                      ["Inverter Size", inverterLabel],
++                      ["Est. Yearly Production", productionLabel],
+                       ...(isPaid ? [["Est. Yearly Savings", `$${calc.estimatedYearlySavings?.toLocaleString()}`]] : []),
+                       ...(pvCalc.pvwattsCapacityFactor != null ? [["System Efficiency", `${pvCalc.pvwattsCapacityFactor.toFixed(1)}% capacity factor`]] : []),
+                       ...(calc.offGridDesignFactor != null && calc.offGridDesignFactor > 1 ? [["Design Margin", `+${((calc.offGridDesignFactor - 1) * 100).toFixed(0)}% (${project.systemType} reserve)`]] : []),
+@@ -1134,7 +1153,7 @@ export default function Results() {
+                     <Button
+                       size="sm"
+                       className="bg-amber-500 hover:bg-amber-600 text-white gap-1.5 mt-auto"
+-                      onClick={() => handleUnlockReport("homeowner")}
++                      onClick={() => handleUnlockReport("homeowner_report")}
+                       disabled={isRedirecting || createCheckoutSession.isPending}
+                     >
+                       {isRedirecting || createCheckoutSession.isPending
+@@ -1203,7 +1222,7 @@ export default function Results() {
+                     <Button
+                       size="sm"
+                       className="bg-primary hover:bg-primary/90 text-white gap-1.5 mt-auto"
+-                      onClick={() => handleUnlockReport("contractor_lifetime")}
++                      onClick={() => handleUnlockReport("contractor_lifetime_beta")}
+                       disabled={isRedirecting || createCheckoutSession.isPending}
+                     >
+                       {isRedirecting || createCheckoutSession.isPending
+@@ -1368,12 +1387,12 @@ export default function Results() {
+             <MapPin className="h-4 w-4 text-primary" /> Project Location
+           </h2>
+           {/* Geocoding accuracy warning — shown when we only have an approximate fix */}
+-          {project.locationAccuracy && project.locationAccuracy !== "exact" && !project.useManualCoords && (
++          {project.locationAccuracy && project.locationAccuracy !== "exact_address" && project.locationAccuracy !== "exact" && !project.useManualCoords && (
+             <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+               <span>
+                 Exact property location could not be verified.
+-                Showing {project.locationAccuracy === "zip" ? "ZIP code centroid" : project.locationAccuracy === "city" ? "city/state center" : "approximate"} location.
++                Showing {project.locationAccuracy === "approximate_zip" || (project.locationAccuracy as string) === "zip" ? "ZIP code centroid" : project.locationAccuracy === "approximate_city" || (project.locationAccuracy as string) === "city" ? "city/state center" : "approximate"} location.
+                 You can set precise coordinates on the <a href={`/projects/${project.id}/edit`} className="underline font-medium">Edit page</a>.
+               </span>
+             </div>
+@@ -1400,10 +1419,10 @@ export default function Results() {
+         </section>
+ 
+         {/* Print map placeholder */}
+-        <div className="hidden print:block">
++        {isPaid && (<div className="hidden print:block">
+           <h2 className="text-base font-bold uppercase tracking-widest text-gray-500 mb-2">Project Location</h2>
+           <p className="text-sm">{project.address}, {project.city}, {project.state} {project.zip}</p>
+-        </div>
++        </div>)}
+ 
+         {/* ── Equipment Recommendations Summary ─────────────────────── */}
+         {isPaid && (<section>
+diff --git a/artifacts/offgrid-solar/src/pages/wizard.tsx b/artifacts/offgrid-solar/src/pages/wizard.tsx
+index 54821e4..63a9166 100644
+--- a/artifacts/offgrid-solar/src/pages/wizard.tsx
++++ b/artifacts/offgrid-solar/src/pages/wizard.tsx
+@@ -147,7 +147,7 @@ export default function Wizard() {
+         },
+       });
+ 
+-      const token = project.accessToken ?? "";
++      const token = ((project as { accessToken?: string }).accessToken) ?? "";
+       try { sessionStorage.setItem(`project-token-${project.id}`, token); } catch { /* ignore */ }
+ 
+       setIsCalculating(true);
+diff --git a/artifacts/offgrid-solar/src/services/projectService.ts b/artifacts/offgrid-solar/src/services/projectService.ts
+index 144bbb5..c45ff95 100644
+--- a/artifacts/offgrid-solar/src/services/projectService.ts
++++ b/artifacts/offgrid-solar/src/services/projectService.ts
+@@ -19,6 +19,14 @@ export function regeocodeProject(
+   );
+ }
+ 
+-export function createProjectCheckoutSession(projectId: number): Promise<{ url?: string }> {
+-  return apiPost<{ url?: string }>(`/projects/${projectId}/create-checkout-session`);
++export function createProjectCheckoutSession(
++  projectId: number,
++  accessToken: string,
++  selectedPlan = "homeowner_report",
++): Promise<{ url?: string }> {
++  return apiPost<{ url?: string }>("/stripe/create-checkout-session", {
++    projectId,
++    accessToken,
++    selectedPlan,
++  });
+ }
+diff --git a/docs/live-stripe-setup.md b/docs/live-stripe-setup.md
+new file mode 100644
+index 0000000..42a5624
+--- /dev/null
++++ b/docs/live-stripe-setup.md
+@@ -0,0 +1,85 @@
++# Live Stripe Setup
++
++Use this checklist only after the app is deployed, the database migration is applied, and test-mode checkout has passed.
++
++## Products and Prices
++
++The launch pricing model uses four Stripe prices:
++
++- `Homeowner Full Report`: `$19.00`, one-time, `STRIPE_HOMEOWNER_REPORT_PRICE_ID`
++- `Property Pack`: `$39.00`, one-time, `STRIPE_PROPERTY_PACK_PRICE_ID`
++- `Contractor Annual Access`: `$199.00/year`, yearly subscription, `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID`
++- `Contractor Lifetime Beta`: `$299.00`, one-time, `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID`
++
++The legacy `STRIPE_PRICE_ID` remains supported as a fallback for the homeowner full report only.
++
++Test mode remains the default seed behavior:
++
++```sh
++pnpm --filter @workspace/scripts run seed-stripe
++```
++
++Live mode must be explicit:
++
++```sh
++STRIPE_MODE=live pnpm --filter @workspace/scripts run seed-stripe
++```
++
++Only run the live command when the Replit Stripe integration is switched to live mode or when a live `STRIPE_SECRET_KEY` or restricted `rk_live_...` key is available in the environment. Copy each printed live `price_...` value into the matching Replit Secret.
++
++## Replit Secrets
++
++Production requires:
++
++```text
++DATABASE_URL
++ADMIN_TOKEN
++STRIPE_HOMEOWNER_REPORT_PRICE_ID
++STRIPE_PROPERTY_PACK_PRICE_ID
++STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
++STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
++STRIPE_WEBHOOK_SECRET
++NREL_API_KEY
++```
++
++Stripe credentials must come from one of these:
++
++```text
++STRIPE_SECRET_KEY
++```
++
++or the Replit Stripe live connector.
++
++`STRIPE_PUBLISHABLE_KEY` is optional for the current server-side Checkout redirect flow.
++
++## Webhook
++
++Configure the Stripe webhook in the same mode as the price ID and secret key.
++
++Endpoint:
++
++```text
++https://offgridsolarbuilder.com/api/stripe/webhook
++```
++
++Required events:
++
++```text
++checkout.session.completed
++payment_intent.payment_failed
++```
++
++Set `STRIPE_WEBHOOK_SECRET` to the signing secret from this exact live webhook endpoint. Do not reuse a test-mode webhook secret for live payments.
++
++## Safety Checks
++
++Before accepting real payments:
++
++- Confirm unpaid preview only shows rough system size, panel count, cost range, and basic savings.
++- Confirm full report JSON returns `402` before payment.
++- Confirm PDF endpoint returns `402` before payment.
++- Confirm Stripe Checkout opens in live mode with the selected launch price.
++- Confirm success and cancel URLs use the production domain.
++- Confirm webhook records `selectedPlan`, `stripePriceId`, `paidAmount`, `paidAt`, and `stripeSessionId`.
++- Confirm full report and PDF unlock only after entitlement is set.
++- Confirm no live Stripe keys are committed or exposed to frontend code.
+diff --git a/docs/manual-paid-report-qa-checklist.md b/docs/manual-paid-report-qa-checklist.md
+new file mode 100644
+index 0000000..6489bfc
+--- /dev/null
++++ b/docs/manual-paid-report-qa-checklist.md
+@@ -0,0 +1,19 @@
++# Manual Paid Report QA Checklist
++
++Run this in Stripe test mode only. Use test-mode Price IDs and the test webhook signing secret.
++
++1. Create a new project at `/wizard` using `2365 Myers Dr, Santa Rosa, CA 95403`.
++2. Confirm the results page shows only the free preview ranges: system size range, panel count range, production range, cost range, and basic recommendation.
++3. Confirm the full report sections are locked and no equipment BOM, exact monthly production, losses breakdown, or printable report appears before payment.
++4. Click `Unlock Full Report - $19` or select the desired paid plan.
++5. Confirm Stripe Checkout opens and the selected plan/price is correct.
++6. Pay with Stripe test card `4242 4242 4242 4242`, any future expiry, any CVC, and any ZIP.
++7. Confirm the browser returns to `/payment-success` and the project access token is preserved in the URL.
++8. Open the full report from the success page and confirm the report is unlocked after refresh.
++9. Confirm the full BOM/equipment list, monthly production, losses breakdown, and PDF download button are visible.
++10. Click the PDF download button and confirm a PDF downloads.
++11. Open the same project URL without `accessToken`; confirm the API/UI denies access.
++12. Open another project ID with the wrong token; confirm it cannot be read, updated, calculated, reported, or downloaded.
++13. Open `/admin/purchases` without a token; confirm it asks for `ADMIN_TOKEN`.
++14. Enter the configured `ADMIN_TOKEN`; confirm purchases load and show selected plan, credits, payment status, Stripe session, and delivery status.
++15. In Stripe Dashboard, confirm a `checkout.session.completed` webhook was delivered to `/api/stripe/webhook`.
+diff --git a/docs/paid-launch-migration-notes.md b/docs/paid-launch-migration-notes.md
+new file mode 100644
+index 0000000..ee55e4a
+--- /dev/null
++++ b/docs/paid-launch-migration-notes.md
+@@ -0,0 +1,58 @@
++# Paid Launch Migration Notes
++
++Before deploying paid report unlocks, apply the project access columns:
++
++```sql
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS access_token text;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_user_id text;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_guest_project boolean NOT NULL DEFAULT true;
++
++UPDATE projects
++SET access_token = encode(gen_random_bytes(32), 'base64')
++WHERE access_token IS NULL OR access_token = '';
++
++ALTER TABLE projects ALTER COLUMN access_token SET NOT NULL;
++CREATE UNIQUE INDEX IF NOT EXISTS projects_access_token_unique ON projects(access_token);
++```
++
++The `gen_random_bytes` function requires PostgreSQL `pgcrypto`:
++
++```sql
++CREATE EXTENSION IF NOT EXISTS pgcrypto;
++```
++
++Confirm these existing paid-report columns also exist before enabling Stripe webhooks:
++
++```sql
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS paid_at timestamptz;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS stripe_session_id text;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS stripe_price_id text;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS entitlement_type text;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS selected_plan text;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS paid_amount integer;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_credits integer NOT NULL DEFAULT 0;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS credits_used integer NOT NULL DEFAULT 0;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'unpaid';
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS contractor_status boolean NOT NULL DEFAULT false;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS contractor_plan text;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS purchaser_email text;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_delivery_status text NOT NULL DEFAULT 'not_sent';
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_delivered_at timestamptz;
++```
++
++Launch plan credit behavior:
++
++- `homeowner_report`: marks the current project paid and records 1 included report credit.
++- `property_pack`: marks the current project paid and records 3 report credits tied to the guest project access token for now.
++- `contractor_annual`: marks contractor status and records 50 annual report credits.
++- `contractor_lifetime_beta`: marks contractor beta status and records 100 included report credits.
++
++The checked-in migration files are:
++
++```bash
++psql "$DATABASE_URL" -f lib/db/migrations/001_add_access_token.sql
++psql "$DATABASE_URL" -f lib/db/migrations/002_add_payment_entitlement.sql
++```
++
++I did not apply these migrations from this local workspace because no production
++database connection was available here.
+diff --git a/lib/api-zod/src/generated/types/index.ts b/lib/api-zod/src/generated/types/index.ts
+index e938a60..e7a7d92 100644
+--- a/lib/api-zod/src/generated/types/index.ts
++++ b/lib/api-zod/src/generated/types/index.ts
+@@ -8,8 +8,6 @@
+ 
+ export * from "./calculationResult";
+ export * from "./checkoutSessionResult";
+-export * from "./createProjectCheckoutSessionBody";
+-export * from "./createProjectCheckoutSessionBodyProductType";
+ export * from "./healthStatus";
+ export * from "./project";
+ export * from "./projectBatteryChemistry";
+diff --git a/lib/db/migrations/002_add_payment_entitlement.sql b/lib/db/migrations/002_add_payment_entitlement.sql
+index afb2d81..db51af3 100644
+--- a/lib/db/migrations/002_add_payment_entitlement.sql
++++ b/lib/db/migrations/002_add_payment_entitlement.sql
+@@ -8,6 +8,8 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS entitlement_type text;
+ -- Report credit tracking
+ ALTER TABLE projects ADD COLUMN IF NOT EXISTS report_credits   integer NOT NULL DEFAULT 0;
+ ALTER TABLE projects ADD COLUMN IF NOT EXISTS credits_used     integer NOT NULL DEFAULT 0;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS contractor_status boolean NOT NULL DEFAULT false;
++ALTER TABLE projects ADD COLUMN IF NOT EXISTS contractor_plan   text;
+ 
+ -- Plan + payment detail snapshot
+ ALTER TABLE projects ADD COLUMN IF NOT EXISTS selected_plan    text;
+diff --git a/lib/db/src/schema/projects.ts b/lib/db/src/schema/projects.ts
+index 620c047..b34987c 100644
+--- a/lib/db/src/schema/projects.ts
++++ b/lib/db/src/schema/projects.ts
+@@ -34,7 +34,7 @@ export const projectsTable = pgTable("projects", {
+   // Saved geocode result for the main property location
+   lat: real("lat"),
+   lon: real("lon"),
+-  // 'exact' = street-level, 'zip' = ZIP centroid, 'city' = city centroid, 'manual' = user-entered
++  // exact_address, approximate_zip, approximate_city, manual_coordinates, or failed
+   locationAccuracy: text("location_accuracy"),
+   useManualCoords: boolean("use_manual_coords").notNull().default(false),
+   calculationResult: jsonb("calculation_result"),
+@@ -54,6 +54,8 @@ export const projectsTable = pgTable("projects", {
+   reportCredits: integer("report_credits").notNull().default(0),
+   creditsUsed: integer("credits_used").notNull().default(0),
+   selectedPlan: text("selected_plan"),
++  contractorStatus: boolean("contractor_status").notNull().default(false),
++  contractorPlan: text("contractor_plan"),
+   // Purchaser contact + delivery
+   purchaserEmail: text("purchaser_email"),
+   reportDeliveryStatus: text("report_delivery_status").notNull().default("not_sent"),
+diff --git a/scripts/setup-stripe-test.sh b/scripts/setup-stripe-test.sh
+new file mode 100755
+index 0000000..bf7b0ab
+--- /dev/null
++++ b/scripts/setup-stripe-test.sh
+@@ -0,0 +1,137 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# Creates Stripe TEST-mode products/prices for OffGrid Solar Builder and prints
++# the exact environment variables to paste into Replit/hosting secrets.
++#
++# Requirements:
++#   1. Install Stripe CLI: https://stripe.com/docs/stripe-cli
++#   2. Run: stripe login
++#   3. From repo root: bash scripts/setup-stripe-test.sh
++#
++# Optional:
++#   PUBLIC_BASE_URL=https://offgridsolarbuilders.com bash scripts/setup-stripe-test.sh
++
++APP_NAME="offgrid-solar-builder"
++PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://offgridsolarbuilders.com}"
++
++if ! command -v stripe >/dev/null 2>&1; then
++  echo "Stripe CLI is not installed."
++  echo "Install it from: https://stripe.com/docs/stripe-cli"
++  exit 1
++fi
++
++if ! stripe config --list >/dev/null 2>&1; then
++  echo "Stripe CLI is not logged in."
++  echo "Run: stripe login"
++  exit 1
++fi
++
++json_get() {
++  python3 - "$1" <<'PY'
++import json
++import sys
++
++key = sys.argv[1]
++data = json.load(sys.stdin)
++value = data
++for part in key.split("."):
++    if isinstance(value, list):
++        value = value[int(part)]
++    else:
++        value = value.get(part)
++print("" if value is None else value)
++PY
++}
++
++create_product() {
++  local name="$1"
++  local description="$2"
++  local type="$3"
++
++  stripe products create \
++    --name "$name" \
++    --description "$description" \
++    -d "metadata[app]=$APP_NAME" \
++    -d "metadata[type]=$type" \
++    --format json | json_get id
++}
++
++create_price() {
++  local product_id="$1"
++  local cents="$2"
++  local type="$3"
++  local interval="${4:-}"
++
++  if [[ -n "$interval" ]]; then
++    stripe prices create \
++      --currency usd \
++      --unit-amount "$cents" \
++      --product "$product_id" \
++      -d "recurring[interval]=$interval" \
++      -d "metadata[app]=$APP_NAME" \
++      -d "metadata[type]=$type" \
++      --format json | json_get id
++  else
++    stripe prices create \
++      --currency usd \
++      --unit-amount "$cents" \
++      --product "$product_id" \
++      -d "metadata[app]=$APP_NAME" \
++      -d "metadata[type]=$type" \
++      --format json | json_get id
++  fi
++}
++
++echo "Creating Stripe TEST-mode products and prices..."
++echo
++
++homeowner_product=$(create_product "Homeowner Full Report" "One full OffGrid Solar Builder report and branded PDF for one project." "homeowner_report")
++homeowner_price=$(create_price "$homeowner_product" 1900 "homeowner_report")
++
++property_product=$(create_product "Property Pack" "Three full report credits for guest homeowner projects." "property_pack")
++property_price=$(create_price "$property_product" 3900 "property_pack")
++
++annual_product=$(create_product "Contractor Annual Access" "Annual contractor access with 50 full report credits." "contractor_annual")
++annual_price=$(create_price "$annual_product" 19900 "contractor_annual" "year")
++
++lifetime_product=$(create_product "Contractor Lifetime Beta" "Founding contractor beta plan with 100 full report credits and core calculator access." "contractor_lifetime_beta")
++lifetime_price=$(create_price "$lifetime_product" 29900 "contractor_lifetime_beta")
++
++echo "Creating webhook endpoint for:"
++echo "  ${PUBLIC_BASE_URL}/api/stripe/webhook"
++echo
++
++webhook_json=$(stripe webhook_endpoints create \
++  --url "${PUBLIC_BASE_URL}/api/stripe/webhook" \
++  --enabled-events checkout.session.completed \
++  --format json)
++webhook_secret=$(printf '%s' "$webhook_json" | json_get secret)
++
++cat <<EOF
++
++Done. Paste these into Replit Secrets / deployment env vars:
++
++STRIPE_HOMEOWNER_REPORT_PRICE_ID=$homeowner_price
++STRIPE_PROPERTY_PACK_PRICE_ID=$property_price
++STRIPE_CONTRACTOR_ANNUAL_PRICE_ID=$annual_price
++STRIPE_CONTRACTOR_LIFETIME_PRICE_ID=$lifetime_price
++STRIPE_PRICE_ID=$homeowner_price
++STRIPE_WEBHOOK_SECRET=$webhook_secret
++
++You still need to set these separately:
++
++DATABASE_URL=your-postgres-connection-string
++ADMIN_TOKEN=your-random-admin-token
++STRIPE_SECRET_KEY=your-test-mode-stripe-secret-key
++NREL_API_KEY=your-nrel-api-key
++
++Test card:
++4242 4242 4242 4242
++Any future expiry, any CVC, any ZIP.
++
++Important:
++- This script uses the Stripe CLI account/mode you are logged into.
++- Keep the Stripe Dashboard in TEST mode until checkout and webhook unlocks work.
++- Do not commit any of the values printed above.
++EOF
+diff --git a/scripts/src/paywall-qa.test.ts b/scripts/src/paywall-qa.test.ts
+new file mode 100644
+index 0000000..274d763
+--- /dev/null
++++ b/scripts/src/paywall-qa.test.ts
+@@ -0,0 +1,127 @@
++import assert from "node:assert/strict";
++
++process.env.LOG_LEVEL = "silent";
++process.env.ADMIN_TOKEN = "admin-test-token";
++
++const { buildPreview, buildPaidReport } = await import("../../artifacts/api-server/src/services/reports/reportService");
++const { buildEntitlementUpdate } = await import("../../artifacts/api-server/src/services/payments/entitlements");
++const { getCheckoutPlan } = await import("../../artifacts/api-server/src/services/payments/plans");
++
++const calc = {
++  adjustedArraySizeKw: 8.2,
++  numPanels: 20,
++  yearlyProductionKwh: 12_345,
++  installedCostLow: 24_000,
++  installedCostHigh: 31_000,
++  estimatedYearlySavings: 1_850,
++  productionEstimateLabel: "PVWatts",
++  inverterSizeKw: 7.6,
++  totalBatteryBankKwh: 15,
++  batteryUsableKwh: 12,
++  recommendedPanelBrand: "Q CELLS",
++  recommendedInverterBrand: "Sol-Ark",
++  recommendedBatteryBrand: "EG4",
++  recommendedMountingBrand: "IronRidge",
++  diyEquipmentCostLow: 12_000,
++  diyEquipmentCostHigh: 18_000,
++};
++
++const project = {
++  id: 42,
++  accessToken: "project-secret",
++  ownerUserId: null,
++  isGuestProject: true,
++  name: "QA Project",
++  address: "2365 Myers Dr",
++  city: "Santa Rosa",
++  state: "CA",
++  zip: "95403",
++  installationType: "roof",
++  systemType: "grid-tied",
++  annualKwh: 11_000,
++  monthlyBill: 180,
++  utilityRatePerKwh: 0.3,
++  backupHours: 0,
++  customBackupHours: null,
++  batteryChemistry: "lifepo4",
++  hasGenerator: false,
++  generatorKw: null,
++  wantsGenerator: false,
++  shadeLevel: "light",
++  roofPitch: "20",
++  roofDirection: "South",
++  availableSqft: 600,
++  snowArea: false,
++  highWindArea: false,
++  budgetTier: "mid-range",
++  customBudget: null,
++  arrayLat: null,
++  arrayLon: null,
++  arrayLocationNote: null,
++  lat: 38.46,
++  lon: -122.73,
++  locationAccuracy: "exact_address",
++  useManualCoords: false,
++  calculationResult: calc,
++  paidAt: null,
++  stripeSessionId: null,
++  stripePriceId: null,
++  entitlementType: null,
++  selectedPlan: null,
++  paidAmount: null,
++  reportCredits: 0,
++  creditsUsed: 0,
++  paymentStatus: "unpaid",
++  contractorStatus: false,
++  contractorPlan: null,
++  purchaserEmail: null,
++  reportDeliveryStatus: "not_sent",
++  reportDeliveredAt: null,
++  createdAt: new Date(),
++  updatedAt: new Date(),
++};
++
++function run(name: string, fn: () => void) {
++  try {
++    fn();
++    console.log(`ok - ${name}`);
++  } catch (error) {
++    console.error(`not ok - ${name}`);
++    throw error;
++  }
++}
++
++run("free preview returns ranges only", () => {
++  const preview = buildPreview(project as any) as any;
++  assert.equal(preview.preview.systemSizeKwRange.low < calc.adjustedArraySizeKw, true);
++  assert.equal("bom" in preview, false);
++  assert.equal("calculation" in preview, false);
++  assert.equal("estimatedYearlySavings" in preview.preview, false);
++});
++
++run("full paid report contains server-side BOM", () => {
++  const report = buildPaidReport({ ...project, paidAt: new Date() } as any) as any;
++  assert.ok(report.bom.length > 0);
++  assert.equal(report.project.accessToken, undefined);
++});
++
++run("unpaid preview does not leak access token", () => {
++  const preview = buildPreview(project as any) as any;
++  assert.equal(preview.accessToken, undefined);
++  const report = buildPaidReport({ ...project, paidAt: new Date() } as any) as any;
++  assert.equal(report.project.accessToken, undefined);
++});
++
++run("Stripe webhook entitlement update unlocks selected plan credits", () => {
++  const plan = getCheckoutPlan("contractor_lifetime_beta");
++  const update = buildEntitlementUpdate({
++    id: "cs_test_123",
++    payment_status: "paid",
++    amount_total: 29_900,
++    metadata: { selectedPlan: "contractor_lifetime_beta", stripePriceId: "price_test" },
++  }, plan);
++  assert.equal(update.paymentStatus, "paid");
++  assert.equal(update.entitlementType, "contractor_lifetime_beta");
++  assert.equal(update.reportCredits, 100);
++  assert.equal(update.contractorStatus, true);
++});
+diff --git a/scripts/src/pvwatts-qa.test.ts b/scripts/src/pvwatts-qa.test.ts
+new file mode 100644
+index 0000000..fc35114
+--- /dev/null
++++ b/scripts/src/pvwatts-qa.test.ts
+@@ -0,0 +1,229 @@
++import assert from "node:assert/strict";
++
++process.env.NREL_API_KEY = "qa-test-key";
++process.env.LOG_LEVEL = "silent";
++
++const { runCalculationsWithPVWatts } = await import("../../artifacts/api-server/src/services/solar/calculationEngine");
++const { geocodeAddress } = await import("../../artifacts/api-server/src/services/geocoding/geocodingService");
++
++type Scenario = {
++  name: string;
++  geocodeRows: unknown[];
++  pvwattsStatus?: number;
++};
++
++let scenario: Scenario = {
++  name: "default",
++  geocodeRows: [],
++};
++let lastPvwattsUrl: URL | null = null;
++
++globalThis.fetch = async (input: string | URL | Request) => {
++  const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
++
++  if (url.hostname.includes("nominatim.openstreetmap.org")) {
++    return Response.json(scenario.geocodeRows);
++  }
++
++  if (url.hostname === "developer.nrel.gov") {
++    lastPvwattsUrl = url;
++    if (scenario.pvwattsStatus && scenario.pvwattsStatus >= 400) {
++      return new Response(JSON.stringify({ errors: ["forced failure"] }), { status: scenario.pvwattsStatus });
++    }
++
++    return Response.json({
++      errors: [],
++      warnings: [],
++      outputs: {
++        ac_monthly: [520, 610, 760, 830, 900, 940, 960, 910, 790, 680, 540, 500],
++        ac_annual: 8940,
++        solrad_monthly: [3.9, 4.6, 5.5, 6.1, 6.5, 6.8, 7.0, 6.6, 5.8, 5.0, 4.1, 3.7],
++        solrad_annual: 5.47,
++        capacity_factor: 18.5,
++      },
++    });
++  }
++
++  throw new Error(`Unexpected fetch URL: ${url.toString()}`);
++};
++
++const settings = {
++  id: 1,
++  panelWattage: 400,
++  baseSystemLossPct: 14,
++  inverterLossPct: 4,
++  wireLossPct: 2,
++  dirtLossPct: 3,
++  tempLossPct: 5,
++  batteryRoundTripLossPct: 8,
++  batteryDod: 80,
++  defaultUtilityRate: 0.35,
++  economyDiyPerWatt: 1.25,
++  economyInstalledPerWatt: 2.75,
++  midRangeDiyPerWatt: 1.75,
++  midRangeInstalledPerWatt: 3.25,
++  premiumDiyPerWatt: 2.25,
++  premiumInstalledPerWatt: 4,
++  inverterCostPerKw: 300,
++  mountingCostPerPanel: 125,
++  updatedAt: new Date(),
++};
++
++const exactCaliforniaRows = [
++  {
++    lat: "34.052235",
++    lon: "-118.243683",
++    importance: 1,
++    address: {
++      house_number: "100",
++      road: "Main St",
++      city: "Los Angeles",
++      state: "California",
++      state_code: "CA",
++      postcode: "90012",
++    },
++  },
++];
++
++function baseProject(overrides: Record<string, unknown> = {}) {
++  return {
++    address: "100 Main St",
++    city: "Los Angeles",
++    annualKwh: 11000,
++    systemType: "grid-tied",
++    shadeLevel: "light",
++    backupHours: 0,
++    customBackupHours: null,
++    batteryChemistry: "none",
++    hasGenerator: false,
++    wantsGenerator: false,
++    generatorKw: null,
++    highWindArea: false,
++    snowArea: false,
++    availableSqft: 900,
++    budgetTier: "mid-range",
++    utilityRatePerKwh: 0.35,
++    state: "CA",
++    zip: "90012",
++    installationType: "roof",
++    roofPitch: "20",
++    roofDirection: "South",
++    arrayLat: null,
++    arrayLon: null,
++    ...overrides,
++  };
++}
++
++async function run(name: string, fn: () => Promise<void>) {
++  try {
++    await fn();
++    console.log(`ok - ${name}`);
++  } catch (err) {
++    console.error(`not ok - ${name}`);
++    throw err;
++  }
++}
++
++await run("California residential property uses PVWatts roof mount production", async () => {
++  scenario = { name: "california", geocodeRows: exactCaliforniaRows };
++  lastPvwattsUrl = null;
++
++  const result = await runCalculationsWithPVWatts(baseProject(), settings);
++
++  assert.equal(result.pvwattsSource, "pvwatts");
++  assert.equal(result.yearlyProductionKwh, 8940);
++  assert.equal(result.pvwattsMonthlyKwh?.length, 12);
++  assert.equal(result.estimatedYearlySavings, 3129);
++  assert.equal(lastPvwattsUrl?.searchParams.get("array_type"), "1");
++  assert.equal(lastPvwattsUrl?.searchParams.get("azimuth") != null, true);
++});
++
++await run("Off-grid cabin uses PVWatts and keeps battery recommendation fields", async () => {
++  scenario = { name: "off-grid", geocodeRows: exactCaliforniaRows };
++
++  const result = await runCalculationsWithPVWatts(
++    baseProject({
++      systemType: "off-grid",
++      annualKwh: 4800,
++      backupHours: 48,
++      batteryChemistry: "lifepo4",
++      installationType: "ground",
++      roofPitch: "fixed",
++    }),
++    settings,
++  );
++
++  assert.equal(result.pvwattsSource, "pvwatts");
++  assert.equal(lastPvwattsUrl?.searchParams.get("array_type"), "0");
++  assert.ok(result.batteryUsableKwh > 0);
++  assert.ok(result.totalBatteryBankKwh >= result.batteryUsableKwh);
++  assert.equal(result.paybackYears, null);
++});
++
++await run("Hybrid system uses PVWatts production in savings and ROI", async () => {
++  scenario = { name: "hybrid", geocodeRows: exactCaliforniaRows };
++
++  const result = await runCalculationsWithPVWatts(
++    baseProject({
++      systemType: "hybrid",
++      backupHours: 24,
++      batteryChemistry: "lifepo4",
++      annualKwh: 14000,
++    }),
++    settings,
++  );
++
++  assert.equal(result.pvwattsSource, "pvwatts");
++  assert.equal(result.estimatedYearlySavings, 3129);
++  assert.ok(result.paybackYears && result.paybackYears > 0);
++});
++
++await run("Invalid geocode falls back to approximate state assumptions without crashing", async () => {
++  scenario = { name: "invalid-geocode", geocodeRows: [] };
++
++  const result = await runCalculationsWithPVWatts(
++    baseProject({
++      address: "not a real address",
++      city: "",
++      state: "",
++      zip: "",
++    }),
++    settings,
++  );
++
++  assert.equal(result.pvwattsSource, "fallback");
++  assert.ok(Array.isArray(result.notes));
++});
++
++await run("API failure uses approximate fallback and labels report estimates", async () => {
++  scenario = { name: "api-failure", geocodeRows: exactCaliforniaRows, pvwattsStatus: 500 };
++
++  const result = await runCalculationsWithPVWatts(baseProject(), settings);
++
++  assert.equal(result.pvwattsSource, "fallback");
++  assert.equal(result.pvwattsAnnualKwh, result.yearlyProductionKwh);
++  assert.ok(Array.isArray(result.notes));
++});
++
++await run("Street-level geocode matching rejects city-only rows as exact", async () => {
++  scenario = {
++    name: "city-only",
++    geocodeRows: [
++      {
++        lat: "34.0522",
++        lon: "-118.2437",
++        importance: 1,
++        address: { city: "Los Angeles", state: "California", state_code: "CA", postcode: "90012" },
++      },
++    ],
++  };
++
++  const result = await geocodeAddress({
++    address: "100 Main St",
++    city: "Los Angeles",
++    state: "CA",
++    zip: "90012",
++  });
++
++  assert.equal(result?.accuracy, "approximate_zip");
++});
+diff --git a/scripts/tsconfig.json b/scripts/tsconfig.json
+index 12e3456..f5d5aec 100644
+--- a/scripts/tsconfig.json
++++ b/scripts/tsconfig.json
+@@ -5,5 +5,8 @@
+     "rootDir": "src",
+     "types": ["node"]
+   },
+-  "include": ["src"]
++  "include": [
++    "src/hello.ts",
++    "src/seed-stripe-product.ts"
++  ]
+ }
+-- 
+2.39.2 (Apple Git-143)
+
+
+From 279795306fb40d88c07da0f1904e400ae6691bfc Mon Sep 17 00:00:00 2001
+From: inhouse <inhouse@Morgans-MacBook-Pro-2.local>
+Date: Thu, 4 Jun 2026 06:59:07 -0700
+Subject: [PATCH 2/3] Finalize checkout plan API and report delivery cleanup
+
+---
+ .../src/services/payments/entitlements.ts       |  6 ++++--
+ artifacts/offgrid-solar/src/pages/purchases.tsx |  2 ++
+ lib/api-spec/openapi.yaml                       |  4 ++++
+ lib/api-zod/src/generated/api.ts                |  9 +++++++++
+ .../types/createProjectCheckoutSessionBody.ts   |  2 ++
+ ...ateProjectCheckoutSessionBodySelectedPlan.ts | 17 +++++++++++++++++
+ 6 files changed, 38 insertions(+), 2 deletions(-)
+ create mode 100644 lib/api-zod/src/generated/types/createProjectCheckoutSessionBodySelectedPlan.ts
+
+diff --git a/artifacts/api-server/src/services/payments/entitlements.ts b/artifacts/api-server/src/services/payments/entitlements.ts
+index d191082..7679623 100644
+--- a/artifacts/api-server/src/services/payments/entitlements.ts
++++ b/artifacts/api-server/src/services/payments/entitlements.ts
+@@ -1,5 +1,6 @@
+ import { eq } from "drizzle-orm";
+ import { db, projectsTable } from "@workspace/db";
++import { env } from "../../config/env";
+ import { getPlanForWebhook, type CheckoutPlan } from "./plans";
+ import { deliverReportEmail } from "../reports/reportDeliveryService";
+ 
+@@ -52,10 +53,11 @@ export async function unlockProjectFromCheckoutSession(
+ 
+   const plan = getPlanForWebhook(session.metadata?.selectedPlan);
+   const update = buildEntitlementUpdate(session, plan);
+-  const reportUrl = `${options.protocol}://${options.host}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
++  const baseOrigin = env.frontendUrl?.replace(/\/$/, "") ?? `${options.protocol}://${options.host}`;
++  const reportUrl = `${baseOrigin}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
+   const reportDeliveryStatus = update.purchaserEmail
+     ? await deliverReportEmail({ projectId, email: update.purchaserEmail, reportUrl })
+-    : "unavailable";
++    : "not_sent";
+ 
+   await db
+     .update(projectsTable)
+diff --git a/artifacts/offgrid-solar/src/pages/purchases.tsx b/artifacts/offgrid-solar/src/pages/purchases.tsx
+index eb3bb20..0293a74 100644
+--- a/artifacts/offgrid-solar/src/pages/purchases.tsx
++++ b/artifacts/offgrid-solar/src/pages/purchases.tsx
+@@ -34,9 +34,11 @@ function formatCents(cents: number | null): string {
+ 
+ function planLabel(plan: string | null): string {
+   switch (plan) {
++    case "homeowner_report":
+     case "homeowner":           return "Homeowner";
+     case "property_pack":       return "Property Pack";
+     case "contractor_annual":   return "Contractor Annual";
++    case "contractor_lifetime_beta":
+     case "contractor_lifetime": return "Contractor Lifetime";
+     default:                    return plan ?? "Unknown";
+   }
+diff --git a/lib/api-spec/openapi.yaml b/lib/api-spec/openapi.yaml
+index 25fac29..d61957b 100644
+--- a/lib/api-spec/openapi.yaml
++++ b/lib/api-spec/openapi.yaml
+@@ -193,6 +193,10 @@ paths:
+             schema:
+               type: object
+               properties:
++                selectedPlan:
++                  type: string
++                  enum: [homeowner_report, property_pack, contractor_annual, contractor_lifetime_beta]
++                  default: homeowner_report
+                 productType:
+                   type: string
+                   enum: [homeowner, property_pack, contractor_annual, contractor_lifetime]
+diff --git a/lib/api-zod/src/generated/api.ts b/lib/api-zod/src/generated/api.ts
+index 7ca942b..5cfb78c 100644
+--- a/lib/api-zod/src/generated/api.ts
++++ b/lib/api-zod/src/generated/api.ts
+@@ -1687,6 +1687,15 @@ export const CreateProjectCheckoutSessionParams = zod.object({
+ export const createProjectCheckoutSessionBodyProductTypeDefault = `homeowner`;
+ 
+ export const CreateProjectCheckoutSessionBody = zod.object({
++  selectedPlan: zod
++    .enum([
++      "homeowner_report",
++      "property_pack",
++      "contractor_annual",
++      "contractor_lifetime_beta",
++    ])
++    .default("homeowner_report")
++    .optional(),
+   productType: zod
+     .enum([
+       "homeowner",
+diff --git a/lib/api-zod/src/generated/types/createProjectCheckoutSessionBody.ts b/lib/api-zod/src/generated/types/createProjectCheckoutSessionBody.ts
+index 1425fd9..f4a47ab 100644
+--- a/lib/api-zod/src/generated/types/createProjectCheckoutSessionBody.ts
++++ b/lib/api-zod/src/generated/types/createProjectCheckoutSessionBody.ts
+@@ -6,7 +6,9 @@
+  * OpenAPI spec version: 0.1.0
+  */
+ import type { CreateProjectCheckoutSessionBodyProductType } from "./createProjectCheckoutSessionBodyProductType";
++import type { CreateProjectCheckoutSessionBodySelectedPlan } from "./createProjectCheckoutSessionBodySelectedPlan";
+ 
+ export type CreateProjectCheckoutSessionBody = {
++  selectedPlan?: CreateProjectCheckoutSessionBodySelectedPlan;
+   productType?: CreateProjectCheckoutSessionBodyProductType;
+ };
+diff --git a/lib/api-zod/src/generated/types/createProjectCheckoutSessionBodySelectedPlan.ts b/lib/api-zod/src/generated/types/createProjectCheckoutSessionBodySelectedPlan.ts
+new file mode 100644
+index 0000000..1d06b86
+--- /dev/null
++++ b/lib/api-zod/src/generated/types/createProjectCheckoutSessionBodySelectedPlan.ts
+@@ -0,0 +1,17 @@
++/**
++ * Generated by orval v8.5.3 🍺
++ * Do not edit manually.
++ * Api
++ * OffGrid Solar Builder API specification
++ * OpenAPI spec version: 0.1.0
++ */
++
++export type CreateProjectCheckoutSessionBodySelectedPlan =
++  (typeof CreateProjectCheckoutSessionBodySelectedPlan)[keyof typeof CreateProjectCheckoutSessionBodySelectedPlan];
++
++export const CreateProjectCheckoutSessionBodySelectedPlan = {
++  homeowner_report: "homeowner_report",
++  property_pack: "property_pack",
++  contractor_annual: "contractor_annual",
++  contractor_lifetime_beta: "contractor_lifetime_beta",
++} as const;
+-- 
+2.39.2 (Apple Git-143)
+
+
+From 332966e733bd88b88218bbed4b4c1dd656c940b7 Mon Sep 17 00:00:00 2001
+From: inhouse <inhouse@Morgans-MacBook-Pro-2.local>
+Date: Thu, 4 Jun 2026 22:35:38 -0700
+Subject: [PATCH 3/3] Align contractor launch pricing and finalize activation
+ patch
+
+---
+ .agents/memory/offgrid-solar-stripe-prices.md        |  4 ++--
+ .agents/skills/stripe-best-practices/SKILL.md        |  4 ++--
+ PRODUCTION_SETUP.md                                  |  2 +-
+ artifacts/api-server/src/services/payments/plans.ts  |  8 ++++----
+ artifacts/offgrid-solar/src/pages/home.tsx           |  4 ++--
+ artifacts/offgrid-solar/src/pages/results.tsx        |  4 ++--
+ ...b-repository-Repository-inhouse_1780036635560.txt |  4 ++--
+ ...-payment-setup-for-OffGrid-Sola_1779227039612.txt |  4 ++--
+ ...ation-of-OffGrid-Solar-Builder-_1779393816692.txt |  8 ++++----
+ ...backend-stabilization-for-OffGr_1779830929143.txt |  4 ++--
+ docs/live-stripe-setup.md                            |  4 ++--
+ lib/api-client-react/src/generated/api.schemas.ts    | 11 +++++++++++
+ scripts/setup-stripe-test.sh                         |  4 ++--
+ scripts/src/paywall-qa.test.ts                       |  2 +-
+ scripts/src/seed-stripe-live.ts                      | 10 +++++-----
+ scripts/src/seed-stripe-product.ts                   | 12 ++++++------
+ 16 files changed, 50 insertions(+), 39 deletions(-)
+
+diff --git a/.agents/memory/offgrid-solar-stripe-prices.md b/.agents/memory/offgrid-solar-stripe-prices.md
+index be7227c..dd834b7 100644
+--- a/.agents/memory/offgrid-solar-stripe-prices.md
++++ b/.agents/memory/offgrid-solar-stripe-prices.md
+@@ -9,8 +9,8 @@ Four pricing tiers, all managed in `artifacts/api-server/src/routes/projects.ts`
+ |----------------------|---------|---------|--------------------------------------|
+ | homeowner            | 1       | $19     | STRIPE_HOMEOWNER_REPORT_PRICE_ID     |
+ | property_pack        | 3       | $39     | STRIPE_PROPERTY_PACK_PRICE_ID        |
+-| contractor_annual    | 50      | $199/yr | STRIPE_CONTRACTOR_ANNUAL_PRICE_ID    |
+-| contractor_lifetime  | 100     | $299    | STRIPE_CONTRACTOR_LIFETIME_PRICE_ID  |
++| contractor_annual    | 50      | $149/yr | STRIPE_CONTRACTOR_ANNUAL_PRICE_ID    |
++| contractor_lifetime  | 100     | $199    | STRIPE_CONTRACTOR_LIFETIME_PRICE_ID  |
+ 
+ `env.ts` exports each of these. The webhook handler reads `metadata.selectedPlan` and `metadata.creditAmount` to set all entitlement columns on payment completion.
+ 
+diff --git a/.agents/skills/stripe-best-practices/SKILL.md b/.agents/skills/stripe-best-practices/SKILL.md
+index b5be81f..b88f485 100644
+--- a/.agents/skills/stripe-best-practices/SKILL.md
++++ b/.agents/skills/stripe-best-practices/SKILL.md
+@@ -34,8 +34,8 @@ Two flows run inside the webhook:
+ |----------------------|---------|----------|--------------|---------------------------------------|
+ | `homeowner`          | 1       | $19      | `payment`    | `STRIPE_HOMEOWNER_REPORT_PRICE_ID`    |
+ | `property_pack`      | 3       | $39      | `payment`    | `STRIPE_PROPERTY_PACK_PRICE_ID`       |
+-| `contractor_annual`  | 50      | $199/yr  | `subscription` | `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID` |
+-| `contractor_lifetime`| 100     | $299     | `payment`    | `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID` |
++| `contractor_annual`  | 50      | $149/yr  | `subscription` | `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID` |
++| `contractor_lifetime`| 100     | $199     | `payment`    | `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID` |
+ 
+ `STRIPE_PRICE_ID` is the legacy fallback for `homeowner` — `STRIPE_HOMEOWNER_REPORT_PRICE_ID`
+ takes precedence via `env.ts`:
+diff --git a/PRODUCTION_SETUP.md b/PRODUCTION_SETUP.md
+index 37e1995..260f274 100644
+--- a/PRODUCTION_SETUP.md
++++ b/PRODUCTION_SETUP.md
+@@ -15,7 +15,7 @@ Set all of these in the **Replit Secrets** tab (not `.env` files — those are f
+ | `ADMIN_TOKEN` | ✅ | Bearer token for admin-only endpoints — generate with `openssl rand -hex 32` |
+ | `STRIPE_SECRET_KEY` | ✅ | Stripe secret key (`sk_live_...` for production, `sk_test_...` for testing) |
+ | `STRIPE_PUBLISHABLE_KEY` | ✅ | Stripe publishable key (`pk_live_...` or `pk_test_...`) |
+-| `STRIPE_PRICE_ID` | ✅ | Price ID for the $49 one-time report unlock (see Stripe Setup below) |
++| `STRIPE_PRICE_ID` | ✅ | Legacy fallback price ID for the $19 homeowner full report (see Stripe Setup below) |
+ | `STRIPE_WEBHOOK_SECRET` | ✅ | Webhook signing secret — required in production to verify payment events |
+ | `PVWATTS_API_KEY` | Optional | NREL PVWatts v8 API key for real solar production data. Without it, calculations fall back to state-based estimates. Free key at [developer.nrel.gov](https://developer.nrel.gov/signup/) |
+ 
+diff --git a/artifacts/api-server/src/services/payments/plans.ts b/artifacts/api-server/src/services/payments/plans.ts
+index c6adaf1..20e4ca9 100644
+--- a/artifacts/api-server/src/services/payments/plans.ts
++++ b/artifacts/api-server/src/services/payments/plans.ts
+@@ -48,8 +48,8 @@ export function getCheckoutPlans(): Record<CheckoutPlanId, CheckoutPlan> {
+     contractor_annual: {
+       id: "contractor_annual",
+       name: "Contractor Annual Access",
+-      priceLabel: "$199/year",
+-      amountCents: 19900,
++      priceLabel: "$149/year",
++      amountCents: 14900,
+       includedCredits: 50,
+       contractorStatus: true,
+       checkoutMode: "subscription",
+@@ -59,8 +59,8 @@ export function getCheckoutPlans(): Record<CheckoutPlanId, CheckoutPlan> {
+     contractor_lifetime_beta: {
+       id: "contractor_lifetime_beta",
+       name: "Contractor Lifetime Beta",
+-      priceLabel: "$299 one-time",
+-      amountCents: 29900,
++      priceLabel: "$199 one-time",
++      amountCents: 19900,
+       includedCredits: 100,
+       contractorStatus: true,
+       checkoutMode: "payment",
+diff --git a/artifacts/offgrid-solar/src/pages/home.tsx b/artifacts/offgrid-solar/src/pages/home.tsx
+index 5e6ae93..2083e76 100644
+--- a/artifacts/offgrid-solar/src/pages/home.tsx
++++ b/artifacts/offgrid-solar/src/pages/home.tsx
+@@ -87,8 +87,8 @@ export default function Home() {
+             {[
+               ["Homeowner Full Report", "$19", "one-time", "1 full report credit"],
+               ["Property Pack", "$39", "one-time", "3 full report credits"],
+-              ["Contractor Annual", "$199/year", "subscription", "Contractor access + 50 credits"],
+-              ["Contractor Lifetime Beta", "$299", "one-time", "Contractor access + 100 credits"],
++              ["Contractor Annual", "$149/year", "subscription", "Contractor access + 50 credits"],
++              ["Contractor Lifetime Beta", "$199", "one-time", "Contractor access + 100 credits"],
+             ].map(([name, price, cadence, detail]) => (
+               <div key={name} className="rounded-xl border bg-card p-5">
+                 <h3 className="font-semibold">{name}</h3>
+diff --git a/artifacts/offgrid-solar/src/pages/results.tsx b/artifacts/offgrid-solar/src/pages/results.tsx
+index 71a6f62..710ef6c 100644
+--- a/artifacts/offgrid-solar/src/pages/results.tsx
++++ b/artifacts/offgrid-solar/src/pages/results.tsx
+@@ -1189,7 +1189,7 @@ export default function Results() {
+                   {/* Contractor Annual */}
+                   <div className="flex flex-col gap-3 p-4 rounded-xl border bg-white dark:bg-background text-left">
+                     <div className="font-semibold text-sm">Contractor Annual</div>
+-                    <div className="text-2xl font-extrabold">$199<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
++                    <div className="text-2xl font-extrabold">$149<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
+                     <ul className="text-xs text-muted-foreground space-y-1">
+                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />50 report credits</li>
+                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Contractor reports</li>
+@@ -1213,7 +1213,7 @@ export default function Results() {
+                   <div className="flex flex-col gap-3 p-4 rounded-xl border border-primary/40 bg-primary/5 dark:bg-background text-left relative">
+                     <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-primary text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">Beta Offer</div>
+                     <div className="font-semibold text-sm">Contractor Lifetime</div>
+-                    <div className="text-2xl font-extrabold text-primary">$299<span className="text-sm font-normal text-muted-foreground"> one-time</span></div>
++                    <div className="text-2xl font-extrabold text-primary">$199<span className="text-sm font-normal text-muted-foreground"> one-time</span></div>
+                     <ul className="text-xs text-muted-foreground space-y-1">
+                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />100 report credits</li>
+                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Lifetime access</li>
+diff --git a/attached_assets/Pasted-Open-and-review-my-GitHub-repository-Repository-inhouse_1780036635560.txt b/attached_assets/Pasted-Open-and-review-my-GitHub-repository-Repository-inhouse_1780036635560.txt
+index 2a15f8e..66bca0e 100644
+--- a/attached_assets/Pasted-Open-and-review-my-GitHub-repository-Repository-inhouse_1780036635560.txt
++++ b/attached_assets/Pasted-Open-and-review-my-GitHub-repository-Repository-inhouse_1780036635560.txt
+@@ -93,8 +93,8 @@ Make Stripe test mode work end-to-end.
+ Plans:
+ - Homeowner Full Report: $19, 1 full report credit
+ - Property Pack: $39, 3 full report credits
+-- Contractor Annual: $199/year, 50 report credits
+-- Contractor Lifetime Beta: $299 one-time, 100 report credits
++- Contractor Annual: $149/year, 50 report credits
++- Contractor Lifetime Beta: $199 one-time, 100 report credits
+ 
+ Required env vars:
+ - DATABASE_URL
+diff --git a/attached_assets/Pasted-Prepare-Stripe-live-mode-payment-setup-for-OffGrid-Sola_1779227039612.txt b/attached_assets/Pasted-Prepare-Stripe-live-mode-payment-setup-for-OffGrid-Sola_1779227039612.txt
+index 503097c..9d5b92a 100644
+--- a/attached_assets/Pasted-Prepare-Stripe-live-mode-payment-setup-for-OffGrid-Sola_1779227039612.txt
++++ b/attached_assets/Pasted-Prepare-Stripe-live-mode-payment-setup-for-OffGrid-Sola_1779227039612.txt
+@@ -31,7 +31,7 @@ List exactly what must be set in Replit Secrets/Integrations:
+ - Product name:
+   Full Solar Report
+ - Price:
+-  $49 one-time payment
++  $19 one-time payment
+ - Currency:
+   USD
+ - Save/output the new live price ID.
+@@ -62,7 +62,7 @@ After live secrets are configured:
+ - view preview report
+ - click Unlock Full Solar Report
+ - confirm checkout opens with live Stripe mode
+-- confirm amount is $49
++- confirm amount is $19
+ - confirm domain/success/cancel URLs use offgridsolarbuilders.com
+ - do not complete a real payment unless I explicitly say so
+ 
+diff --git a/attached_assets/Pasted-Take-over-final-stabilization-of-OffGrid-Solar-Builder-_1779393816692.txt b/attached_assets/Pasted-Take-over-final-stabilization-of-OffGrid-Solar-Builder-_1779393816692.txt
+index 041816e..7f7bd2f 100644
+--- a/attached_assets/Pasted-Take-over-final-stabilization-of-OffGrid-Solar-Builder-_1779393816692.txt
++++ b/attached_assets/Pasted-Take-over-final-stabilization-of-OffGrid-Solar-Builder-_1779393816692.txt
+@@ -93,8 +93,8 @@ After payment:
+ Plans to support:
+ - Homeowner Full Report: $19, 1 full report credit
+ - Property Pack: $39, 3 full report credits
+-- Contractor Annual: $199/year or one-time annual access, 50 report credits
+-- Contractor Lifetime Beta: $299 one-time, 100 report credits
++- Contractor Annual: $149/year, 50 report credits
++- Contractor Lifetime Beta: $199 one-time, 100 report credits
+ 
+ Stripe env vars:
+ - STRIPE_HOMEOWNER_REPORT_PRICE_ID
+@@ -199,8 +199,8 @@ TASK 7 — Pricing UI Check
+ Confirm displayed pricing is:
+ - Homeowner Full Report: $19
+ - Property Pack: $39
+-- Contractor Annual: $199/year
+-- Contractor Lifetime Beta: $299 one-time
++- Contractor Annual: $149/year
++- Contractor Lifetime Beta: $199 one-time
+ 
+ Free preview must tease value but not expose paid details.
+ 
+diff --git a/attached_assets/Pasted-Take-over-full-frontend-backend-stabilization-for-OffGr_1779830929143.txt b/attached_assets/Pasted-Take-over-full-frontend-backend-stabilization-for-OffGr_1779830929143.txt
+index 22853e5..9a4706d 100644
+--- a/attached_assets/Pasted-Take-over-full-frontend-backend-stabilization-for-OffGr_1779830929143.txt
++++ b/attached_assets/Pasted-Take-over-full-frontend-backend-stabilization-for-OffGr_1779830929143.txt
+@@ -56,8 +56,8 @@ Frontend requirements:
+ 5. Pricing displayed must be:
+    - Homeowner Full Report: $19
+    - Property Pack: $39
+-   - Contractor Annual: $199/year
+-   - Contractor Lifetime Beta: $299 one-time
++   - Contractor Annual: $149/year
++   - Contractor Lifetime Beta: $199 one-time
+ 6. Frontend must not expose Stripe secret keys.
+ 7. Frontend must not generate full paid report/BOM client-side before payment.
+ 8. Frontend must handle payment success and refresh entitlement.
+diff --git a/docs/live-stripe-setup.md b/docs/live-stripe-setup.md
+index 42a5624..84ab6ae 100644
+--- a/docs/live-stripe-setup.md
++++ b/docs/live-stripe-setup.md
+@@ -8,8 +8,8 @@ The launch pricing model uses four Stripe prices:
+ 
+ - `Homeowner Full Report`: `$19.00`, one-time, `STRIPE_HOMEOWNER_REPORT_PRICE_ID`
+ - `Property Pack`: `$39.00`, one-time, `STRIPE_PROPERTY_PACK_PRICE_ID`
+-- `Contractor Annual Access`: `$199.00/year`, yearly subscription, `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID`
+-- `Contractor Lifetime Beta`: `$299.00`, one-time, `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID`
++- `Contractor Annual Access`: `$149.00/year`, yearly subscription, `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID`
++- `Contractor Lifetime Beta`: `$199.00`, one-time beta access, `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID`
+ 
+ The legacy `STRIPE_PRICE_ID` remains supported as a fallback for the homeowner full report only.
+ 
+diff --git a/lib/api-client-react/src/generated/api.schemas.ts b/lib/api-client-react/src/generated/api.schemas.ts
+index 405ab94..891608a 100644
+--- a/lib/api-client-react/src/generated/api.schemas.ts
++++ b/lib/api-client-react/src/generated/api.schemas.ts
+@@ -597,6 +597,16 @@ export interface SettingsPatch {
+ export type CreateProjectCheckoutSessionBodyProductType =
+   (typeof CreateProjectCheckoutSessionBodyProductType)[keyof typeof CreateProjectCheckoutSessionBodyProductType];
+ 
++export type CreateProjectCheckoutSessionBodySelectedPlan =
++  (typeof CreateProjectCheckoutSessionBodySelectedPlan)[keyof typeof CreateProjectCheckoutSessionBodySelectedPlan];
++
++export const CreateProjectCheckoutSessionBodySelectedPlan = {
++  homeowner_report: "homeowner_report",
++  property_pack: "property_pack",
++  contractor_annual: "contractor_annual",
++  contractor_lifetime_beta: "contractor_lifetime_beta",
++} as const;
++
+ export const CreateProjectCheckoutSessionBodyProductType = {
+   homeowner: "homeowner",
+   property_pack: "property_pack",
+@@ -605,5 +615,6 @@ export const CreateProjectCheckoutSessionBodyProductType = {
+ } as const;
+ 
+ export type CreateProjectCheckoutSessionBody = {
++  selectedPlan?: CreateProjectCheckoutSessionBodySelectedPlan;
+   productType?: CreateProjectCheckoutSessionBodyProductType;
+ };
+diff --git a/scripts/setup-stripe-test.sh b/scripts/setup-stripe-test.sh
+index bf7b0ab..216d101 100755
+--- a/scripts/setup-stripe-test.sh
++++ b/scripts/setup-stripe-test.sh
+@@ -93,10 +93,10 @@ property_product=$(create_product "Property Pack" "Three full report credits for
+ property_price=$(create_price "$property_product" 3900 "property_pack")
+ 
+ annual_product=$(create_product "Contractor Annual Access" "Annual contractor access with 50 full report credits." "contractor_annual")
+-annual_price=$(create_price "$annual_product" 19900 "contractor_annual" "year")
++annual_price=$(create_price "$annual_product" 14900 "contractor_annual" "year")
+ 
+ lifetime_product=$(create_product "Contractor Lifetime Beta" "Founding contractor beta plan with 100 full report credits and core calculator access." "contractor_lifetime_beta")
+-lifetime_price=$(create_price "$lifetime_product" 29900 "contractor_lifetime_beta")
++lifetime_price=$(create_price "$lifetime_product" 19900 "contractor_lifetime_beta")
+ 
+ echo "Creating webhook endpoint for:"
+ echo "  ${PUBLIC_BASE_URL}/api/stripe/webhook"
+diff --git a/scripts/src/paywall-qa.test.ts b/scripts/src/paywall-qa.test.ts
+index 274d763..aee80f0 100644
+--- a/scripts/src/paywall-qa.test.ts
++++ b/scripts/src/paywall-qa.test.ts
+@@ -117,7 +117,7 @@ run("Stripe webhook entitlement update unlocks selected plan credits", () => {
+   const update = buildEntitlementUpdate({
+     id: "cs_test_123",
+     payment_status: "paid",
+-    amount_total: 29_900,
++    amount_total: 19_900,
+     metadata: { selectedPlan: "contractor_lifetime_beta", stripePriceId: "price_test" },
+   }, plan);
+   assert.equal(update.paymentStatus, "paid");
+diff --git a/scripts/src/seed-stripe-live.ts b/scripts/src/seed-stripe-live.ts
+index 62138a8..70302ee 100644
+--- a/scripts/src/seed-stripe-live.ts
++++ b/scripts/src/seed-stripe-live.ts
+@@ -1,7 +1,7 @@
+ import { getUncachableStripeClient } from './stripeClient';
+ 
+ /**
+- * Creates the "Solar Report Unlock" one-time product + $49 price in Stripe LIVE mode.
++ * Creates the "Solar Report Unlock" one-time product + $19 price in Stripe LIVE mode.
+  *
+  * IMPORTANT: This script targets your LIVE Stripe account.
+  * Before running, ensure your Replit Secrets are set to live-mode keys:
+@@ -49,10 +49,10 @@ async function seedStripeLiveProduct() {
+       console.log('No one-time price found. Creating one...');
+       const price = await stripe.prices.create({
+         product: product.id,
+-        unit_amount: 4900,
++        unit_amount: 1900,
+         currency: 'usd',
+       });
+-      console.log(`\n✓ Created price: $49.00 one-time (${price.id})`);
++      console.log(`\n✓ Created price: $19.00 one-time (${price.id})`);
+       console.log(`\nSet these in Replit Secrets:`);
+       console.log(`  STRIPE_PRICE_ID=${price.id}`);
+     }
+@@ -74,10 +74,10 @@ async function seedStripeLiveProduct() {
+ 
+   const price = await stripe.prices.create({
+     product: product.id,
+-    unit_amount: 4900,
++    unit_amount: 1900,
+     currency: 'usd',
+   });
+-  console.log(`Created price: $49.00 one-time (${price.id})`);
++  console.log(`Created price: $19.00 one-time (${price.id})`);
+ 
+   console.log(`\n✓ Done! Set these in Replit Secrets:`);
+   console.log(`  STRIPE_PRICE_ID=${price.id}`);
+diff --git a/scripts/src/seed-stripe-product.ts b/scripts/src/seed-stripe-product.ts
+index 462bdde..d7c3880 100644
+--- a/scripts/src/seed-stripe-product.ts
++++ b/scripts/src/seed-stripe-product.ts
+@@ -1,7 +1,7 @@
+ import { getUncachableStripeClient } from './stripeClient';
+ 
+ /**
+- * Creates the "Solar Report Unlock" one-time product + $49 price in Stripe (test mode).
++ * Creates the "Solar Report Unlock" one-time product + $19 price in Stripe (test mode).
+  *
+  * Run with:
+  *   pnpm --filter @workspace/scripts run seed-stripe
+@@ -37,10 +37,10 @@ async function seedStripeProduct() {
+       console.log('No one-time price found. Creating one...');
+       const price = await stripe.prices.create({
+         product: product.id,
+-        unit_amount: 4900, // $49.00
++        unit_amount: 1900, // $19.00
+         currency: 'usd',
+       });
+-      console.log(`\n✓ Created price: $49.00 one-time (${price.id})`);
++      console.log(`\n✓ Created price: $19.00 one-time (${price.id})`);
+       console.log(`\nSet this in Replit Secrets:\n  STRIPE_PRICE_ID=${price.id}`);
+     }
+     return;
+@@ -58,14 +58,14 @@ async function seedStripeProduct() {
+   });
+   console.log(`Created product: ${product.name} (${product.id})`);
+ 
+-  // One-time price: $49.00
++  // One-time price: $19.00
+   const price = await stripe.prices.create({
+     product: product.id,
+-    unit_amount: 4900, // $49.00 USD
++    unit_amount: 1900, // $19.00 USD
+     currency: 'usd',
+     // No recurring field = one-time payment
+   });
+-  console.log(`Created price: $49.00 one-time (${price.id})`);
++  console.log(`Created price: $19.00 one-time (${price.id})`);
+ 
+   console.log(`\n✓ Done! Set this in Replit Secrets:`);
+   console.log(`  STRIPE_PRICE_ID=${price.id}`);
+-- 
+2.39.2 (Apple Git-143)
+

@@ -51,4 +51,4 @@ STRIPE_CONTRACTOR_LIFETIME_PRICE_ID = "price_1TZcrwPtpEeLlAYi61f8L0Qu"
 STRIPE_WEBHOOK_SECRET = "whsec_SIyqiGeb2InxHiObq8I2bVoX7wBnCYVA"
 
 [userenv.production]
-FRONTEND_URL = "https://www.offgridsolarbuilder.com"
+FRONTEND_URL = "https://offgridsolarbuilders.com"
