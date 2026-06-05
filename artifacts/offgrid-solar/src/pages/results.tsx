@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useParams, Link } from "wouter";
-import { useGetProject, useCalculateProject, getGetProjectQueryKey, useCreateProjectCheckoutSession } from "@workspace/api-client-react";
+import { useGetProject, useCalculateProject, getGetProjectQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,12 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, Fragment, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ProjectMap } from "@/components/maps/ProjectMap";
 import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
+import { createProjectCheckoutSession } from "@/services/projectService";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine,
@@ -41,16 +43,18 @@ export default function Results() {
 
   const { data: project, isLoading, error } = useGetProject(projectId, { request: reqOpts });
   const calculateProject = useCalculateProject({ request: reqOpts });
-  const createCheckoutSession = useCreateProjectCheckoutSession({ request: reqOpts });
+  const createCheckoutSession = useMutation({
+    mutationFn: (selectedPlan: string) => createProjectCheckoutSession(projectId, token, selectedPlan),
+  });
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const hasTriggeredCalc = useRef(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const handleUnlockReport = (productType: "homeowner" | "property_pack" | "contractor_annual" | "contractor_lifetime" = "homeowner") => {
+  const handleUnlockReport = (selectedPlan: "homeowner_report" | "property_pack" | "contractor_annual" | "contractor_lifetime_beta" = "homeowner_report") => {
     setIsRedirecting(true);
     createCheckoutSession.mutate(
-      { id: projectId, data: { productType } },
+      selectedPlan,
       {
         onSuccess: (data) => {
           if (data.url) {
@@ -67,6 +71,11 @@ export default function Results() {
         },
       }
     );
+  };
+
+  const handleDownloadPdf = () => {
+    const url = `/api/projects/${projectId}/report.pdf?accessToken=${encodeURIComponent(token)}`;
+    window.location.href = url;
   };
 
   useEffect(() => {
@@ -192,6 +201,16 @@ export default function Results() {
 
   const systemTypeLabel = project.systemType.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join("-");
   const hasBattery = (calc.batteryUsableKwh ?? 0) > 0;
+  const formatRange = (value: { low?: number; high?: number } | undefined, unit = "", decimals = 0) => {
+    if (!value || typeof value.low !== "number" || typeof value.high !== "number") return "Locked";
+    const opts = { minimumFractionDigits: decimals, maximumFractionDigits: decimals };
+    return `${value.low.toLocaleString(undefined, opts)}-${value.high.toLocaleString(undefined, opts)}${unit}`;
+  };
+  const systemSizeLabel = isPaid ? `${calc.adjustedArraySizeKw.toFixed(2)} kW` : formatRange(calc.systemSizeKwRange, " kW", 1);
+  const panelCountLabel = isPaid ? `${calc.numPanels} panels${calc.numPanels > 0 ? ` x ~${Math.round(calc.adjustedArraySizeKw * 1000 / calc.numPanels / 5) * 5}W` : ""}` : `${formatRange(calc.panelCountRange)} panels`;
+  const productionLabel = isPaid ? `${calc.yearlyProductionKwh.toLocaleString()} kWh/yr est.` : `${formatRange(calc.yearlyProductionKwhRange, " kWh/yr")} est.`;
+  const batteryLabel = isPaid ? `${calc.batteryUsableKwh.toFixed(1)} kWh` : formatRange(calc.batteryUsableKwhRange, " kWh", 1);
+  const inverterLabel = isPaid ? `${calc.inverterSizeKw.toFixed(1)} kW` : formatRange(calc.inverterSizeKwRange, " kW", 1);
 
   const noteIcon = (type: string) => {
     if (type === "warning") return <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />;
@@ -253,7 +272,7 @@ export default function Results() {
               </Button>
             </Link>
             {isPaid ? (
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleDownloadPdf}>
                 <Download className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Download </span>PDF
               </Button>
@@ -261,7 +280,7 @@ export default function Results() {
               <Button
                 size="sm"
                 className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white border-0"
-                onClick={handleUnlockReport}
+                onClick={() => handleUnlockReport()}
                 disabled={isRedirecting || createCheckoutSession.isPending}
               >
                 {isRedirecting || createCheckoutSession.isPending
@@ -280,7 +299,7 @@ export default function Results() {
         </div>
 
         {/* Print Header (only shows when printing) */}
-        <div className="hidden print:block border-b-2 border-primary pb-4 mb-2">
+        {isPaid && (<div className="hidden print:block border-b-2 border-primary pb-4 mb-2">
           <div className="flex justify-between items-start">
             <div>
               <div className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-1">Solar Design Report</div>
@@ -293,7 +312,7 @@ export default function Results() {
               <div>{systemTypeLabel} System · {project.budgetTier} tier</div>
             </div>
           </div>
-        </div>
+        </div>)}
 
         {/* ── Section 1: System Summary ──────────────────────────────── */}
         <section>
@@ -306,9 +325,9 @@ export default function Results() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">Solar Array</CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-3xl font-black text-primary">{calc.adjustedArraySizeKw.toFixed(2)} kW</div>
-                <div className="text-sm font-medium mt-1">{calc.numPanels} panels{calc.numPanels > 0 ? ` × ~${Math.round(calc.adjustedArraySizeKw * 1000 / calc.numPanels / 5) * 5}W` : ""}</div>
-                <div className="text-xs text-muted-foreground">{calc.yearlyProductionKwh.toLocaleString()} kWh/yr est.</div>
+                <div className="text-3xl font-black text-primary">{systemSizeLabel}</div>
+                <div className="text-sm font-medium mt-1">{panelCountLabel}</div>
+                <div className="text-xs text-muted-foreground">{productionLabel}</div>
               </CardContent>
             </Card>
             <Card className="bg-primary/5 border-primary/25">
@@ -318,9 +337,9 @@ export default function Results() {
               <CardContent className="px-4 pb-4">
                 {hasBattery ? (
                   <>
-                    <div className="text-3xl font-black text-primary">{calc.batteryUsableKwh.toFixed(1)} kWh</div>
+                    <div className="text-3xl font-black text-primary">{batteryLabel}</div>
                     <div className="text-sm font-medium mt-1">Usable capacity</div>
-                    <div className="text-xs text-muted-foreground">{calc.totalBatteryBankKwh.toFixed(1)} kWh total bank</div>
+                    <div className="text-xs text-muted-foreground">{isPaid ? `${calc.totalBatteryBankKwh.toFixed(1)} kWh total bank` : "Preview range"}</div>
                   </>
                 ) : (
                   <>
@@ -335,7 +354,7 @@ export default function Results() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">Inverter</CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-3xl font-black text-primary">{calc.inverterSizeKw.toFixed(1)} kW</div>
+                <div className="text-3xl font-black text-primary">{inverterLabel}</div>
                 <div className="text-sm font-medium mt-1">Recommended rating</div>
                 <div className="text-xs text-muted-foreground">{systemTypeLabel} type</div>
               </CardContent>
@@ -350,9 +369,9 @@ export default function Results() {
                     {[
                       ["System Type", systemTypeLabel],
                       ["Location", `${project.city}, ${project.state}`],
-                      ["Daily Usage", `${calc.dailyKwh.toFixed(1)} kWh/day`],
+                      ...(isPaid ? [["Daily Usage", `${calc.dailyKwh.toFixed(1)} kWh/day`]] : []),
                       ["Annual Usage", `${project.annualKwh.toLocaleString()} kWh/yr`],
-                      ["Peak Sun Hours", `${calc.peakSunHours} hrs/day${hasPVWatts ? " (PVWatts)" : ` (${project.state})`}`],
+                      ...(isPaid ? [["Peak Sun Hours", `${calc.peakSunHours} hrs/day${hasPVWatts ? " (PVWatts)" : ` (${project.state})`}`]] : []),
                       ["Installation", project.installationType === "carport" ? "Carport" : project.installationType.charAt(0).toUpperCase() + project.installationType.slice(1) + " Mount"],
                       ["Budget Tier", project.budgetTier.charAt(0).toUpperCase() + project.budgetTier.slice(1)],
                     ].map(([label, value]) => (
@@ -371,12 +390,12 @@ export default function Results() {
                 <table className="w-full text-sm">
                   <tbody className="divide-y">
                     {[
-                      ["Array Size (gross)", `${calc.arraySizeKw.toFixed(2)} kW`],
-                      ["Array Size (adjusted)", `${calc.adjustedArraySizeKw.toFixed(2)} kW`],
-                      ["Number of Panels", `${calc.numPanels} panels`],
-                      ...(calc.squareFeetRequired != null ? [["Panel Footprint", `~${calc.squareFeetRequired} sqft${project.availableSqft ? ` of ${project.availableSqft} sqft` : ""}`]] : []),
-                      ["Inverter Size", `${calc.inverterSizeKw.toFixed(1)} kW`],
-                      ["Est. Yearly Production", `${calc.yearlyProductionKwh.toLocaleString()} kWh${hasPVWatts ? " ✓" : ""}`],
+                      ...(isPaid ? [["Array Size (gross)", `${calc.arraySizeKw.toFixed(2)} kW`]] : []),
+                      ["Array Size", systemSizeLabel],
+                      ["Number of Panels", panelCountLabel],
+                      ...(isPaid && calc.squareFeetRequired != null ? [["Panel Footprint", `~${calc.squareFeetRequired} sqft${project.availableSqft ? ` of ${project.availableSqft} sqft` : ""}`]] : []),
+                      ["Inverter Size", inverterLabel],
+                      ["Est. Yearly Production", productionLabel],
                       ...(isPaid ? [["Est. Yearly Savings", `$${calc.estimatedYearlySavings?.toLocaleString()}`]] : []),
                       ...(pvCalc.pvwattsCapacityFactor != null ? [["System Efficiency", `${pvCalc.pvwattsCapacityFactor.toFixed(1)}% capacity factor`]] : []),
                       ...(calc.offGridDesignFactor != null && calc.offGridDesignFactor > 1 ? [["Design Margin", `+${((calc.offGridDesignFactor - 1) * 100).toFixed(0)}% (${project.systemType} reserve)`]] : []),
@@ -1134,7 +1153,7 @@ export default function Results() {
                     <Button
                       size="sm"
                       className="bg-amber-500 hover:bg-amber-600 text-white gap-1.5 mt-auto"
-                      onClick={() => handleUnlockReport("homeowner")}
+                      onClick={() => handleUnlockReport("homeowner_report")}
                       disabled={isRedirecting || createCheckoutSession.isPending}
                     >
                       {isRedirecting || createCheckoutSession.isPending
@@ -1170,7 +1189,7 @@ export default function Results() {
                   {/* Contractor Annual */}
                   <div className="flex flex-col gap-3 p-4 rounded-xl border bg-white dark:bg-background text-left">
                     <div className="font-semibold text-sm">Contractor Annual</div>
-                    <div className="text-2xl font-extrabold">$199<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
+                    <div className="text-2xl font-extrabold">$149<span className="text-sm font-normal text-muted-foreground">/yr</span></div>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />50 report credits</li>
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Contractor reports</li>
@@ -1194,7 +1213,7 @@ export default function Results() {
                   <div className="flex flex-col gap-3 p-4 rounded-xl border border-primary/40 bg-primary/5 dark:bg-background text-left relative">
                     <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-primary text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">Beta Offer</div>
                     <div className="font-semibold text-sm">Contractor Lifetime</div>
-                    <div className="text-2xl font-extrabold text-primary">$299<span className="text-sm font-normal text-muted-foreground"> one-time</span></div>
+                    <div className="text-2xl font-extrabold text-primary">$199<span className="text-sm font-normal text-muted-foreground"> one-time</span></div>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />100 report credits</li>
                       <li className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />Lifetime access</li>
@@ -1203,7 +1222,7 @@ export default function Results() {
                     <Button
                       size="sm"
                       className="bg-primary hover:bg-primary/90 text-white gap-1.5 mt-auto"
-                      onClick={() => handleUnlockReport("contractor_lifetime")}
+                      onClick={() => handleUnlockReport("contractor_lifetime_beta")}
                       disabled={isRedirecting || createCheckoutSession.isPending}
                     >
                       {isRedirecting || createCheckoutSession.isPending
@@ -1368,12 +1387,12 @@ export default function Results() {
             <MapPin className="h-4 w-4 text-primary" /> Project Location
           </h2>
           {/* Geocoding accuracy warning — shown when we only have an approximate fix */}
-          {project.locationAccuracy && project.locationAccuracy !== "exact" && !project.useManualCoords && (
+          {project.locationAccuracy && project.locationAccuracy !== "exact_address" && project.locationAccuracy !== "exact" && !project.useManualCoords && (
             <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <span>
                 Exact property location could not be verified.
-                Showing {project.locationAccuracy === "zip" ? "ZIP code centroid" : project.locationAccuracy === "city" ? "city/state center" : "approximate"} location.
+                Showing {project.locationAccuracy === "approximate_zip" || (project.locationAccuracy as string) === "zip" ? "ZIP code centroid" : project.locationAccuracy === "approximate_city" || (project.locationAccuracy as string) === "city" ? "city/state center" : "approximate"} location.
                 You can set precise coordinates on the <a href={`/projects/${project.id}/edit`} className="underline font-medium">Edit page</a>.
               </span>
             </div>
@@ -1400,10 +1419,10 @@ export default function Results() {
         </section>
 
         {/* Print map placeholder */}
-        <div className="hidden print:block">
+        {isPaid && (<div className="hidden print:block">
           <h2 className="text-base font-bold uppercase tracking-widest text-gray-500 mb-2">Project Location</h2>
           <p className="text-sm">{project.address}, {project.city}, {project.state} {project.zip}</p>
-        </div>
+        </div>)}
 
         {/* ── Equipment Recommendations Summary ─────────────────────── */}
         {isPaid && (<section>

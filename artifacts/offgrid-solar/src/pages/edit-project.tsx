@@ -521,6 +521,7 @@ export default function EditProject() {
                 {/* ── Section: GPS Coordinates ──────────────────── */}
                 {(() => {
                   const useManual = form.watch("useManualCoords");
+                  const accuracy = project?.locationAccuracy as string | null | undefined;
                   return (
                 <div>
                   <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-4 pb-2 border-b">GPS Coordinates</h3>
@@ -536,11 +537,12 @@ export default function EditProject() {
                     {project?.lat != null && (
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
-                        {project.locationAccuracy === "exact"
+                        {accuracy === "exact_address" || accuracy === "exact"
                           ? "Exact street address"
-                          : project.locationAccuracy === "zip" ? "ZIP code approximation"
-                          : project.locationAccuracy === "city" ? "City/state approximation"
-                          : project.locationAccuracy === "manual" ? "Manual coordinates"
+                          : accuracy === "approximate_zip" || accuracy === "zip" ? "ZIP code approximation"
+                          : accuracy === "approximate_city" || accuracy === "city" ? "City/state approximation"
+                          : accuracy === "manual_coordinates" || accuracy === "manual" ? "Manual coordinates"
+                          : accuracy === "failed" ? "Geocode failed"
                           : "Coordinates saved"}
                         {" "}({Number(project.lat).toFixed(5)}, {Number(project.lon).toFixed(5)})
                       </span>

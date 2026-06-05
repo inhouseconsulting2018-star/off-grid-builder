@@ -11,8 +11,10 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
     res.status(503).json({ error: "Admin access not configured — set ADMIN_TOKEN" });
     return;
   }
+  const auth = req.headers["authorization"];
+  const bearer = typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : null;
   const provided = req.headers["x-admin-token"];
-  if (!provided || provided !== adminToken) {
+  if ((typeof provided !== "string" || provided !== adminToken) && bearer !== adminToken) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -30,6 +32,8 @@ export function extractAccessToken(req: Request): string | null {
 function isAdminRequest(req: Request): boolean {
   const adminToken = env.adminToken;
   if (!adminToken) return false;
+  const auth = req.headers["authorization"];
+  if (typeof auth === "string" && auth === `Bearer ${adminToken}`) return true;
   const provided = req.headers["x-admin-token"];
   return typeof provided === "string" && provided === adminToken;
 }
@@ -55,11 +59,8 @@ export async function resolveProjectByToken(
 
   if (!project) return null;
 
-  // Pre-launch rows (null accessToken) are accessible without a token.
-  // This covers projects created before the access-token feature shipped.
-  if (project.accessToken === null) return project;
-
-  // Post-launch rows require the correct token
+  // Guest projects always require the correct token. Run the paid launch
+  // migration before deploy so old rows receive tokens safely.
   const token = extractAccessToken(req);
   if (!token || token !== project.accessToken) return null;
 
@@ -71,29 +72,27 @@ export function previewProject(project: ProjectRow) {
   const { accessToken: _t, calculationResult: fullCalc, ...rest } = project;
   const raw = fullCalc as Record<string, unknown> | null;
 
-  // Return only the safe sizing fields — never expose cost, brand, BOM, or loss data.
-  // These fields are included in the free preview so the results page can render
-  // basic system sizing without an infinite loading spinner.
+  const range = (value: unknown, spreadPct: number, minSpread: number, decimals = 0) => {
+    const numeric = typeof value === "number" && Number.isFinite(value) ? value : 0;
+    const spread = Math.max(Math.abs(numeric) * spreadPct, minSpread);
+    const factor = 10 ** decimals;
+    return {
+      low: Math.max(0, Math.floor((numeric - spread) * factor) / factor),
+      high: Math.ceil((numeric + spread) * factor) / factor,
+    };
+  };
+
+  // Return only safe ranges — never expose exact sizing, cost, brand, BOM,
+  // monthly production, or loss data in the free preview.
   const calculationResult = raw
     ? {
         preview: true as const,
-        arraySizeKw:           Number(raw["arraySizeKw"]           ?? 0),
-        adjustedArraySizeKw:   Number(raw["adjustedArraySizeKw"]   ?? 0),
-        numPanels:             Number(raw["numPanels"]             ?? 0),
-        inverterSizeKw:        Number(raw["inverterSizeKw"]        ?? 0),
-        batteryUsableKwh:      Number(raw["batteryUsableKwh"]      ?? 0),
-        totalBatteryBankKwh:   Number(raw["totalBatteryBankKwh"]   ?? 0),
-        yearlyProductionKwh:   Number(raw["yearlyProductionKwh"]   ?? 0),
-        peakSunHours:          Number(raw["peakSunHours"]          ?? 0),
-        dailyKwh:              Number(raw["dailyKwh"]              ?? 0),
-        squareFeetRequired:    raw["squareFeetRequired"]  != null ? Number(raw["squareFeetRequired"])  : null,
-        offGridDesignFactor:   raw["offGridDesignFactor"] != null ? Number(raw["offGridDesignFactor"]) : null,
+        systemSizeKwRange: range(raw["adjustedArraySizeKw"], 0.12, 0.5, 1),
+        panelCountRange: range(raw["numPanels"], 0.12, 2),
+        yearlyProductionKwhRange: range(raw["yearlyProductionKwh"], 0.15, 750),
+        batteryUsableKwhRange: range(raw["batteryUsableKwh"], 0.15, 2, 1),
+        inverterSizeKwRange: range(raw["inverterSizeKw"], 0.15, 1, 1),
         pvwattsSource:         (raw["pvwattsSource"]         as string  | null) ?? null,
-        pvwattsMonthlyKwh:     (raw["pvwattsMonthlyKwh"]    as number[] | null) ?? null,
-        pvwattsSolradMonthly:  (raw["pvwattsSolradMonthly"] as number[] | null) ?? null,
-        pvwattsAnnualKwh:      raw["pvwattsAnnualKwh"]      != null ? Number(raw["pvwattsAnnualKwh"])      : null,
-        pvwattsSolradAnnual:   raw["pvwattsSolradAnnual"]   != null ? Number(raw["pvwattsSolradAnnual"])   : null,
-        pvwattsCapacityFactor: raw["pvwattsCapacityFactor"] != null ? Number(raw["pvwattsCapacityFactor"]) : null,
       }
     : null;
 

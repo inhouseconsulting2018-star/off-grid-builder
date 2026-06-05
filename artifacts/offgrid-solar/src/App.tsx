@@ -24,6 +24,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/pricing" component={Home} />
       <Route path="/projects" component={ProjectsDashboard} />
       <Route path="/wizard" component={Wizard} />
       <Route path="/proposal" component={QuickProposal} />
@@ -32,9 +33,11 @@ function Router() {
       <Route path="/projects/:id/edit" component={EditProject} />
       <Route path="/ai-assistant" component={AIAssistant} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/admin/settings" component={SettingsPage} />
       <Route path="/payment-success" component={PaymentSuccess} />
       <Route path="/payment-cancel" component={PaymentCancel} />
       <Route path="/purchases" component={PurchasesPage} />
+      <Route path="/admin/purchases" component={PurchasesPage} />
       <Route component={NotFound} />
     </Switch>
   );
