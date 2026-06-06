@@ -9,7 +9,7 @@ The launch pricing model uses four Stripe prices:
 - `Homeowner Full Report`: `$19.00`, one-time, `STRIPE_HOMEOWNER_REPORT_PRICE_ID`
 - `Property Pack`: `$39.00`, one-time, `STRIPE_PROPERTY_PACK_PRICE_ID`
 - `Contractor Annual Access`: `$149.00/year`, yearly subscription, `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID`
-- `Contractor Lifetime Beta`: `$199.00`, one-time, `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID`
+- `Contractor Lifetime Beta`: `$199.00`, one-time beta access, `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID`
 
 The legacy `STRIPE_PRICE_ID` remains supported as a fallback for the homeowner full report only.
 
@@ -34,15 +34,20 @@ Production requires:
 ```text
 DATABASE_URL
 ADMIN_TOKEN
+STRIPE_SECRET_KEY
 STRIPE_HOMEOWNER_REPORT_PRICE_ID
 STRIPE_PROPERTY_PACK_PRICE_ID
 STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
 STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
+STRIPE_PRICE_ID
 STRIPE_WEBHOOK_SECRET
 NREL_API_KEY
+FRONTEND_URL=https://offgridsolarbuilders.com
 ```
 
-Stripe credentials must come from one of these:
+`STRIPE_PRICE_ID` remains the legacy fallback for the homeowner full report. Set it to the same Price ID as `STRIPE_HOMEOWNER_REPORT_PRICE_ID` unless you intentionally need a separate legacy value.
+
+Stripe API credentials must come from one of these:
 
 ```text
 STRIPE_SECRET_KEY
@@ -59,7 +64,7 @@ Configure the Stripe webhook in the same mode as the price ID and secret key.
 Endpoint:
 
 ```text
-https://offgridsolarbuilder.com/api/stripe/webhook
+https://offgridsolarbuilders.com/api/stripe/webhook
 ```
 
 Required events:
@@ -67,6 +72,9 @@ Required events:
 ```text
 checkout.session.completed
 payment_intent.payment_failed
+customer.subscription.created
+customer.subscription.updated
+customer.subscription.deleted
 ```
 
 Set `STRIPE_WEBHOOK_SECRET` to the signing secret from this exact live webhook endpoint. Do not reuse a test-mode webhook secret for live payments.

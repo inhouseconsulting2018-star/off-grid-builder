@@ -46,12 +46,19 @@ export async function unlockProjectFromCheckoutSession(
   if (!Number.isFinite(projectId)) return null;
 
   const [project] = await db
-    .select({ accessToken: projectsTable.accessToken })
+    .select({
+      accessToken: projectsTable.accessToken,
+      stripeSessionId: projectsTable.stripeSessionId,
+      selectedPlan: projectsTable.selectedPlan,
+    })
     .from(projectsTable)
     .where(eq(projectsTable.id, projectId));
   if (!project) return null;
 
   const plan = getPlanForWebhook(session.metadata?.selectedPlan);
+  if (project.stripeSessionId === session.id) {
+    return { projectId, selectedPlan: project.selectedPlan ?? plan.id };
+  }
   const update = buildEntitlementUpdate(session, plan);
   const baseOrigin = env.frontendUrl?.replace(/\/$/, "") ?? `${options.protocol}://${options.host}`;
   const reportUrl = `${baseOrigin}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;

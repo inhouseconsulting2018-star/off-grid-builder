@@ -31,7 +31,7 @@ List exactly what must be set in Replit Secrets/Integrations:
 - Product name:
   Full Solar Report
 - Price:
-  $49 one-time payment
+  $19 one-time payment
 - Currency:
   USD
 - Save/output the new live price ID.
@@ -62,7 +62,7 @@ After live secrets are configured:
 - view preview report
 - click Unlock Full Solar Report
 - confirm checkout opens with live Stripe mode
-- confirm amount is $49
+- confirm amount is $19
 - confirm domain/success/cancel URLs use offgridsolarbuilders.com
 - do not complete a real payment unless I explicitly say so
 

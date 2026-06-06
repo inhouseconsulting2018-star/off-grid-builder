@@ -83,9 +83,7 @@ export function previewProject(project: ProjectRow) {
   };
 
   // Return only safe ranges — never expose exact sizing, cost, brand, BOM,
-  // or loss data in the free preview.
-  // PVWatts seasonal production data IS included in the free preview so users
-  // can see their monthly output curve and understand seasonal variation.
+  // monthly production, or loss data in the free preview.
   const calculationResult = raw
     ? {
         preview: true as const,
@@ -94,12 +92,7 @@ export function previewProject(project: ProjectRow) {
         yearlyProductionKwhRange: range(raw["yearlyProductionKwh"], 0.15, 750),
         batteryUsableKwhRange: range(raw["batteryUsableKwh"], 0.15, 2, 1),
         inverterSizeKwRange: range(raw["inverterSizeKw"], 0.15, 1, 1),
-        pvwattsSource:          (raw["pvwattsSource"]          as string    | null) ?? null,
-        pvwattsMonthlyKwh:      (raw["pvwattsMonthlyKwh"]      as number[]  | null) ?? null,
-        pvwattsSolradMonthly:   (raw["pvwattsSolradMonthly"]   as number[]  | null) ?? null,
-        pvwattsAnnualKwh:       (raw["pvwattsAnnualKwh"]       as number    | null) ?? null,
-        pvwattsSolradAnnual:    (raw["pvwattsSolradAnnual"]    as number    | null) ?? null,
-        pvwattsCapacityFactor:  (raw["pvwattsCapacityFactor"]  as number    | null) ?? null,
+        pvwattsSource:         (raw["pvwattsSource"]         as string  | null) ?? null,
       }
     : null;
 

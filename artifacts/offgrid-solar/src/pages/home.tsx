@@ -13,8 +13,16 @@ import {
   Clock,
   Star,
 } from "lucide-react";
+import { useEffect } from "react";
+import { trackEvent } from "@/services/analytics";
 
 export default function Home() {
+  useEffect(() => {
+    trackEvent("pricing_viewed", { source: window.location.pathname });
+  }, []);
+
+  const trackStart = () => trackEvent("start_estimate", { source: window.location.pathname });
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="px-5 py-4 flex items-center justify-between max-w-6xl w-full mx-auto">
@@ -23,7 +31,7 @@ export default function Home() {
           <span>OffGrid Solar Builder</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/wizard">
+          <Link href="/wizard" onClick={trackStart}>
             <Button size="sm">Get My Solar Report</Button>
           </Link>
         </div>
@@ -44,7 +52,7 @@ export default function Home() {
             Answer a few questions about your home and we'll calculate the exact panels, battery bank, and inverter you need — with a professional report you can hand straight to a contractor.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link href="/wizard">
+            <Link href="/wizard" onClick={trackStart}>
               <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto">
                 Start Free Solar Design
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -212,7 +220,7 @@ export default function Home() {
         <div className="w-full mb-16 rounded-2xl bg-primary/10 border border-primary/20 p-8 sm:p-12 text-center">
           <h2 className="text-2xl sm:text-3xl font-bold mb-3">Ready to see what solar costs for your home?</h2>
           <p className="text-muted-foreground mb-6 max-w-md mx-auto">Start free. Takes 3 minutes. Get a professional report you can actually use.</p>
-          <Link href="/wizard">
+          <Link href="/wizard" onClick={trackStart}>
             <Button size="lg" className="h-12 px-10 text-base">
               Start My Free Solar Design <ArrowRight className="ml-2 h-4 w-4" />
             </Button>

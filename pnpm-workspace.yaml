@@ -87,6 +87,7 @@ overrides:
   yaml: "2.9.0"
   "brace-expansion@2": "2.0.3"
   postcss: "8.5.14"
+  qs: "6.15.2"
 
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"

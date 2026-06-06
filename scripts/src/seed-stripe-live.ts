@@ -1,7 +1,7 @@
 import { getUncachableStripeClient } from './stripeClient';
 
 /**
- * Creates the "Solar Report Unlock" one-time product + $49 price in Stripe LIVE mode.
+ * Creates the "Solar Report Unlock" one-time product + $19 price in Stripe LIVE mode.
  *
  * IMPORTANT: This script targets your LIVE Stripe account.
  * Before running, ensure your Replit Secrets are set to live-mode keys:
@@ -49,10 +49,10 @@ async function seedStripeLiveProduct() {
       console.log('No one-time price found. Creating one...');
       const price = await stripe.prices.create({
         product: product.id,
-        unit_amount: 4900,
+        unit_amount: 1900,
         currency: 'usd',
       });
-      console.log(`\n✓ Created price: $49.00 one-time (${price.id})`);
+      console.log(`\n✓ Created price: $19.00 one-time (${price.id})`);
       console.log(`\nSet these in Replit Secrets:`);
       console.log(`  STRIPE_PRICE_ID=${price.id}`);
     }
@@ -74,10 +74,10 @@ async function seedStripeLiveProduct() {
 
   const price = await stripe.prices.create({
     product: product.id,
-    unit_amount: 4900,
+    unit_amount: 1900,
     currency: 'usd',
   });
-  console.log(`Created price: $49.00 one-time (${price.id})`);
+  console.log(`Created price: $19.00 one-time (${price.id})`);
 
   console.log(`\n✓ Done! Set these in Replit Secrets:`);
   console.log(`  STRIPE_PRICE_ID=${price.id}`);
