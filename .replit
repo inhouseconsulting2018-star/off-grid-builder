@@ -41,12 +41,5 @@ channel = "stable-25_05"
 
 [userenv]
 
-[userenv.shared]
-STRIPE_HOMEOWNER_REPORT_PRICE_ID = "price_1TZPDcPtpEeLlAYiXtAifKb4"
-STRIPE_PROPERTY_PACK_PRICE_ID = "price_1TZQxRPtpEeLlAYiBfvfWkGK"
-STRIPE_PRICE_ID = "price_1TZPDcPtpEeLlAYiXtAifKb4"
-STRIPE_CONTRACTOR_ANNUAL_PRICE_ID = "price_1TZRKDPtpEeLlAYiWXhoyQHz"
-STRIPE_CONTRACTOR_LIFETIME_PRICE_ID = "price_1TeqMFPtpEeLlAYi2Pg4JA7Q"
-
 [userenv.production]
 FRONTEND_URL = "https://offgridsolarbuilders.com"
