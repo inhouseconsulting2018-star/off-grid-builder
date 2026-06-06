@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 process.env.LOG_LEVEL = "silent";
 process.env.ADMIN_TOKEN = "admin-test-token";
 
-const { buildPreview, buildPaidReport } = await import("../../artifacts/api-server/src/services/reports/reportService");
+const {
+  buildPreview,
+  buildPaidReport,
+  renderReportPdfBuffer,
+  renderReportPdfHtml,
+} = await import("../../artifacts/api-server/src/services/reports/reportService");
 const { buildEntitlementUpdate } = await import("../../artifacts/api-server/src/services/payments/entitlements");
 const { getCheckoutPlan } = await import("../../artifacts/api-server/src/services/payments/plans");
 
@@ -14,8 +19,10 @@ const calc = {
   installedCostLow: 24_000,
   installedCostHigh: 31_000,
   estimatedYearlySavings: 1_850,
+  paybackYears: 12.5,
   productionEstimateLabel: "PVWatts",
   inverterSizeKw: 7.6,
+  totalSystemLossPct: 14,
   totalBatteryBankKwh: 15,
   batteryUsableKwh: 12,
   recommendedPanelBrand: "Q CELLS",
@@ -124,4 +131,27 @@ run("Stripe webhook entitlement update unlocks selected plan credits", () => {
   assert.equal(update.entitlementType, "contractor_lifetime_beta");
   assert.equal(update.reportCredits, 100);
   assert.equal(update.contractorStatus, true);
+});
+
+run("launch plan prices match checkout amounts", () => {
+  assert.equal(getCheckoutPlan("homeowner_report").amountCents, 1_900);
+  assert.equal(getCheckoutPlan("property_pack").amountCents, 3_900);
+  assert.equal(getCheckoutPlan("contractor_annual").amountCents, 14_900);
+  assert.equal(getCheckoutPlan("contractor_lifetime_beta").amountCents, 19_900);
+});
+
+run("paid report PDF and printable HTML include project details and disclaimer", () => {
+  const report = buildPaidReport({ ...project, paidAt: new Date() } as any);
+  assert.ok(report);
+
+  const pdf = renderReportPdfBuffer(report);
+  assert.equal(pdf.subarray(0, 8).toString(), "%PDF-1.4");
+  assert.ok(pdf.includes(Buffer.from("QA Project")));
+  assert.ok(pdf.includes(Buffer.from("Preliminary planning estimate only")));
+
+  const html = renderReportPdfHtml(report);
+  assert.match(html, /QA Project/);
+  assert.match(html, /8\.20 kW DC/);
+  assert.match(html, /Preliminary planning estimate only/);
+  assert.match(html, /not a permit-ready engineering plan/);
 });

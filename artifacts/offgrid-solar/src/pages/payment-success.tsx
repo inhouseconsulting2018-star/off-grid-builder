@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, FileText, ArrowRight } from "lucide-react";
 import { Link, useSearch } from "wouter";
+import { trackEvent } from "@/services/analytics";
 
 export default function PaymentSuccess() {
   const search = useSearch();
@@ -19,6 +20,7 @@ export default function PaymentSuccess() {
       } catch {
         // ignore — private browsing may block sessionStorage
       }
+      trackEvent("purchase_completed", { projectId: Number(projectId) || projectId });
     }
   }, [projectId, accessToken]);
 

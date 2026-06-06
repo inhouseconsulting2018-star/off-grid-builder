@@ -34,15 +34,20 @@ Production requires:
 ```text
 DATABASE_URL
 ADMIN_TOKEN
+STRIPE_SECRET_KEY
 STRIPE_HOMEOWNER_REPORT_PRICE_ID
 STRIPE_PROPERTY_PACK_PRICE_ID
 STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
 STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
+STRIPE_PRICE_ID
 STRIPE_WEBHOOK_SECRET
 NREL_API_KEY
+FRONTEND_URL=https://offgridsolarbuilders.com
 ```
 
-Stripe credentials must come from one of these:
+`STRIPE_PRICE_ID` remains the legacy fallback for the homeowner full report. Set it to the same Price ID as `STRIPE_HOMEOWNER_REPORT_PRICE_ID` unless you intentionally need a separate legacy value.
+
+Stripe API credentials must come from one of these:
 
 ```text
 STRIPE_SECRET_KEY
