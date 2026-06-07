@@ -82,7 +82,7 @@ overrides:
   yaml: 2.9.0
   brace-expansion@2: 2.0.3
   postcss: 8.5.14
-  qs: ^6.15.2
+  qs: 6.15.2
   esbuild: 0.27.3
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
   esbuild>@esbuild/darwin-arm64: '-'

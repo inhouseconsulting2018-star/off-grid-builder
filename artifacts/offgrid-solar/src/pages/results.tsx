@@ -17,6 +17,7 @@ import { ProjectMap } from "@/components/maps/ProjectMap";
 import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
 import { createProjectCheckoutSession } from "@/services/projectService";
+import { trackEvent } from "@/services/analytics";
 import {
   BarChart, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine, Line, Legend,
@@ -52,6 +53,10 @@ export default function Results() {
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const handleUnlockReport = (selectedPlan: "homeowner_report" | "property_pack" | "contractor_annual" | "contractor_lifetime_beta" = "homeowner_report") => {
+    trackEvent("checkout_clicked", { projectId, plan: selectedPlan });
+    if (selectedPlan === "contractor_lifetime_beta") {
+      trackEvent("contractor_beta_clicked", { projectId });
+    }
     setIsRedirecting(true);
     createCheckoutSession.mutate(
       selectedPlan,
@@ -74,6 +79,7 @@ export default function Results() {
   };
 
   const handleDownloadPdf = () => {
+    trackEvent("pdf_downloaded", { projectId });
     const url = `/api/projects/${projectId}/report.pdf?accessToken=${encodeURIComponent(token)}`;
     window.location.href = url;
   };
@@ -1526,7 +1532,7 @@ export default function Results() {
         <section>
           <div className="text-xs text-muted-foreground text-center p-5 border rounded-lg bg-muted/20 leading-relaxed">
             <strong className="block mb-1 text-foreground">Important Disclaimer</strong>
-            This tool provides preliminary solar estimates only. Final system design, electrical work, permitting, and interconnection must be verified by a licensed solar installer and/or licensed electrical contractor, and approved by the local Authority Having Jurisdiction (AHJ). Equipment quantities, wire sizing, protection device ratings, and structural requirements shown in this report are preliminary and subject to change. Always obtain proper permits before installation.
+            Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional. This report is not a permit-ready engineering plan. Equipment quantities, wire sizing, protection device ratings, and structural requirements are preliminary and subject to change. Always obtain proper permits before installation.
           </div>
         </section>
 

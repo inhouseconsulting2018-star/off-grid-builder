@@ -1687,6 +1687,15 @@ export const CreateProjectCheckoutSessionParams = zod.object({
 export const createProjectCheckoutSessionBodyProductTypeDefault = `homeowner`;
 
 export const CreateProjectCheckoutSessionBody = zod.object({
+  selectedPlan: zod
+    .enum([
+      "homeowner_report",
+      "property_pack",
+      "contractor_annual",
+      "contractor_lifetime_beta",
+    ])
+    .default("homeowner_report")
+    .optional(),
   productType: zod
     .enum([
       "homeowner",
