@@ -712,7 +712,7 @@ export const getCreateProjectCheckoutSessionUrl = (id: number) => {
 
 export const createProjectCheckoutSession = async (
   id: number,
-  createProjectCheckoutSessionBody?: CreateProjectCheckoutSessionBody,
+  createProjectCheckoutSessionBody: CreateProjectCheckoutSessionBody,
   options?: RequestInit,
 ): Promise<CheckoutSessionResult> => {
   return customFetch<CheckoutSessionResult>(

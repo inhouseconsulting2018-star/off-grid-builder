@@ -21,6 +21,9 @@ node_modules/
 *.key
 *.pem
 *.secret
+# Release transfer artifacts can contain historical configuration or credentials.
+final-production-activation*.patch
+final-production-activation*.bundle
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
 *.log

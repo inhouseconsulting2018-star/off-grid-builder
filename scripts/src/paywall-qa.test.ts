@@ -9,8 +9,14 @@ const {
   renderReportPdfBuffer,
   renderReportPdfHtml,
 } = await import("../../artifacts/api-server/src/services/reports/reportService");
-const { buildEntitlementUpdate } = await import("../../artifacts/api-server/src/services/payments/entitlements");
-const { getCheckoutPlan } = await import("../../artifacts/api-server/src/services/payments/plans");
+const {
+  buildEntitlementUpdate,
+  hasActivePaidEntitlement,
+} = await import("../../artifacts/api-server/src/services/payments/entitlements");
+const {
+  getCheckoutPlan,
+  parseCheckoutPlan,
+} = await import("../../artifacts/api-server/src/services/payments/plans");
 
 const calc = {
   adjustedArraySizeKw: 8.2,
@@ -137,6 +143,20 @@ run("launch plan prices match checkout amounts", () => {
   assert.equal(getCheckoutPlan("property_pack").amountCents, 3_900);
   assert.equal(getCheckoutPlan("contractor_annual").amountCents, 14_900);
   assert.equal(getCheckoutPlan("contractor_lifetime_beta").amountCents, 19_900);
+});
+
+run("checkout rejects missing or invalid selected plans", () => {
+  assert.equal(parseCheckoutPlan(undefined), null);
+  assert.equal(parseCheckoutPlan("not-a-plan"), null);
+  assert.equal(parseCheckoutPlan("homeowner_report"), "homeowner_report");
+});
+
+run("annual entitlement requires an active subscription", () => {
+  const paidAt = new Date();
+  assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "active" }), true);
+  assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "past_due" }), false);
+  assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "canceled" }), false);
+  assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "homeowner_report", paymentStatus: "paid" }), true);
 });
 
 run("paid report PDF and printable HTML include project details and disclaimer", () => {

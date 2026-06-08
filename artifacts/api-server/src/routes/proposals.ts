@@ -22,6 +22,7 @@ import {
   BATTERY_CATALOG,
 } from "../services/proposals/proposalCalculator";
 import { logger } from "../utils/logger";
+import { requireAdminToken } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
@@ -29,7 +30,7 @@ const router: IRouter = Router();
 // Returns the panel and battery catalogs so the frontend can render selectors
 // without embedding any business data client-side.
 
-router.get("/proposals/equipment", (_req, res) => {
+router.get("/proposals/equipment", requireAdminToken, (_req, res) => {
   res.json({
     panels: Object.entries(PANEL_CATALOG).map(([key, spec]) => ({
       key,
@@ -120,7 +121,7 @@ function parseInput(body: unknown): { ok: true; data: EstimateInput } | { ok: fa
 
 // ─── POST /api/proposals/estimate ─────────────────────────────────────────────
 
-router.post("/proposals/estimate", async (req, res): Promise<void> => {
+router.post("/proposals/estimate", requireAdminToken, async (req, res): Promise<void> => {
   const parsed = parseInput(req.body);
   if (!parsed.ok) {
     res.status(400).json({ error: parsed.error });
