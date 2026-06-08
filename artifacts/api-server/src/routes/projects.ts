@@ -118,9 +118,11 @@ async function createCheckoutSession(req: Request, res: Response, input: {
   }
 
   const stripe = await getUncachableStripeClient();
-  const baseOrigin = env.nodeEnv === "production" || env.isReplitDeployment
-    ? "https://offgridsolarbuilders.com"
-    : (env.frontendUrl?.replace(/\/$/, "") ?? `${req.protocol}://${req.get("x-forwarded-host") ?? req.get("host") ?? "localhost"}`);
+  const configuredFrontendUrl = env.frontendUrl?.replace(/\/$/, "");
+  const baseOrigin = configuredFrontendUrl
+    ?? (env.nodeEnv === "production" || env.isReplitDeployment
+      ? "https://offgridsolarbuilder.com"
+      : `${req.protocol}://${req.get("x-forwarded-host") ?? req.get("host") ?? "localhost"}`);
   const successUrl = `${baseOrigin}/payment-success?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}&session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
   const metadata = {

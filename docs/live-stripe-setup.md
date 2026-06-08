@@ -42,7 +42,7 @@ STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
 STRIPE_PRICE_ID
 STRIPE_WEBHOOK_SECRET
 NREL_API_KEY
-FRONTEND_URL=https://offgridsolarbuilders.com
+FRONTEND_URL=https://offgridsolarbuilder.com
 ```
 
 `STRIPE_PRICE_ID` remains the legacy fallback for the homeowner full report. Set it to the same Price ID as `STRIPE_HOMEOWNER_REPORT_PRICE_ID` unless you intentionally need a separate legacy value.
@@ -64,7 +64,7 @@ Configure the Stripe webhook in the same mode as the price ID and secret key.
 Endpoint:
 
 ```text
-https://offgridsolarbuilders.com/api/stripe/webhook
+https://offgridsolarbuilder.com/api/stripe/webhook
 ```
 
 Required events:

@@ -42,4 +42,4 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.production]
-FRONTEND_URL = "https://offgridsolarbuilders.com"
+FRONTEND_URL = "https://offgridsolarbuilder.com"
