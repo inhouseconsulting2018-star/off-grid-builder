@@ -9,6 +9,6 @@ import type { CreateProjectCheckoutSessionBodyProductType } from "./createProjec
 import type { CreateProjectCheckoutSessionBodySelectedPlan } from "./createProjectCheckoutSessionBodySelectedPlan";
 
 export type CreateProjectCheckoutSessionBody = {
-  selectedPlan?: CreateProjectCheckoutSessionBodySelectedPlan;
+  selectedPlan: CreateProjectCheckoutSessionBodySelectedPlan;
   productType?: CreateProjectCheckoutSessionBodyProductType;
 };

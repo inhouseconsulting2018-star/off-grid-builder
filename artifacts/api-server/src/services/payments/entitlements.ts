@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, projectsTable } from "@workspace/db";
-import { env } from "../../config/env";
+import { getFrontendOrigin } from "../../config/frontendOrigin";
 import { getPlanForWebhook, type CheckoutPlan } from "./plans";
 import { deliverReportEmail } from "../reports/reportDeliveryService";
 
@@ -18,6 +18,18 @@ export type StripeSubscriptionLike = {
   status?: string | null;
   metadata?: Record<string, string> | null;
 };
+
+export function hasActivePaidEntitlement(project: {
+  paidAt?: Date | null;
+  selectedPlan?: string | null;
+  paymentStatus?: string | null;
+}): boolean {
+  if (!project.paidAt) return false;
+  if (project.selectedPlan !== "contractor_annual") return project.paymentStatus === "paid";
+  return project.paymentStatus === "paid"
+    || project.paymentStatus === "active"
+    || project.paymentStatus === "trialing";
+}
 
 export function buildEntitlementUpdate(session: StripeCheckoutSessionLike, plan: CheckoutPlan) {
   return {
@@ -60,7 +72,7 @@ export async function unlockProjectFromCheckoutSession(
     return { projectId, selectedPlan: project.selectedPlan ?? plan.id };
   }
   const update = buildEntitlementUpdate(session, plan);
-  const baseOrigin = env.frontendUrl?.replace(/\/$/, "") ?? `${options.protocol}://${options.host}`;
+  const baseOrigin = getFrontendOrigin(`${options.protocol}://${options.host}`);
   const reportUrl = `${baseOrigin}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
   const reportDeliveryStatus = update.purchaserEmail
     ? await deliverReportEmail({ projectId, email: update.purchaserEmail, reportUrl })
@@ -92,7 +104,7 @@ export async function updateProjectFromSubscription(
 
   const plan = getPlanForWebhook(subscription.metadata?.selectedPlan);
   const paymentStatus = subscription.status ?? "unknown";
-  const contractorStatus = !["canceled", "incomplete_expired", "unpaid"].includes(paymentStatus);
+  const contractorStatus = paymentStatus === "active" || paymentStatus === "trialing";
 
   await db
     .update(projectsTable)

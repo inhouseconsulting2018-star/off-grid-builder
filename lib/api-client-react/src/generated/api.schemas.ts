@@ -594,9 +594,6 @@ export interface SettingsPatch {
   mountingCostPerPanel?: number;
 }
 
-export type CreateProjectCheckoutSessionBodyProductType =
-  (typeof CreateProjectCheckoutSessionBodyProductType)[keyof typeof CreateProjectCheckoutSessionBodyProductType];
-
 export type CreateProjectCheckoutSessionBodySelectedPlan =
   (typeof CreateProjectCheckoutSessionBodySelectedPlan)[keyof typeof CreateProjectCheckoutSessionBodySelectedPlan];
 
@@ -607,6 +604,9 @@ export const CreateProjectCheckoutSessionBodySelectedPlan = {
   contractor_lifetime_beta: "contractor_lifetime_beta",
 } as const;
 
+export type CreateProjectCheckoutSessionBodyProductType =
+  (typeof CreateProjectCheckoutSessionBodyProductType)[keyof typeof CreateProjectCheckoutSessionBodyProductType];
+
 export const CreateProjectCheckoutSessionBodyProductType = {
   homeowner: "homeowner",
   property_pack: "property_pack",
@@ -615,6 +615,6 @@ export const CreateProjectCheckoutSessionBodyProductType = {
 } as const;
 
 export type CreateProjectCheckoutSessionBody = {
-  selectedPlan?: CreateProjectCheckoutSessionBodySelectedPlan;
+  selectedPlan: CreateProjectCheckoutSessionBodySelectedPlan;
   productType?: CreateProjectCheckoutSessionBodyProductType;
 };

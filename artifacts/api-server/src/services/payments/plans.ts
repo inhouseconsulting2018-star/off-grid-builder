@@ -70,10 +70,10 @@ export function getCheckoutPlans(): Record<CheckoutPlanId, CheckoutPlan> {
   };
 }
 
-export function parseCheckoutPlan(value: unknown): CheckoutPlanId {
+export function parseCheckoutPlan(value: unknown): CheckoutPlanId | null {
   if (value === "homeowner") return "homeowner_report";
   if (value === "contractor_lifetime") return "contractor_lifetime_beta";
-  return checkoutPlanIds.includes(value as CheckoutPlanId) ? value as CheckoutPlanId : "homeowner_report";
+  return checkoutPlanIds.includes(value as CheckoutPlanId) ? value as CheckoutPlanId : null;
 }
 
 export function getCheckoutPlan(planId: CheckoutPlanId): CheckoutPlan {
@@ -81,5 +81,5 @@ export function getCheckoutPlan(planId: CheckoutPlanId): CheckoutPlan {
 }
 
 export function getPlanForWebhook(planId: string | undefined): CheckoutPlan {
-  return getCheckoutPlan(parseCheckoutPlan(planId));
+  return getCheckoutPlan(parseCheckoutPlan(planId) ?? "homeowner_report");
 }
