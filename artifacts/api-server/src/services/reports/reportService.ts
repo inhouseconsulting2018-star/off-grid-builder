@@ -178,7 +178,7 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
         <tr><td>Annual savings</td><td>$${Math.round(calc.estimatedYearlySavings).toLocaleString()}</td></tr>
       </tbody></table>
       <h2>Assumptions and Disclaimers</h2>
-      <p class="disclaimer">This report is for preliminary planning only. Final design must be verified by qualified licensed professionals and approved by the Authority Having Jurisdiction. Production, savings, equipment availability, incentives, and code requirements may vary.</p>
+      <p class="disclaimer">Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional. This report is not a permit-ready engineering plan. Production, savings, equipment availability, incentives, and code requirements may vary.</p>
     </body>
   </html>`;
 }
@@ -210,7 +210,8 @@ export function renderReportPdfBuffer(report: NonNullable<ReturnType<typeof buil
     ...bom.slice(0, 20).map((item) => `${item.category}: ${item.model} (${item.qty}) ${item.totalPrice}`),
     "",
     "Assumptions and Disclaimers",
-    "This report is for preliminary planning only. Final design must be verified by qualified licensed professionals and approved by the Authority Having Jurisdiction.",
+    "Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional.",
+    "This report is not a permit-ready engineering plan.",
   ];
   return makeSimplePdf(lines);
 }

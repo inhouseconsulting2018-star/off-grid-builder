@@ -93,8 +93,8 @@ Make Stripe test mode work end-to-end.
 Plans:
 - Homeowner Full Report: $19, 1 full report credit
 - Property Pack: $39, 3 full report credits
-- Contractor Annual: $199/year, 50 report credits
-- Contractor Lifetime Beta: $299 one-time, 100 report credits
+- Contractor Annual: $149/year, 50 report credits
+- Contractor Lifetime Beta: $199 one-time, 100 report credits
 
 Required env vars:
 - DATABASE_URL

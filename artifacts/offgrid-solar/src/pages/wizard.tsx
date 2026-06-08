@@ -16,6 +16,7 @@ import { useCreateProject } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { geocodeAddress } from "@/services/geocodingService";
 import { appEnv } from "@/config/env";
+import { trackEvent } from "@/services/analytics";
 import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, CheckCircle2 } from "lucide-react";
 
 const wizardSchema = z.object({
@@ -157,6 +158,7 @@ export default function Wizard() {
           headers: { "Content-Type": "application/json", "x-access-token": token },
         });
         if (!calcRes.ok) throw new Error("Calculation failed");
+        trackEvent("preview_generated", { projectId: project.id });
       } finally {
         setIsCalculating(false);
       }

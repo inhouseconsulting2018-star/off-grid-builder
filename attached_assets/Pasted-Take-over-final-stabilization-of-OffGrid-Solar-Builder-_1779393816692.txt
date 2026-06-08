@@ -93,8 +93,8 @@ After payment:
 Plans to support:
 - Homeowner Full Report: $19, 1 full report credit
 - Property Pack: $39, 3 full report credits
-- Contractor Annual: $199/year or one-time annual access, 50 report credits
-- Contractor Lifetime Beta: $299 one-time, 100 report credits
+- Contractor Annual: $149/year, 50 report credits
+- Contractor Lifetime Beta: $199 one-time, 100 report credits
 
 Stripe env vars:
 - STRIPE_HOMEOWNER_REPORT_PRICE_ID
@@ -199,8 +199,8 @@ TASK 7 — Pricing UI Check
 Confirm displayed pricing is:
 - Homeowner Full Report: $19
 - Property Pack: $39
-- Contractor Annual: $199/year
-- Contractor Lifetime Beta: $299 one-time
+- Contractor Annual: $149/year
+- Contractor Lifetime Beta: $199 one-time
 
 Free preview must tease value but not expose paid details.
 
