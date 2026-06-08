@@ -37,7 +37,7 @@ export default function SeoCalculatorPage({ config }: { config: SeoCalculatorCon
       canonical.rel = "canonical";
       document.head.appendChild(canonical);
     }
-    canonical.href = `https://offgridsolarbuilder.com${config.canonicalPath}`;
+    canonical.href = `https://www.offgridsolarbuilder.com${config.canonicalPath}`;
   }, [config]);
 
   const trackStart = () => trackEvent("start_estimate", { source: config.canonicalPath });

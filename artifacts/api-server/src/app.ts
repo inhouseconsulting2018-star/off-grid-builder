@@ -19,6 +19,7 @@ const allowedOrigins = new Set(
   [
     env.frontendUrl?.replace(/\/$/, ""),
     productionFrontendOrigin,
+    "https://offgridsolarbuilder.com",
     "https://off-grid-builder-1.replit.app",
     env.nodeEnv === "development" ? "http://localhost:5173" : null,
     env.nodeEnv === "development" ? "http://localhost:8081" : null,
