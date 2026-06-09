@@ -17,6 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import { geocodeAddress } from "@/services/geocodingService";
 import { appEnv } from "@/config/env";
 import { trackEvent } from "@/services/analytics";
+import { createProjectCheckoutSession } from "@/services/projectService";
+import { getCheckoutPlan, parseCheckoutPlan } from "@/services/checkoutPlans";
 import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, CheckCircle2 } from "lucide-react";
 
 const wizardSchema = z.object({
@@ -78,6 +80,8 @@ export default function Wizard() {
   const { toast } = useToast();
   const createProject = useCreateProject();
   const [isCalculating, setIsCalculating] = useState(false);
+  const selectedPlan = parseCheckoutPlan(new URLSearchParams(window.location.search).get("selectedPlan"));
+  const selectedPlanDetails = selectedPlan ? getCheckoutPlan(selectedPlan) : null;
 
   const form = useForm<WizardFormValues>({
     resolver: zodResolver(wizardSchema),
@@ -163,8 +167,34 @@ export default function Wizard() {
         setIsCalculating(false);
       }
 
+      const resultsUrl = `/results/${project.id}?accessToken=${encodeURIComponent(token)}${
+        selectedPlan ? `&selectedPlan=${encodeURIComponent(selectedPlan)}` : ""
+      }`;
+
+      if (selectedPlan) {
+        trackEvent("checkout_clicked", { projectId: project.id, plan: selectedPlan });
+        if (selectedPlan === "contractor_lifetime_beta") {
+          trackEvent("contractor_beta_clicked", { projectId: project.id });
+        }
+        try {
+          const checkout = await createProjectCheckoutSession(project.id, token, selectedPlan);
+          if (checkout.url) {
+            window.location.href = checkout.url;
+            return;
+          }
+        } catch {
+          toast({
+            title: "Design saved",
+            description: "Checkout could not open automatically. Choose your plan again on the report.",
+            variant: "destructive",
+          });
+          setLocation(resultsUrl);
+          return;
+        }
+      }
+
       toast({ title: "Design Complete", description: "Your solar report is ready." });
-      setLocation(`/results/${project.id}?accessToken=${encodeURIComponent(token)}`);
+      setLocation(resultsUrl);
     } catch {
       toast({ title: "Error", description: "Failed to create project", variant: "destructive" });
     }
@@ -225,6 +255,12 @@ export default function Wizard() {
         </div>
 
         <Card className="shadow-sm border-primary/10">
+          {selectedPlanDetails && (
+            <div className="border-b bg-primary/5 px-6 py-3 text-sm">
+              <span className="font-semibold">{selectedPlanDetails.name}</span>
+              <span className="text-muted-foreground"> selected at {selectedPlanDetails.price}. Complete the design to continue to secure checkout.</span>
+            </div>
+          )}
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)}>
               <CardHeader className="pb-4">
@@ -704,9 +740,9 @@ export default function Wizard() {
                 ) : (
                   <Button type="submit" disabled={isBusy}>
                     {isBusy ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Calculating...</>
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {selectedPlan ? "Opening Checkout..." : "Calculating..."}</>
                     ) : (
-                      <>Calculate Design <Zap className="w-4 h-4 ml-2" /></>
+                      <>{selectedPlan ? "Continue to Secure Checkout" : "Calculate Design"} <Zap className="w-4 h-4 ml-2" /></>
                     )}
                   </Button>
                 )}

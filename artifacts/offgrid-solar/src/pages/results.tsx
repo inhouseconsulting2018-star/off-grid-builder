@@ -18,6 +18,7 @@ import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
 import { createProjectCheckoutSession } from "@/services/projectService";
 import { trackEvent } from "@/services/analytics";
+import { parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
 import {
   BarChart, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine, Line, Legend,
@@ -26,6 +27,7 @@ import {
 export default function Results() {
   const { id } = useParams();
   const projectId = parseInt(id || "0", 10);
+  const selectedPlanFromUrl = parseCheckoutPlan(new URLSearchParams(window.location.search).get("selectedPlan"));
 
   const [token] = useState<string>(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -52,7 +54,7 @@ export default function Results() {
   const hasTriggeredCalc = useRef(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const handleUnlockReport = (selectedPlan: "homeowner_report" | "property_pack" | "contractor_annual" | "contractor_lifetime_beta" = "homeowner_report") => {
+  const handleUnlockReport = (selectedPlan: CheckoutPlanId = selectedPlanFromUrl ?? "homeowner_report") => {
     trackEvent("checkout_clicked", { projectId, plan: selectedPlan });
     if (selectedPlan === "contractor_lifetime_beta") {
       trackEvent("contractor_beta_clicked", { projectId });

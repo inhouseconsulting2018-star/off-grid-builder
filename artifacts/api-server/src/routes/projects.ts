@@ -126,8 +126,8 @@ async function createCheckoutSession(req: Request, res: Response, input: {
   const stripe = await getUncachableStripeClient();
   const requestOrigin = `${req.protocol}://${req.get("x-forwarded-host") ?? req.get("host") ?? "localhost"}`;
   const baseOrigin = getFrontendOrigin(requestOrigin);
-  const successUrl = `${baseOrigin}/payment-success?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}&session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
+  const successUrl = `${baseOrigin}/payment-success?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}&selectedPlan=${encodeURIComponent(plan.id)}&session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}&selectedPlan=${encodeURIComponent(plan.id)}`;
   const metadata = {
     projectId: String(project.id),
     accessToken: project.accessToken ?? "",
