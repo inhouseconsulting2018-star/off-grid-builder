@@ -16,6 +16,8 @@ export type CheckoutPlanOption = {
   action: string;
 };
 
+const contractorLifetimePaymentLink = "https://buy.stripe.com/aFacN73xbgXh6Dg9CX3ks04";
+
 export const checkoutPlans: CheckoutPlanOption[] = [
   {
     id: "homeowner_report",
@@ -61,4 +63,11 @@ export function getCheckoutPlan(planId: CheckoutPlanId): CheckoutPlanOption {
 
 export function getPlanWizardHref(planId: CheckoutPlanId): string {
   return `/wizard?selectedPlan=${encodeURIComponent(planId)}`;
+}
+
+export function getPaymentLinkCheckoutUrl(planId: CheckoutPlanId, projectId: number): string | null {
+  if (planId !== "contractor_lifetime_beta") return null;
+  const url = new URL(contractorLifetimePaymentLink);
+  url.searchParams.set("client_reference_id", `project_${projectId}`);
+  return url.toString();
 }

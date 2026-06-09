@@ -18,7 +18,7 @@ import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
 import { createProjectCheckoutSession } from "@/services/projectService";
 import { trackEvent } from "@/services/analytics";
-import { parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
+import { getPaymentLinkCheckoutUrl, parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
 import {
   BarChart, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine, Line, Legend,
@@ -58,6 +58,11 @@ export default function Results() {
     trackEvent("checkout_clicked", { projectId, plan: selectedPlan });
     if (selectedPlan === "contractor_lifetime_beta") {
       trackEvent("contractor_beta_clicked", { projectId });
+    }
+    const paymentLinkUrl = getPaymentLinkCheckoutUrl(selectedPlan, projectId);
+    if (paymentLinkUrl) {
+      window.location.href = paymentLinkUrl;
+      return;
     }
     setIsRedirecting(true);
     createCheckoutSession.mutate(

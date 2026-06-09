@@ -7,6 +7,8 @@ import { deliverReportEmail } from "../reports/reportDeliveryService";
 export type StripeCheckoutSessionLike = {
   id: string;
   payment_status?: string | null;
+  client_reference_id?: string | null;
+  payment_link?: string | null;
   customer_details?: { email?: string | null } | null;
   customer_email?: string | null;
   amount_total?: number | null;
@@ -54,7 +56,8 @@ export async function unlockProjectFromCheckoutSession(
 ): Promise<{ projectId: number; selectedPlan: string } | null> {
   if (session.payment_status !== "paid") return null;
 
-  const projectId = parseInt(session.metadata?.projectId ?? "", 10);
+  const paymentLinkProjectId = session.client_reference_id?.match(/^project_(\d+)$/)?.[1];
+  const projectId = parseInt(session.metadata?.projectId ?? paymentLinkProjectId ?? "", 10);
   if (!Number.isFinite(projectId)) return null;
 
   const [project] = await db
@@ -67,7 +70,17 @@ export async function unlockProjectFromCheckoutSession(
     .where(eq(projectsTable.id, projectId));
   if (!project) return null;
 
-  const plan = getPlanForWebhook(session.metadata?.selectedPlan);
+  const isLifetimePaymentLink = Boolean(
+    session.payment_link
+    && paymentLinkProjectId
+    && !session.metadata?.selectedPlan
+    && session.amount_total === 19_900,
+  );
+  const plan = getPlanForWebhook(
+    session.metadata?.selectedPlan
+    ?? (isLifetimePaymentLink ? "contractor_lifetime_beta" : undefined),
+  );
+  if (!session.metadata?.selectedPlan && !isLifetimePaymentLink) return null;
   if (project.stripeSessionId === session.id) {
     return { projectId, selectedPlan: project.selectedPlan ?? plan.id };
   }

@@ -19,6 +19,7 @@ const {
 } = await import("../../artifacts/api-server/src/services/payments/plans");
 const {
   checkoutPlans: frontendCheckoutPlans,
+  getPaymentLinkCheckoutUrl,
   getPlanWizardHref,
   parseCheckoutPlan: parseFrontendCheckoutPlan,
 } = await import("../../artifacts/offgrid-solar/src/services/checkoutPlans");
@@ -166,6 +167,16 @@ run("every public pricing plan links to a selected-plan checkout flow", () => {
     const selectedPlan = new URL(href, "https://www.offgridsolarbuilder.com").searchParams.get("selectedPlan");
     assert.equal(parseFrontendCheckoutPlan(selectedPlan), plan.id);
   }
+});
+
+run("lifetime payment link carries a non-secret project reference", () => {
+  const checkoutUrl = getPaymentLinkCheckoutUrl("contractor_lifetime_beta", 42);
+  assert.ok(checkoutUrl);
+  const url = new URL(checkoutUrl);
+  assert.equal(url.origin, "https://buy.stripe.com");
+  assert.equal(url.searchParams.get("client_reference_id"), "project_42");
+  assert.equal(checkoutUrl.includes(project.accessToken), false);
+  assert.equal(getPaymentLinkCheckoutUrl("homeowner_report", 42), null);
 });
 
 run("annual entitlement requires an active subscription", () => {
