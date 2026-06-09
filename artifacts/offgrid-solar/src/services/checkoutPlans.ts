@@ -16,7 +16,12 @@ export type CheckoutPlanOption = {
   action: string;
 };
 
-const contractorLifetimePaymentLink = "https://buy.stripe.com/aFacN73xbgXh6Dg9CX3ks04";
+const paymentLinks: Partial<Record<CheckoutPlanId, string>> = {
+  homeowner_report: "https://buy.stripe.com/8x2cN7gjXbCX4v88yT3ks02",
+  property_pack: "https://buy.stripe.com/4gM14paZDayTe5I5mH3ks01",
+  contractor_annual: "https://buy.stripe.com/fZu7sNc3H36r0eSbL53ks00",
+  contractor_lifetime_beta: "https://buy.stripe.com/aFacN73xbgXh6Dg9CX3ks04",
+};
 
 export const checkoutPlans: CheckoutPlanOption[] = [
   {
@@ -66,8 +71,9 @@ export function getPlanWizardHref(planId: CheckoutPlanId): string {
 }
 
 export function getPaymentLinkCheckoutUrl(planId: CheckoutPlanId, projectId: number): string | null {
-  if (planId !== "contractor_lifetime_beta") return null;
-  const url = new URL(contractorLifetimePaymentLink);
+  const paymentLink = paymentLinks[planId];
+  if (!paymentLink) return null;
+  const url = new URL(paymentLink);
   url.searchParams.set("client_reference_id", `project_${projectId}`);
   return url.toString();
 }

@@ -55,6 +55,7 @@ app.post(
           payment_status?: string | null;
           client_reference_id?: string | null;
           payment_link?: string | null;
+          subscription?: string | { id?: string | null } | null;
           customer_details?: { email?: string | null } | null;
           customer_email?: string | null;
           amount_total?: number | null;
