@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { ArrowRight, CheckCircle2, FileText, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { trackEvent } from "@/services/analytics";
+import { getPlanWizardHref } from "@/services/checkoutPlans";
 
 export type SeoCalculatorConfig = {
   title: string;
@@ -75,7 +76,7 @@ export default function SeoCalculatorPage({ config }: { config: SeoCalculatorCon
                     Start Free Solar Estimate <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
-                <Link href="/wizard" onClick={trackReport}>
+                <Link href={getPlanWizardHref("homeowner_report")} onClick={trackReport}>
                   <Button size="lg" variant="secondary" className="w-full sm:w-auto">
                     Unlock Full Report for $19
                   </Button>
@@ -116,11 +117,11 @@ export default function SeoCalculatorPage({ config }: { config: SeoCalculatorCon
                 Start with a free range-based preview. Unlock the complete project report for $19, including detailed sizing, equipment, cost assumptions, and PDF download.
               </p>
               <div className="mt-6 flex flex-col gap-3">
-                <Link href="/wizard" onClick={trackReport}>
+                <Link href={getPlanWizardHref("homeowner_report")} onClick={trackReport}>
                   <Button className="w-full">Unlock Full Report for $19</Button>
                 </Link>
                 {config.contractorFocus && (
-                  <Link href="/wizard" onClick={trackContractor}>
+                  <Link href={getPlanWizardHref("contractor_lifetime_beta")} onClick={trackContractor}>
                     <Button variant="outline" className="h-auto w-full whitespace-normal py-2">
                       Get Founding Contractor Beta Access for $199
                     </Button>

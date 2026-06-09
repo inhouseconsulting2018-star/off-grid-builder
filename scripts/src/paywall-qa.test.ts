@@ -17,6 +17,11 @@ const {
   getCheckoutPlan,
   parseCheckoutPlan,
 } = await import("../../artifacts/api-server/src/services/payments/plans");
+const {
+  checkoutPlans: frontendCheckoutPlans,
+  getPlanWizardHref,
+  parseCheckoutPlan: parseFrontendCheckoutPlan,
+} = await import("../../artifacts/offgrid-solar/src/services/checkoutPlans");
 
 const calc = {
   adjustedArraySizeKw: 8.2,
@@ -149,6 +154,18 @@ run("checkout rejects missing or invalid selected plans", () => {
   assert.equal(parseCheckoutPlan(undefined), null);
   assert.equal(parseCheckoutPlan("not-a-plan"), null);
   assert.equal(parseCheckoutPlan("homeowner_report"), "homeowner_report");
+});
+
+run("every public pricing plan links to a selected-plan checkout flow", () => {
+  assert.deepEqual(
+    frontendCheckoutPlans.map((plan) => plan.id),
+    ["homeowner_report", "property_pack", "contractor_annual", "contractor_lifetime_beta"],
+  );
+  for (const plan of frontendCheckoutPlans) {
+    const href = getPlanWizardHref(plan.id);
+    const selectedPlan = new URL(href, "https://www.offgridsolarbuilder.com").searchParams.get("selectedPlan");
+    assert.equal(parseFrontendCheckoutPlan(selectedPlan), plan.id);
+  }
 });
 
 run("annual entitlement requires an active subscription", () => {
