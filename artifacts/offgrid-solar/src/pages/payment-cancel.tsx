@@ -2,14 +2,20 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { XCircle, ArrowLeft } from "lucide-react";
 import { Link, useSearch } from "wouter";
+import { parseCheckoutPlan } from "@/services/checkoutPlans";
 
 export default function PaymentCancel() {
   const search = useSearch();
   const params = new URLSearchParams(search);
   const projectId = params.get("projectId");
   const accessToken = params.get("accessToken");
+  const selectedPlan = parseCheckoutPlan(params.get("selectedPlan"));
+  const resultsParams = new URLSearchParams({
+    ...(accessToken ? { accessToken } : {}),
+    ...(selectedPlan ? { selectedPlan } : {}),
+  });
   const resultsHref = projectId
-    ? `/results/${projectId}${accessToken ? `?accessToken=${encodeURIComponent(accessToken)}` : ""}`
+    ? `/results/${projectId}${resultsParams.size ? `?${resultsParams.toString()}` : ""}`
     : null;
 
   return (

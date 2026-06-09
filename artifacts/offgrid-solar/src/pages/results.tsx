@@ -17,14 +17,17 @@ import { ProjectMap } from "@/components/maps/ProjectMap";
 import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
 import { createProjectCheckoutSession } from "@/services/projectService";
+import { trackEvent } from "@/services/analytics";
+import { getPaymentLinkCheckoutUrl, parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  ReferenceLine,
+  BarChart, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
+  ReferenceLine, Line, Legend,
 } from "recharts";
 
 export default function Results() {
   const { id } = useParams();
   const projectId = parseInt(id || "0", 10);
+  const selectedPlanFromUrl = parseCheckoutPlan(new URLSearchParams(window.location.search).get("selectedPlan"));
 
   const [token] = useState<string>(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -51,7 +54,16 @@ export default function Results() {
   const hasTriggeredCalc = useRef(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const handleUnlockReport = (selectedPlan: "homeowner_report" | "property_pack" | "contractor_annual" | "contractor_lifetime_beta" = "homeowner_report") => {
+  const handleUnlockReport = (selectedPlan: CheckoutPlanId = selectedPlanFromUrl ?? "homeowner_report") => {
+    trackEvent("checkout_clicked", { projectId, plan: selectedPlan });
+    if (selectedPlan === "contractor_lifetime_beta") {
+      trackEvent("contractor_beta_clicked", { projectId });
+    }
+    const paymentLinkUrl = getPaymentLinkCheckoutUrl(selectedPlan, projectId);
+    if (paymentLinkUrl) {
+      window.location.href = paymentLinkUrl;
+      return;
+    }
     setIsRedirecting(true);
     createCheckoutSession.mutate(
       selectedPlan,
@@ -74,6 +86,7 @@ export default function Results() {
   };
 
   const handleDownloadPdf = () => {
+    trackEvent("pdf_downloaded", { projectId });
     const url = `/api/projects/${projectId}/report.pdf?accessToken=${encodeURIComponent(token)}`;
     window.location.href = url;
   };
@@ -180,10 +193,13 @@ export default function Results() {
 
   const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+  const monthlyConsumptionKwh = Math.round(project.annualKwh / 12);
+
   const monthlyChartData = hasMonthlyProduction
     ? (pvCalc.pvwattsMonthlyKwh as number[]).map((kwh, i) => ({
         month: MONTH_NAMES[i],
         kwh,
+        consumption: monthlyConsumptionKwh,
         solrad: pvCalc.pvwattsSolradMonthly ? Math.round((pvCalc.pvwattsSolradMonthly as number[])[i] * 10) / 10 : null,
       }))
     : null;
@@ -248,13 +264,13 @@ export default function Results() {
           {hasPVWatts && (
             <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border border-green-300 bg-green-50 text-green-700 mt-1 w-fit">
               <Sun className="h-3 w-3" />
-              Real NREL PVWatts Data
+              Based on real local solar data
             </div>
           )}
           {pvCalc.pvwattsSource === "fallback" && (
             <div className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-700 mt-1 w-fit">
               <Info className="h-3 w-3" />
-              State estimate (no PVWatts key)
+              {project.state} state-level estimate
             </div>
           )}
           {/* Action buttons — compact icon+label on mobile, full on desktop */}
@@ -418,10 +434,33 @@ export default function Results() {
               </CardContent>
             </Card>
           </div>
+          {/* ── Data source callout ───────────────────────────────────────── */}
+          {hasPVWatts && (
+            <div className="flex items-start gap-3 mt-4 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 px-4 py-3">
+              <Sun className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <span className="font-semibold text-green-800 dark:text-green-300">Based on real local solar data from NREL PVWatts.</span>
+                <span className="text-green-700 dark:text-green-400 ml-1">
+                  Your estimate uses actual hourly weather station measurements for your location — the same data professional solar engineers use. This gives you the most accurate production forecast available.
+                </span>
+              </div>
+            </div>
+          )}
+          {pvCalc.pvwattsSource === "fallback" && (
+            <div className="flex items-start gap-3 mt-4 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
+              <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <span className="font-semibold text-amber-800 dark:text-amber-300">Using a {project.state} state-level solar average.</span>
+                <span className="text-amber-700 dark:text-amber-400 ml-1">
+                  This estimate is based on a typical solar resource value for your state rather than weather data for your exact location. It's a good starting point, but actual production at your site may vary by 10–20% depending on local climate, elevation, and microclimate conditions.
+                </span>
+              </div>
+            </div>
+          )}
         </section>
 
-        {/* ── Monthly Production Chart ──────────────────────────────── */}
-        {monthlyChartData && (
+        {/* ── Monthly Production Chart (PVWatts only — hidden for state-average fallback) ── */}
+        {hasPVWatts && monthlyChartData && (
           <section>
             <h2 className="text-lg font-bold uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
               <Sun className="h-4 w-4 text-primary" /> Monthly Solar Production
@@ -454,9 +493,9 @@ export default function Results() {
                 </div>
 
                 {/* Monthly bar chart */}
-                <div className="h-52 print:h-44">
+                <div className="h-56 print:h-48">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlyChartData} margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
+                    <ComposedChart data={monthlyChartData} margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                       <YAxis
@@ -466,8 +505,18 @@ export default function Results() {
                         width={42}
                       />
                       <Tooltip
-                        formatter={(v: number) => [`${v.toLocaleString()} kWh`, "AC Production"]}
+                        formatter={(v: number, name: string) => {
+                          if (name === "kwh") return [`${v.toLocaleString()} kWh`, "Solar Production"];
+                          if (name === "consumption") return [`${v.toLocaleString()} kWh`, "Est. Monthly Usage"];
+                          return [`${v}`, name];
+                        }}
                         labelStyle={{ fontWeight: 600 }}
+                      />
+                      <Legend
+                        formatter={(value: string) =>
+                          value === "kwh" ? "Solar Production" : "Est. Monthly Usage"
+                        }
+                        wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
                       />
                       <ReferenceLine
                         y={pvCalc.pvwattsAnnualKwh ? Math.round(pvCalc.pvwattsAnnualKwh / 12) : 0}
@@ -476,7 +525,7 @@ export default function Results() {
                         strokeWidth={1.5}
                         label={{ value: "avg", position: "right", fontSize: 10, fill: "#f59e0b" }}
                       />
-                      <Bar dataKey="kwh" radius={[3, 3, 0, 0]} maxBarSize={36}>
+                      <Bar dataKey="kwh" radius={[3, 3, 0, 0]} maxBarSize={36} name="kwh">
                         {monthlyChartData.map((entry, i) => (
                           <Cell
                             key={i}
@@ -486,7 +535,15 @@ export default function Results() {
                           />
                         ))}
                       </Bar>
-                    </BarChart>
+                      <Line
+                        dataKey="consumption"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        dot={false}
+                        strokeDasharray="5 3"
+                        name="consumption"
+                      />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
 
@@ -500,33 +557,43 @@ export default function Results() {
                       <thead>
                         <tr className="border-b text-muted-foreground text-xs uppercase tracking-wide">
                           <th className="pb-2 text-left">Month</th>
-                          <th className="pb-2 text-right">AC (kWh)</th>
+                          <th className="pb-2 text-right">Production</th>
+                          <th className="pb-2 text-right">Usage</th>
+                          <th className="pb-2 text-right">Net</th>
                           {monthlyChartData[0].solrad != null && <th className="pb-2 text-right">Peak Sun Hrs</th>}
-                          <th className="pb-2 text-right">% of Annual</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {monthlyChartData.map((row) => (
+                        {monthlyChartData.map((row) => {
+                          const net = row.kwh - row.consumption;
+                          return (
                           <tr key={row.month}>
                             <td className="py-1.5 font-medium">{row.month}</td>
-                            <td className="py-1.5 text-right font-mono">{row.kwh.toLocaleString()}</td>
-                            {row.solrad != null && <td className="py-1.5 text-right font-mono">{row.solrad}</td>}
-                            <td className="py-1.5 text-right text-muted-foreground">
-                              {pvCalc.pvwattsAnnualKwh
-                                ? `${((row.kwh / pvCalc.pvwattsAnnualKwh) * 100).toFixed(1)}%`
-                                : "—"}
+                            <td className="py-1.5 text-right font-mono">{row.kwh.toLocaleString()} kWh</td>
+                            <td className="py-1.5 text-right font-mono text-blue-600">{row.consumption.toLocaleString()} kWh</td>
+                            <td className={`py-1.5 text-right font-mono font-semibold ${net >= 0 ? "text-green-600" : "text-red-500"}`}>
+                              {net >= 0 ? "+" : ""}{net.toLocaleString()} kWh
                             </td>
+                            {row.solrad != null && <td className="py-1.5 text-right font-mono">{row.solrad}</td>}
                           </tr>
-                        ))}
+                          );
+                        })}
                         <tr className="font-bold border-t-2">
                           <td className="pt-2">Annual</td>
                           <td className="pt-2 text-right font-mono text-primary">
-                            {pvCalc.pvwattsAnnualKwh?.toLocaleString()}
+                            {pvCalc.pvwattsAnnualKwh?.toLocaleString()} kWh
+                          </td>
+                          <td className="pt-2 text-right font-mono text-blue-600">
+                            {project.annualKwh.toLocaleString()} kWh
+                          </td>
+                          <td className={`pt-2 text-right font-mono ${(pvCalc.pvwattsAnnualKwh ?? 0) >= project.annualKwh ? "text-green-600" : "text-red-500"}`}>
+                            {pvCalc.pvwattsAnnualKwh != null
+                              ? `${pvCalc.pvwattsAnnualKwh - project.annualKwh >= 0 ? "+" : ""}${(pvCalc.pvwattsAnnualKwh - project.annualKwh).toLocaleString()} kWh`
+                              : "—"}
                           </td>
                           {monthlyChartData[0].solrad != null && (
                             <td className="pt-2 text-right font-mono">{pvCalc.pvwattsSolradAnnual?.toFixed(2)} avg</td>
                           )}
-                          <td className="pt-2 text-right">100%</td>
                         </tr>
                       </tbody>
                     </table>
@@ -1472,7 +1539,7 @@ export default function Results() {
         <section>
           <div className="text-xs text-muted-foreground text-center p-5 border rounded-lg bg-muted/20 leading-relaxed">
             <strong className="block mb-1 text-foreground">Important Disclaimer</strong>
-            This tool provides preliminary solar estimates only. Final system design, electrical work, permitting, and interconnection must be verified by a licensed solar installer and/or licensed electrical contractor, and approved by the local Authority Having Jurisdiction (AHJ). Equipment quantities, wire sizing, protection device ratings, and structural requirements shown in this report are preliminary and subject to change. Always obtain proper permits before installation.
+            Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional. This report is not a permit-ready engineering plan. Equipment quantities, wire sizing, protection device ratings, and structural requirements are preliminary and subject to change. Always obtain proper permits before installation.
           </div>
         </section>
 

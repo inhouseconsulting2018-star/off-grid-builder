@@ -3,9 +3,27 @@ import assert from "node:assert/strict";
 process.env.LOG_LEVEL = "silent";
 process.env.ADMIN_TOKEN = "admin-test-token";
 
-const { buildPreview, buildPaidReport } = await import("../../artifacts/api-server/src/services/reports/reportService");
-const { buildEntitlementUpdate } = await import("../../artifacts/api-server/src/services/payments/entitlements");
-const { getCheckoutPlan } = await import("../../artifacts/api-server/src/services/payments/plans");
+const {
+  buildPreview,
+  buildPaidReport,
+  renderReportPdfBuffer,
+  renderReportPdfHtml,
+} = await import("../../artifacts/api-server/src/services/reports/reportService");
+const {
+  buildEntitlementUpdate,
+  getPaymentLinkPlanId,
+  hasActivePaidEntitlement,
+} = await import("../../artifacts/api-server/src/services/payments/entitlements");
+const {
+  getCheckoutPlan,
+  parseCheckoutPlan,
+} = await import("../../artifacts/api-server/src/services/payments/plans");
+const {
+  checkoutPlans: frontendCheckoutPlans,
+  getPaymentLinkCheckoutUrl,
+  getPlanWizardHref,
+  parseCheckoutPlan: parseFrontendCheckoutPlan,
+} = await import("../../artifacts/offgrid-solar/src/services/checkoutPlans");
 
 const calc = {
   adjustedArraySizeKw: 8.2,
@@ -14,8 +32,10 @@ const calc = {
   installedCostLow: 24_000,
   installedCostHigh: 31_000,
   estimatedYearlySavings: 1_850,
+  paybackYears: 12.5,
   productionEstimateLabel: "PVWatts",
   inverterSizeKw: 7.6,
+  totalSystemLossPct: 14,
   totalBatteryBankKwh: 15,
   batteryUsableKwh: 12,
   recommendedPanelBrand: "Q CELLS",
@@ -124,4 +144,82 @@ run("Stripe webhook entitlement update unlocks selected plan credits", () => {
   assert.equal(update.entitlementType, "contractor_lifetime_beta");
   assert.equal(update.reportCredits, 100);
   assert.equal(update.contractorStatus, true);
+});
+run("launch plan prices match checkout amounts", () => {
+  assert.equal(getCheckoutPlan("homeowner_report").amountCents, 1_900);
+  assert.equal(getCheckoutPlan("property_pack").amountCents, 3_900);
+  assert.equal(getCheckoutPlan("contractor_annual").amountCents, 14_900);
+  assert.equal(getCheckoutPlan("contractor_lifetime_beta").amountCents, 19_900);
+});
+
+run("checkout rejects missing or invalid selected plans", () => {
+  assert.equal(parseCheckoutPlan(undefined), null);
+  assert.equal(parseCheckoutPlan("not-a-plan"), null);
+  assert.equal(parseCheckoutPlan("homeowner_report"), "homeowner_report");
+});
+
+run("every public pricing plan links to a selected-plan checkout flow", () => {
+  assert.deepEqual(
+    frontendCheckoutPlans.map((plan) => plan.id),
+    ["homeowner_report", "property_pack", "contractor_annual", "contractor_lifetime_beta"],
+  );
+  for (const plan of frontendCheckoutPlans) {
+    const href = getPlanWizardHref(plan.id);
+    const selectedPlan = new URL(href, "https://www.offgridsolarbuilder.com").searchParams.get("selectedPlan");
+    assert.equal(parseFrontendCheckoutPlan(selectedPlan), plan.id);
+  }
+});
+
+run("payment links carry a non-secret project reference", () => {
+  for (const planId of ["homeowner_report", "property_pack", "contractor_annual", "contractor_lifetime_beta"] as const) {
+    const checkoutUrl = getPaymentLinkCheckoutUrl(planId, 42);
+    assert.ok(checkoutUrl);
+    const url = new URL(checkoutUrl);
+    assert.equal(url.origin, "https://buy.stripe.com");
+    assert.equal(url.searchParams.get("client_reference_id"), "project_42");
+    assert.equal(checkoutUrl.includes(project.accessToken), false);
+  }
+});
+
+run("payment link amounts map only to matching entitlements", () => {
+  assert.equal(getPaymentLinkPlanId(1_900), "homeowner_report");
+  assert.equal(getPaymentLinkPlanId(3_900), "property_pack");
+  assert.equal(getPaymentLinkPlanId(14_900), "contractor_annual");
+  assert.equal(getPaymentLinkPlanId(19_900), "contractor_lifetime_beta");
+  assert.equal(getPaymentLinkPlanId(2_000), null);
+});
+
+run("annual checkout stores the subscription reference for lifecycle events", () => {
+  const plan = getCheckoutPlan("contractor_annual");
+  const update = buildEntitlementUpdate({
+    id: "cs_test_annual",
+    subscription: "sub_test_annual",
+    payment_status: "paid",
+    amount_total: 14_900,
+  }, plan);
+  assert.equal(update.stripeSessionId, "sub_test_annual");
+});
+
+run("annual entitlement requires an active subscription", () => {
+  const paidAt = new Date();
+  assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "active" }), true);
+  assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "past_due" }), false);
+  assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "canceled" }), false);
+  assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "homeowner_report", paymentStatus: "paid" }), true);
+});
+
+run("paid report PDF and printable HTML include project details and disclaimer", () => {
+  const report = buildPaidReport({ ...project, paidAt: new Date() } as any);
+  assert.ok(report);
+
+  const pdf = renderReportPdfBuffer(report);
+  assert.equal(pdf.subarray(0, 8).toString(), "%PDF-1.4");
+  assert.ok(pdf.includes(Buffer.from("QA Project")));
+  assert.ok(pdf.includes(Buffer.from("Preliminary planning estimate only")));
+
+  const html = renderReportPdfHtml(report);
+  assert.match(html, /QA Project/);
+  assert.match(html, /8\.20 kW DC/);
+  assert.match(html, /Preliminary planning estimate only/);
+  assert.match(html, /not a permit-ready engineering plan/);
 });

@@ -13,8 +13,23 @@ import {
   Clock,
   Star,
 } from "lucide-react";
+import { useEffect } from "react";
+import { trackEvent } from "@/services/analytics";
+import { checkoutPlans, getPlanWizardHref, type CheckoutPlanId } from "@/services/checkoutPlans";
 
 export default function Home() {
+  useEffect(() => {
+    trackEvent("pricing_viewed", { source: window.location.pathname });
+  }, []);
+
+  const trackStart = () => trackEvent("start_estimate", { source: window.location.pathname });
+  const trackPlan = (plan: CheckoutPlanId) => {
+    trackEvent("start_estimate", { source: window.location.pathname, offer: plan });
+    if (plan === "contractor_lifetime_beta") {
+      trackEvent("contractor_beta_clicked", { source: window.location.pathname });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="px-5 py-4 flex items-center justify-between max-w-6xl w-full mx-auto">
@@ -23,7 +38,7 @@ export default function Home() {
           <span>OffGrid Solar Builder</span>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/wizard">
+          <Link href="/wizard" onClick={trackStart}>
             <Button size="sm">Get My Solar Report</Button>
           </Link>
         </div>
@@ -44,7 +59,7 @@ export default function Home() {
             Answer a few questions about your home and we'll calculate the exact panels, battery bank, and inverter you need — with a professional report you can hand straight to a contractor.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link href="/wizard">
+            <Link href="/wizard" onClick={trackStart}>
               <Button size="lg" className="h-12 px-8 text-base w-full sm:w-auto">
                 Start Free Solar Design
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -84,20 +99,27 @@ export default function Home() {
             <h2 className="text-2xl sm:text-3xl font-bold">Paid report pricing</h2>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              ["Homeowner Full Report", "$19", "one-time", "1 full report credit"],
-              ["Property Pack", "$39", "one-time", "3 full report credits"],
-              ["Contractor Annual", "$149/year", "subscription", "Contractor access + 50 credits"],
-              ["Contractor Lifetime Beta", "$199", "one-time", "Contractor access + 100 credits"],
-            ].map(([name, price, cadence, detail]) => (
-              <div key={name} className="rounded-xl border bg-card p-5">
-                <h3 className="font-semibold">{name}</h3>
-                <div className="mt-3 text-3xl font-extrabold text-primary">{price}</div>
-                <div className="text-xs uppercase tracking-wide text-muted-foreground mt-1">{cadence}</div>
-                <p className="text-sm text-muted-foreground mt-4">{detail}</p>
-              </div>
+            {checkoutPlans.map((plan) => (
+              <Link
+                key={plan.id}
+                href={getPlanWizardHref(plan.id)}
+                onClick={() => trackPlan(plan.id)}
+                className="group flex flex-col rounded-lg border bg-card p-5 transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <h3 className="font-semibold">{plan.name}</h3>
+                <div className="mt-3 text-3xl font-extrabold text-primary">{plan.price}</div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mt-1">{plan.cadence}</div>
+                <p className="text-sm text-muted-foreground mt-4">{plan.detail}</p>
+                <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-primary">
+                  {plan.action}
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </span>
+              </Link>
             ))}
           </div>
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            Choose a plan, complete your solar design, then continue to secure Stripe Checkout.
+          </p>
         </div>
 
         {/* How it works */}
@@ -212,7 +234,7 @@ export default function Home() {
         <div className="w-full mb-16 rounded-2xl bg-primary/10 border border-primary/20 p-8 sm:p-12 text-center">
           <h2 className="text-2xl sm:text-3xl font-bold mb-3">Ready to see what solar costs for your home?</h2>
           <p className="text-muted-foreground mb-6 max-w-md mx-auto">Start free. Takes 3 minutes. Get a professional report you can actually use.</p>
-          <Link href="/wizard">
+          <Link href="/wizard" onClick={trackStart}>
             <Button size="lg" className="h-12 px-10 text-base">
               Start My Free Solar Design <ArrowRight className="ml-2 h-4 w-4" />
             </Button>

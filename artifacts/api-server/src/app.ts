@@ -1,13 +1,30 @@
-import express, { type Express } from "express";
+import express, {
+  type Express,
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./utils/logger";
+import { env } from "./config/env";
+import { productionFrontendOrigin } from "./config/frontendOrigin";
 import { WebhookHandlers } from "./services/payments/webhookHandlers";
 import { constructStripeEvent } from "./services/payments/stripeClient";
 import { unlockProjectFromCheckoutSession, updateProjectFromSubscription } from "./services/payments/entitlements";
 
 const app: Express = express();
+const allowedOrigins = new Set(
+  [
+    env.frontendUrl?.replace(/\/$/, ""),
+    productionFrontendOrigin,
+    "https://offgridsolarbuilder.com",
+    "https://off-grid-builder-1.replit.app",
+    env.nodeEnv === "development" ? "http://localhost:5173" : null,
+    env.nodeEnv === "development" ? "http://localhost:8081" : null,
+  ].filter((origin): origin is string => Boolean(origin)),
+);
 
 // Trust the first proxy hop so req.protocol correctly returns "https" in production
 // (Replit's load balancer terminates TLS and forwards X-Forwarded-Proto)
@@ -36,6 +53,9 @@ app.post(
         const session = event.data.object as {
           id: string;
           payment_status?: string | null;
+          client_reference_id?: string | null;
+          payment_link?: string | null;
+          subscription?: string | { id?: string | null } | null;
           customer_details?: { email?: string | null } | null;
           customer_email?: string | null;
           amount_total?: number | null;
@@ -104,10 +124,32 @@ app.use(
     },
   }),
 );
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) {
+      callback(null, true);
+      return;
+    }
+    const error = new Error("Origin not allowed by CORS") as Error & { status?: number };
+    error.status = 403;
+    callback(error);
+  },
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+app.use((error: Error & { status?: number }, req: Request, res: Response, _next: NextFunction) => {
+  const status = error.status === 403 ? 403 : 500;
+  if (status === 403) {
+    logger.warn({ origin: req.headers.origin }, "Blocked CORS origin");
+  } else {
+    logger.error({ err: error, status }, "Unhandled API error");
+  }
+  res.status(status).json({
+    error: status === 403 ? "Origin not allowed" : "Internal server error",
+  });
+});
 
 export default app;

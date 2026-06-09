@@ -8,6 +8,11 @@
 
 export * from "./calculationResult";
 export * from "./checkoutSessionResult";
+export type {
+  CreateProjectCheckoutSessionBody as CreateProjectCheckoutSessionBodyType,
+} from "./createProjectCheckoutSessionBody";
+export * from "./createProjectCheckoutSessionBodyProductType";
+export * from "./createProjectCheckoutSessionBodySelectedPlan";
 export * from "./healthStatus";
 export * from "./project";
 export * from "./projectBatteryChemistry";

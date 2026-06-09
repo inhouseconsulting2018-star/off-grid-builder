@@ -56,8 +56,8 @@ Frontend requirements:
 5. Pricing displayed must be:
    - Homeowner Full Report: $19
    - Property Pack: $39
-   - Contractor Annual: $199/year
-   - Contractor Lifetime Beta: $299 one-time
+   - Contractor Annual: $149/year
+   - Contractor Lifetime Beta: $199 one-time
 6. Frontend must not expose Stripe secret keys.
 7. Frontend must not generate full paid report/BOM client-side before payment.
 8. Frontend must handle payment success and refresh entitlement.

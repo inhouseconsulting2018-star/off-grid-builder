@@ -28,7 +28,7 @@ import { createProposalEstimate, getProposalEquipment } from "@/services/proposa
 import {
   Sun, MapPin, Zap, BarChart3, ArrowRight, ArrowLeft, Loader2,
   CheckCircle2, Battery, Download, RotateCcw, FlaskConical,
-  ChevronDown, AlertCircle, Info, Lightbulb, Settings2, ShieldAlert, Wrench,
+  ChevronDown, AlertCircle, Info, Lightbulb, Lock, Settings2, ShieldAlert, Wrench,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -343,6 +343,10 @@ function BatterySelector({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function QuickProposal() {
+  const [adminToken, setAdminToken] = useState(() => {
+    try { return sessionStorage.getItem("admin-token") ?? ""; } catch { return ""; }
+  });
+  const [tokenInput, setTokenInput] = useState("");
   const [step, setStep] = useState(1);
   const [addressData, setAddressData] = useState<AddressValues | null>(null);
   const [selectedLatLon, setSelectedLatLon] = useState<{ lat: number; lon: number } | null>(null);
@@ -379,14 +383,18 @@ export default function QuickProposal() {
 
   // Load equipment catalog from backend (provider-agnostic — all data is server-side)
   useEffect(() => {
-    getProposalEquipment<EquipmentCatalog>()
+    if (!adminToken) return;
+    getProposalEquipment<EquipmentCatalog>(adminToken)
       .then((data: EquipmentCatalog) => {
         setEquipment(data);
         usageForm.setValue("panelType", data.defaults.panelType);
         usageForm.setValue("batteryType", data.defaults.batteryType);
       })
-      .catch(() => {/* use hardcoded defaults */});
-  }, [usageForm]);
+      .catch(() => {
+        setAdminToken("");
+        try { sessionStorage.removeItem("admin-token"); } catch { /* ignore */ }
+      });
+  }, [adminToken, usageForm]);
 
   // Close autocomplete on outside click
   useEffect(() => {
@@ -464,7 +472,7 @@ export default function QuickProposal() {
         batteryType: values.batteryType,
         efficiencyFactor: 0.86,
       };
-      setEstimate(await createProposalEstimate<ProposalEstimate>(body));
+      setEstimate(await createProposalEstimate<ProposalEstimate>(body, adminToken));
       setStep(3);
     } catch (err) {
       toast({
@@ -487,6 +495,43 @@ export default function QuickProposal() {
 
   // Derived: effective annual kWh for live battery preview
   const liveAnnualKwh = usageMode === "annual" ? (annualKwhVal ?? 0) : (monthlyKwhVal ?? 0) * 12;
+
+  if (!adminToken) {
+    const unlock = () => {
+      const token = tokenInput.trim();
+      if (!token) return;
+      try { sessionStorage.setItem("admin-token", token); } catch { /* ignore */ }
+      setAdminToken(token);
+    };
+
+    return (
+      <AppLayout>
+        <div className="max-w-xl mx-auto">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Lock className="h-5 w-5" />
+                Admin Authentication
+              </CardTitle>
+              <CardDescription>Enter your ADMIN_TOKEN to use Quick Proposal.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex gap-3">
+              <Input
+                type="password"
+                placeholder="Admin token"
+                value={tokenInput}
+                onChange={(event) => setTokenInput(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && unlock()}
+              />
+              <Button onClick={unlock} disabled={!tokenInput.trim()}>
+                Unlock
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   return (

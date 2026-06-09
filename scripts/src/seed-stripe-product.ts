@@ -1,7 +1,7 @@
 import { getUncachableStripeClient } from './stripeClient';
 
 /**
- * Creates the "Solar Report Unlock" one-time product + $49 price in Stripe (test mode).
+ * Creates the "Solar Report Unlock" one-time product + $19 price in Stripe (test mode).
  *
  * Run with:
  *   pnpm --filter @workspace/scripts run seed-stripe
@@ -37,10 +37,10 @@ async function seedStripeProduct() {
       console.log('No one-time price found. Creating one...');
       const price = await stripe.prices.create({
         product: product.id,
-        unit_amount: 4900, // $49.00
+        unit_amount: 1900, // $19.00
         currency: 'usd',
       });
-      console.log(`\n✓ Created price: $49.00 one-time (${price.id})`);
+      console.log(`\n✓ Created price: $19.00 one-time (${price.id})`);
       console.log(`\nSet this in Replit Secrets:\n  STRIPE_PRICE_ID=${price.id}`);
     }
     return;
@@ -58,14 +58,14 @@ async function seedStripeProduct() {
   });
   console.log(`Created product: ${product.name} (${product.id})`);
 
-  // One-time price: $49.00
+  // One-time price: $19.00
   const price = await stripe.prices.create({
     product: product.id,
-    unit_amount: 4900, // $49.00 USD
+    unit_amount: 1900, // $19.00 USD
     currency: 'usd',
     // No recurring field = one-time payment
   });
-  console.log(`Created price: $49.00 one-time (${price.id})`);
+  console.log(`Created price: $19.00 one-time (${price.id})`);
 
   console.log(`\n✓ Done! Set this in Replit Secrets:`);
   console.log(`  STRIPE_PRICE_ID=${price.id}`);

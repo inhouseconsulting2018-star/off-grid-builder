@@ -157,4 +157,24 @@ describe("Paywall enforcement", () => {
     const res = await fetch(`${BASE}/projects/purchases`);
     assert.ok(res.status === 401 || res.status === 503, `Expected 401/503, got ${res.status}`);
   });
+
+  it("GET /proposals/equipment without admin token returns 401 or 503", async () => {
+    const res = await fetch(`${BASE}/proposals/equipment`);
+    assert.ok(res.status === 401 || res.status === 503, `Expected 401/503, got ${res.status}`);
+  });
+
+  it("POST /proposals/estimate without admin token returns 401 or 503", async () => {
+    const res = await fetch(`${BASE}/proposals/estimate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        address: "123 Test St",
+        city: "Sacramento",
+        state: "CA",
+        zip: "95814",
+        annualKwh: 10_000,
+      }),
+    });
+    assert.ok(res.status === 401 || res.status === 503, `Expected 401/503, got ${res.status}`);
+  });
 });

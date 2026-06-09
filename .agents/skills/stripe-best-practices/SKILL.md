@@ -34,8 +34,8 @@ Two flows run inside the webhook:
 |----------------------|---------|----------|--------------|---------------------------------------|
 | `homeowner`          | 1       | $19      | `payment`    | `STRIPE_HOMEOWNER_REPORT_PRICE_ID`    |
 | `property_pack`      | 3       | $39      | `payment`    | `STRIPE_PROPERTY_PACK_PRICE_ID`       |
-| `contractor_annual`  | 50      | $199/yr  | `subscription` | `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID` |
-| `contractor_lifetime`| 100     | $299     | `payment`    | `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID` |
+| `contractor_annual`  | 50      | $149/yr  | `subscription` | `STRIPE_CONTRACTOR_ANNUAL_PRICE_ID` |
+| `contractor_lifetime`| 100     | $199     | `payment`    | `STRIPE_CONTRACTOR_LIFETIME_PRICE_ID` |
 
 `STRIPE_PRICE_ID` is the legacy fallback for `homeowner` — `STRIPE_HOMEOWNER_REPORT_PRICE_ID`
 takes precedence via `env.ts`:

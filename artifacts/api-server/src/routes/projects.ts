@@ -13,10 +13,11 @@ import {
 import { geocodeAddress } from "../services/geocoding/geocodingService";
 import { runCalculationsWithPVWatts } from "../services/solar/calculationEngine";
 import { logger } from "../utils/logger";
-import { env } from "../config/env";
+import { getFrontendOrigin } from "../config/frontendOrigin";
 import { getUncachableStripeClient } from "../services/payments/stripeClient";
 import { buildPaidReport, renderReportPdfBuffer, renderReportPdfHtml } from "../services/reports/reportService";
 import { getCheckoutPlan, parseCheckoutPlan } from "../services/payments/plans";
+import { hasActivePaidEntitlement } from "../services/payments/entitlements";
 import {
   requireAdminToken,
   extractAccessToken,
@@ -105,7 +106,12 @@ async function createCheckoutSession(req: Request, res: Response, input: {
     return;
   }
 
-  const plan = getCheckoutPlan(parseCheckoutPlan(input.selectedPlan));
+  const planId = parseCheckoutPlan(input.selectedPlan);
+  if (!planId) {
+    res.status(400).json({ error: "A valid selectedPlan is required" });
+    return;
+  }
+  const plan = getCheckoutPlan(planId);
   if (project.paidAt && plan.id === "homeowner_report") {
     res.status(400).json({ error: "Project is already unlocked" });
     return;
@@ -118,11 +124,10 @@ async function createCheckoutSession(req: Request, res: Response, input: {
   }
 
   const stripe = await getUncachableStripeClient();
-  const baseOrigin = env.nodeEnv === "production" || env.isReplitDeployment
-    ? "https://offgridsolarbuilders.com"
-    : (env.frontendUrl?.replace(/\/$/, "") ?? `${req.protocol}://${req.get("x-forwarded-host") ?? req.get("host") ?? "localhost"}`);
-  const successUrl = `${baseOrigin}/payment-success?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}&session_id={CHECKOUT_SESSION_ID}`;
-  const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
+  const requestOrigin = `${req.protocol}://${req.get("x-forwarded-host") ?? req.get("host") ?? "localhost"}`;
+  const baseOrigin = getFrontendOrigin(requestOrigin);
+  const successUrl = `${baseOrigin}/payment-success?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}&selectedPlan=${encodeURIComponent(plan.id)}&session_id={CHECKOUT_SESSION_ID}`;
+  const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}&selectedPlan=${encodeURIComponent(plan.id)}`;
   const metadata = {
     projectId: String(project.id),
     accessToken: project.accessToken ?? "",
@@ -268,7 +273,7 @@ router.get("/projects/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!project.paidAt) {
+  if (!hasActivePaidEntitlement(project)) {
     res.json(previewProject(project));
     return;
   }
@@ -469,7 +474,7 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
     .set({ calculationResult: finalResult })
     .where(eq(projectsTable.id, params.data.id));
 
-  if (!project.paidAt) {
+  if (!hasActivePaidEntitlement(project)) {
     const calc = finalResult as Record<string, unknown>;
     res.json({
       preview: true,
@@ -503,7 +508,7 @@ router.get("/projects/:id/report", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!project.paidAt) {
+  if (!hasActivePaidEntitlement(project)) {
     res.status(402).json({
       error: "Payment required",
       message: "Purchase the full report to access system design, BOM, and cost analysis.",
@@ -530,7 +535,7 @@ router.get("/projects/:id/report.pdf", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Project not found" });
     return;
   }
-  if (!project.paidAt) {
+  if (!hasActivePaidEntitlement(project)) {
     res.status(402).json({ error: "Payment required", message: "Purchase the full report to download the PDF." });
     return;
   }
@@ -553,7 +558,7 @@ router.get("/projects/:id/report.html", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Project not found" });
     return;
   }
-  if (!project.paidAt) {
+  if (!hasActivePaidEntitlement(project)) {
     res.status(402).json({ error: "Payment required", message: "Purchase the full report to view printable report HTML." });
     return;
   }

@@ -1,14 +1,20 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, FileText, ArrowRight } from "lucide-react";
+import { CheckCircle2, Download, FileText, ArrowRight, Loader2 } from "lucide-react";
 import { Link, useSearch } from "wouter";
+import { trackEvent } from "@/services/analytics";
+import { apiGet } from "@/services/apiService";
+import { appEnv } from "@/config/env";
+
+type EntitlementStatus = "checking" | "unlocked" | "delayed";
 
 export default function PaymentSuccess() {
   const search = useSearch();
   const params = new URLSearchParams(search);
   const projectId = params.get("projectId");
   const accessToken = params.get("accessToken");
+  const [entitlementStatus, setEntitlementStatus] = useState<EntitlementStatus>("checking");
 
   // Persist the token in sessionStorage so the results page can pick it up
   // even if the user navigates without it in the URL.
@@ -19,13 +25,48 @@ export default function PaymentSuccess() {
       } catch {
         // ignore — private browsing may block sessionStorage
       }
+      trackEvent("purchase_completed", { projectId: Number(projectId) || projectId });
     }
+  }, [projectId, accessToken]);
+
+  useEffect(() => {
+    if (!projectId || !accessToken) {
+      setEntitlementStatus("delayed");
+      return;
+    }
+
+    let cancelled = false;
+    const checkEntitlement = async () => {
+      for (let attempt = 0; attempt < 10 && !cancelled; attempt += 1) {
+        try {
+          const project = await apiGet<{ paidAt?: string | Date | null; paymentStatus?: string }>(
+            `/projects/${projectId}`,
+            undefined,
+            { headers: { "x-access-token": accessToken } },
+          );
+          if (project.paidAt && project.paymentStatus !== "unpaid") {
+            setEntitlementStatus("unlocked");
+            return;
+          }
+        } catch {
+          // Stripe can redirect before the webhook update is visible. Retry briefly.
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      }
+      if (!cancelled) setEntitlementStatus("delayed");
+    };
+
+    void checkEntitlement();
+    return () => { cancelled = true; };
   }, [projectId, accessToken]);
 
   // Build the results URL — always include accessToken so the page can load
   // the project without relying solely on sessionStorage (handles fresh tabs).
   const resultsHref = projectId
     ? `/results/${projectId}${accessToken ? `?accessToken=${encodeURIComponent(accessToken)}` : ""}`
+    : null;
+  const pdfHref = projectId && accessToken
+    ? `${appEnv.apiBaseUrl}/projects/${projectId}/report.pdf?accessToken=${encodeURIComponent(accessToken)}`
     : null;
 
   return (
@@ -40,17 +81,35 @@ export default function PaymentSuccess() {
             Payment Successful!
           </h1>
           <p className="text-muted-foreground text-base">
-            Your solar report is now fully unlocked. You can download the full
-            PDF and view the complete equipment bill of materials.
+            {entitlementStatus === "unlocked"
+              ? "Your solar report is fully unlocked. You can download the PDF and view the complete equipment bill of materials."
+              : entitlementStatus === "checking"
+              ? "Payment received. We are finishing your report unlock now."
+              : "Payment received. Stripe is still confirming the report unlock; open the report and refresh in a moment if it remains locked."}
           </p>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          {entitlementStatus === "checking" && (
+            <Button size="lg" disabled className="gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Unlocking Report
+            </Button>
+          )}
+          {entitlementStatus === "unlocked" && pdfHref && (
+            <Button size="lg" className="gap-2" onClick={() => {
+              trackEvent("pdf_downloaded", { projectId: Number(projectId) || projectId });
+              window.location.href = pdfHref;
+            }}>
+              <Download className="h-4 w-4" />
+              Download PDF
+            </Button>
+          )}
           {resultsHref && (
             <Link href={resultsHref}>
-              <Button size="lg" className="gap-2 w-full sm:w-auto">
+              <Button size="lg" variant={entitlementStatus === "unlocked" ? "outline" : "default"} className="gap-2 w-full sm:w-auto">
                 <FileText className="h-4 w-4" />
-                View Full Report
+                {entitlementStatus === "unlocked" ? "View Full Report" : "Open Report"}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>

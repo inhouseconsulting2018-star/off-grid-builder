@@ -187,16 +187,19 @@ paths:
           schema:
             type: integer
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required: [selectedPlan]
               properties:
+                selectedPlan:
+                  type: string
+                  enum: [homeowner_report, property_pack, contractor_annual, contractor_lifetime_beta]
                 productType:
                   type: string
                   enum: [homeowner, property_pack, contractor_annual, contractor_lifetime]
-                  default: homeowner
       responses:
         "200":
           description: Checkout session URL to redirect the user to

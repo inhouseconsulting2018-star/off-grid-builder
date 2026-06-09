@@ -34,8 +34,16 @@ export async function apiRequest<T>(
   return response.json() as Promise<T>;
 }
 
-export function apiGet<T>(path: string, query?: Record<string, QueryValue>): Promise<T> {
-  return apiRequest<T>(path, undefined, query);
+export function apiGet<T>(
+  path: string,
+  query?: Record<string, QueryValue>,
+  extra?: ApiRequestOptions,
+): Promise<T> {
+  return apiRequest<T>(
+    path,
+    extra?.headers ? { headers: extra.headers } : undefined,
+    query,
+  );
 }
 
 export function apiPost<T>(path: string, body?: unknown, extra?: ApiRequestOptions): Promise<T> {

@@ -1,9 +1,10 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useListProjects, useGetProjectsSummary, useDeleteProject, getListProjectsQueryKey, getGetProjectsSummaryQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldCheck, ZapOff, MapPin, BarChart3, Map } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useRef, useState } from "react";
 import {
@@ -27,22 +28,25 @@ const systemTypeBadge: Record<string, string> = {
 };
 
 export default function ProjectsDashboard() {
-  const projects: any[] = [];
-  const summary = {
-    totalProjects: 0,
-    totalSystemKw: 0,
-    offGridCount: 0,
-    gridTiedCount: 0,
-  };
-  const isProjectsLoading = false;
-  const isSummaryLoading = false;
+  const { data: projects, isLoading: isProjectsLoading } = useListProjects();
+  const { data: summary, isLoading: isSummaryLoading } = useGetProjectsSummary();
+  const deleteProject = useDeleteProject();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const mapSectionRef = useRef<HTMLDivElement>(null);
   const [mapSelectedId, setMapSelectedId] = useState<number | null>(null);
 
   const handleDelete = (id: number) => {
-    void id;
-    toast({ title: "Open the project with its secure access link to delete it." });
+    deleteProject.mutate({ id }, {
+      onSuccess: () => {
+        toast({ title: "Project deleted" });
+        queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetProjectsSummaryQueryKey() });
+      },
+      onError: () => {
+        toast({ title: "Open the project with its secure access link to delete it." });
+      }
+    });
   };
 
   const handleViewOnMap = (id: number) => {
