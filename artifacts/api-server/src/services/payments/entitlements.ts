@@ -1,12 +1,15 @@
 import { eq } from "drizzle-orm";
 import { db, projectsTable } from "@workspace/db";
 import { getFrontendOrigin } from "../../config/frontendOrigin";
-import { getPlanForWebhook, type CheckoutPlan } from "./plans";
+import { getCheckoutPlan, getPlanForWebhook, type CheckoutPlan, type CheckoutPlanId } from "./plans";
 import { deliverReportEmail } from "../reports/reportDeliveryService";
 
 export type StripeCheckoutSessionLike = {
   id: string;
   payment_status?: string | null;
+  client_reference_id?: string | null;
+  payment_link?: string | null;
+  subscription?: string | { id?: string | null } | null;
   customer_details?: { email?: string | null } | null;
   customer_email?: string | null;
   amount_total?: number | null;
@@ -32,9 +35,14 @@ export function hasActivePaidEntitlement(project: {
 }
 
 export function buildEntitlementUpdate(session: StripeCheckoutSessionLike, plan: CheckoutPlan) {
+  const subscriptionId = typeof session.subscription === "string"
+    ? session.subscription
+    : session.subscription?.id ?? null;
   return {
     paidAt: new Date(),
-    stripeSessionId: session.id,
+    stripeSessionId: plan.checkoutMode === "subscription" && subscriptionId
+      ? subscriptionId
+      : session.id,
     stripePriceId: session.metadata?.stripePriceId ?? null,
     selectedPlan: plan.id,
     entitlementType: plan.id,
@@ -48,13 +56,29 @@ export function buildEntitlementUpdate(session: StripeCheckoutSessionLike, plan:
   };
 }
 
+export function getPaymentLinkPlanId(amountTotal: number | null | undefined): CheckoutPlanId | null {
+  switch (amountTotal) {
+    case 1_900:
+      return "homeowner_report";
+    case 3_900:
+      return "property_pack";
+    case 14_900:
+      return "contractor_annual";
+    case 19_900:
+      return "contractor_lifetime_beta";
+    default:
+      return null;
+  }
+}
+
 export async function unlockProjectFromCheckoutSession(
   session: StripeCheckoutSessionLike,
   options: { protocol: string; host: string },
 ): Promise<{ projectId: number; selectedPlan: string } | null> {
   if (session.payment_status !== "paid") return null;
 
-  const projectId = parseInt(session.metadata?.projectId ?? "", 10);
+  const paymentLinkProjectId = session.client_reference_id?.match(/^project_(\d+)$/)?.[1];
+  const projectId = parseInt(session.metadata?.projectId ?? paymentLinkProjectId ?? "", 10);
   if (!Number.isFinite(projectId)) return null;
 
   const [project] = await db
@@ -67,8 +91,20 @@ export async function unlockProjectFromCheckoutSession(
     .where(eq(projectsTable.id, projectId));
   if (!project) return null;
 
-  const plan = getPlanForWebhook(session.metadata?.selectedPlan);
-  if (project.stripeSessionId === session.id) {
+  const subscriptionId = typeof session.subscription === "string"
+    ? session.subscription
+    : session.subscription?.id ?? null;
+  const entitlementReference = subscriptionId ?? session.id;
+  const paymentLinkPlanId = session.payment_link && paymentLinkProjectId && !session.metadata?.selectedPlan
+    ? getPaymentLinkPlanId(session.amount_total)
+    : null;
+  const plan = session.metadata?.selectedPlan
+    ? getPlanForWebhook(session.metadata.selectedPlan)
+    : paymentLinkPlanId
+    ? getCheckoutPlan(paymentLinkPlanId)
+    : null;
+  if (!plan) return null;
+  if (project.stripeSessionId === session.id || project.stripeSessionId === entitlementReference) {
     return { projectId, selectedPlan: project.selectedPlan ?? plan.id };
   }
   const update = buildEntitlementUpdate(session, plan);
@@ -93,16 +129,20 @@ export async function unlockProjectFromCheckoutSession(
 export async function updateProjectFromSubscription(
   subscription: StripeSubscriptionLike,
 ): Promise<{ projectId: number; selectedPlan: string; paymentStatus: string } | null> {
-  const projectId = parseInt(subscription.metadata?.projectId ?? "", 10);
-  if (!Number.isFinite(projectId)) return null;
-
-  const [project] = await db
-    .select({ id: projectsTable.id })
-    .from(projectsTable)
-    .where(eq(projectsTable.id, projectId));
+  const metadataProjectId = parseInt(subscription.metadata?.projectId ?? "", 10);
+  const [project] = Number.isFinite(metadataProjectId)
+    ? await db
+        .select({ id: projectsTable.id, selectedPlan: projectsTable.selectedPlan })
+        .from(projectsTable)
+        .where(eq(projectsTable.id, metadataProjectId))
+    : await db
+        .select({ id: projectsTable.id, selectedPlan: projectsTable.selectedPlan })
+        .from(projectsTable)
+        .where(eq(projectsTable.stripeSessionId, subscription.id));
   if (!project) return null;
+  const projectId = project.id;
 
-  const plan = getPlanForWebhook(subscription.metadata?.selectedPlan);
+  const plan = getPlanForWebhook(subscription.metadata?.selectedPlan ?? project.selectedPlan ?? undefined);
   const paymentStatus = subscription.status ?? "unknown";
   const contractorStatus = paymentStatus === "active" || paymentStatus === "trialing";
 

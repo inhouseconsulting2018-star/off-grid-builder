@@ -11,6 +11,7 @@ const {
 } = await import("../../artifacts/api-server/src/services/reports/reportService");
 const {
   buildEntitlementUpdate,
+  getPaymentLinkPlanId,
   hasActivePaidEntitlement,
 } = await import("../../artifacts/api-server/src/services/payments/entitlements");
 const {
@@ -19,6 +20,7 @@ const {
 } = await import("../../artifacts/api-server/src/services/payments/plans");
 const {
   checkoutPlans: frontendCheckoutPlans,
+  getPaymentLinkCheckoutUrl,
   getPlanWizardHref,
   parseCheckoutPlan: parseFrontendCheckoutPlan,
 } = await import("../../artifacts/offgrid-solar/src/services/checkoutPlans");
@@ -166,6 +168,36 @@ run("every public pricing plan links to a selected-plan checkout flow", () => {
     const selectedPlan = new URL(href, "https://www.offgridsolarbuilder.com").searchParams.get("selectedPlan");
     assert.equal(parseFrontendCheckoutPlan(selectedPlan), plan.id);
   }
+});
+
+run("payment links carry a non-secret project reference", () => {
+  for (const planId of ["homeowner_report", "property_pack", "contractor_annual", "contractor_lifetime_beta"] as const) {
+    const checkoutUrl = getPaymentLinkCheckoutUrl(planId, 42);
+    assert.ok(checkoutUrl);
+    const url = new URL(checkoutUrl);
+    assert.equal(url.origin, "https://buy.stripe.com");
+    assert.equal(url.searchParams.get("client_reference_id"), "project_42");
+    assert.equal(checkoutUrl.includes(project.accessToken), false);
+  }
+});
+
+run("payment link amounts map only to matching entitlements", () => {
+  assert.equal(getPaymentLinkPlanId(1_900), "homeowner_report");
+  assert.equal(getPaymentLinkPlanId(3_900), "property_pack");
+  assert.equal(getPaymentLinkPlanId(14_900), "contractor_annual");
+  assert.equal(getPaymentLinkPlanId(19_900), "contractor_lifetime_beta");
+  assert.equal(getPaymentLinkPlanId(2_000), null);
+});
+
+run("annual checkout stores the subscription reference for lifecycle events", () => {
+  const plan = getCheckoutPlan("contractor_annual");
+  const update = buildEntitlementUpdate({
+    id: "cs_test_annual",
+    subscription: "sub_test_annual",
+    payment_status: "paid",
+    amount_total: 14_900,
+  }, plan);
+  assert.equal(update.stripeSessionId, "sub_test_annual");
 });
 
 run("annual entitlement requires an active subscription", () => {
