@@ -11,6 +11,7 @@ const {
 } = await import("../../artifacts/api-server/src/services/reports/reportService");
 const {
   buildEntitlementUpdate,
+  canMarkProjectPaymentFailed,
   getPaymentLinkPlanId,
   hasActivePaidEntitlement,
 } = await import("../../artifacts/api-server/src/services/payments/entitlements");
@@ -19,11 +20,13 @@ const {
   parseCheckoutPlan,
 } = await import("../../artifacts/api-server/src/services/payments/plans");
 const {
-  checkoutPlans: frontendCheckoutPlans,
-  getPaymentLinkCheckoutUrl,
-  getPlanWizardHref,
-  parseCheckoutPlan: parseFrontendCheckoutPlan,
-} = await import("../../artifacts/offgrid-solar/src/services/checkoutPlans");
+  buildReportEmailPayload,
+} = await import("../../artifacts/api-server/src/services/reports/reportDeliveryService");
+  const {
+    checkoutPlans: frontendCheckoutPlans,
+    getPlanWizardHref,
+    parseCheckoutPlan: parseFrontendCheckoutPlan,
+  } = await import("../../artifacts/offgrid-solar/src/services/checkoutPlans");
 
 const calc = {
   adjustedArraySizeKw: 8.2,
@@ -165,19 +168,8 @@ run("every public pricing plan links to a selected-plan checkout flow", () => {
   );
   for (const plan of frontendCheckoutPlans) {
     const href = getPlanWizardHref(plan.id);
-    const selectedPlan = new URL(href, "https://www.offgridsolarbuilder.com").searchParams.get("selectedPlan");
+    const selectedPlan = new URL(href, "https://offgridsolarbuilder.com").searchParams.get("selectedPlan");
     assert.equal(parseFrontendCheckoutPlan(selectedPlan), plan.id);
-  }
-});
-
-run("payment links carry a non-secret project reference", () => {
-  for (const planId of ["homeowner_report", "property_pack", "contractor_annual", "contractor_lifetime_beta"] as const) {
-    const checkoutUrl = getPaymentLinkCheckoutUrl(planId, 42);
-    assert.ok(checkoutUrl);
-    const url = new URL(checkoutUrl);
-    assert.equal(url.origin, "https://buy.stripe.com");
-    assert.equal(url.searchParams.get("client_reference_id"), "project_42");
-    assert.equal(checkoutUrl.includes(project.accessToken), false);
   }
 });
 
@@ -206,6 +198,31 @@ run("annual entitlement requires an active subscription", () => {
   assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "past_due" }), false);
   assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "canceled" }), false);
   assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "homeowner_report", paymentStatus: "paid" }), true);
+  assert.equal(hasActivePaidEntitlement({ paidAt: null, selectedPlan: "homeowner_report", paymentStatus: "failed" }), false);
+  assert.equal(hasActivePaidEntitlement({ paidAt: null, selectedPlan: "homeowner_report", paymentStatus: "canceled" }), false);
+  assert.equal(hasActivePaidEntitlement({ paidAt: null, selectedPlan: "homeowner_report", paymentStatus: "pending" }), false);
+});
+
+run("failed payments cannot revoke an existing paid entitlement", () => {
+  assert.equal(canMarkProjectPaymentFailed({ paidAt: null, paymentStatus: "pending" }), true);
+  assert.equal(canMarkProjectPaymentFailed({ paidAt: null, paymentStatus: "canceled" }), true);
+  assert.equal(canMarkProjectPaymentFailed({ paidAt: new Date(), paymentStatus: "paid" }), false);
+  assert.equal(canMarkProjectPaymentFailed({ paidAt: new Date(), paymentStatus: "active" }), false);
+});
+
+run("report email payload contains only secure customer links and support details", () => {
+  const payload = buildReportEmailPayload({
+    projectId: 42,
+    email: "customer@example.com",
+    projectName: "QA Project",
+    reportUrl: "https://offgridsolarbuilder.com/results/42?accessToken=secure-token",
+    pdfUrl: "https://offgridsolarbuilder.com/api/projects/42/report.pdf?accessToken=secure-token",
+  });
+  assert.equal(payload.subject, "Your OffGrid Solar Builder Solar Report");
+  assert.match(payload.reportUrl, /accessToken=secure-token/);
+  assert.match(payload.pdfUrl, /accessToken=secure-token/);
+  assert.match(payload.text, /support@offgridsolarbuilder\.com/);
+  assert.match(payload.text, /qualified local professionals/);
 });
 
 run("paid report PDF and printable HTML include project details and disclaimer", () => {
@@ -214,7 +231,10 @@ run("paid report PDF and printable HTML include project details and disclaimer",
 
   const pdf = renderReportPdfBuffer(report);
   assert.equal(pdf.subarray(0, 8).toString(), "%PDF-1.4");
+  assert.ok(pdf.length > 10_000);
   assert.ok(pdf.includes(Buffer.from("QA Project")));
+  assert.ok(pdf.includes(Buffer.from("Detailed Bill of Materials")));
+  assert.match(pdf.toString(), /\/Count [2-9][0-9]*/);
   assert.ok(pdf.includes(Buffer.from("Preliminary planning estimate only")));
 
   const html = renderReportPdfHtml(report);

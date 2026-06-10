@@ -12,7 +12,11 @@ import { env } from "./config/env";
 import { productionFrontendOrigin } from "./config/frontendOrigin";
 import { WebhookHandlers } from "./services/payments/webhookHandlers";
 import { constructStripeEvent } from "./services/payments/stripeClient";
-import { unlockProjectFromCheckoutSession, updateProjectFromSubscription } from "./services/payments/entitlements";
+import {
+  markProjectPaymentFailed,
+  unlockProjectFromCheckoutSession,
+  updateProjectFromSubscription,
+} from "./services/payments/entitlements";
 
 const app: Express = express();
 const allowedOrigins = new Set(
@@ -70,9 +74,14 @@ app.post(
 
       // ── payment_intent.payment_failed — log failed payments ─────────────────
       if (event.type === "payment_intent.payment_failed") {
-        const pi = event.data.object as { id: string; last_payment_error?: { message?: string } };
+        const pi = event.data.object as {
+          id: string;
+          metadata?: Record<string, string> | null;
+          last_payment_error?: { message?: string };
+        };
+        const projectId = await markProjectPaymentFailed(pi);
         logger.warn(
-          { paymentIntentId: pi.id, reason: pi.last_payment_error?.message },
+          { paymentIntentId: pi.id, projectId, reason: pi.last_payment_error?.message },
           "Stripe payment failed"
         );
       }

@@ -141,11 +141,24 @@ async function createCheckoutSession(req: Request, res: Response, input: {
     payment_method_types: ["card"],
     line_items: [{ price: priceId, quantity: 1 }],
     mode: plan.checkoutMode,
-    ...(plan.checkoutMode === "subscription" ? { subscription_data: { metadata } } : {}),
+    ...(plan.checkoutMode === "subscription"
+      ? { subscription_data: { metadata } }
+      : { payment_intent_data: { metadata } }),
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata,
   });
+
+  if (!hasActivePaidEntitlement(project)) {
+    await db
+      .update(projectsTable)
+      .set({
+        selectedPlan: plan.id,
+        stripePriceId: priceId,
+        paymentStatus: "pending",
+      })
+      .where(eq(projectsTable.id, project.id));
+  }
 
   res.json({ url: session.url });
 }
@@ -544,7 +557,7 @@ router.get("/projects/:id/report.pdf", async (req, res): Promise<void> => {
   if (!report) { res.status(500).json({ error: "Report is not available" }); return; }
   const pdf = renderReportPdfBuffer(report);
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="solar-report-${project.id}.pdf"`);
+  res.setHeader("Content-Disposition", `inline; filename="solar-report-${project.id}.pdf"`);
   res.send(pdf);
 });
 
@@ -579,6 +592,32 @@ router.post("/projects/:id/create-checkout-session", async (req, res): Promise<v
     accessToken: extractAccessToken(req) ?? "",
     selectedPlan,
   });
+});
+
+router.post("/projects/:id/checkout-canceled", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(raw, 10);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+
+  const project = await resolveProjectByToken(req, id);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (hasActivePaidEntitlement(project)) {
+    res.json({ paymentStatus: project.paymentStatus });
+    return;
+  }
+
+  const [updated] = await db
+    .update(projectsTable)
+    .set({ paymentStatus: "canceled" })
+    .where(eq(projectsTable.id, id))
+    .returning({ paymentStatus: projectsTable.paymentStatus });
+  res.json(updated);
 });
 
 router.post("/stripe/create-checkout-session", async (req, res): Promise<void> => {

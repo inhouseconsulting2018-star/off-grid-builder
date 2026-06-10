@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ShoppingBag, DollarSign, Lock } from "lucide-react";
+import { Loader2, ShoppingBag, DollarSign, Lock, FileText } from "lucide-react";
 import { appEnv } from "@/config/env";
 
 interface Purchase {
@@ -53,6 +53,7 @@ export default function PurchasesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalRevenue, setTotalRevenue] = useState(0);
+  const [openingReportId, setOpeningReportId] = useState<number | null>(null);
 
   const fetchPurchases = async (token: string) => {
     setLoading(true);
@@ -82,6 +83,34 @@ export default function PurchasesPage() {
     try { sessionStorage.setItem("admin-token", t); } catch { /* ignore */ }
     setAdminToken(t);
     fetchPurchases(t);
+  };
+
+  const openPaidReport = async (projectId: number) => {
+    const reportWindow = window.open("", "_blank");
+    setOpeningReportId(projectId);
+    setError(null);
+    try {
+      const base = appEnv.apiBaseUrl.replace(/\/+$/, "");
+      const res = await fetch(`${base}/projects/${projectId}/report.pdf`, {
+        headers: { "x-admin-token": adminToken },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null) as { error?: string } | null;
+        throw new Error(body?.error ?? `PDF request failed with HTTP ${res.status}`);
+      }
+      const objectUrl = URL.createObjectURL(await res.blob());
+      if (reportWindow) {
+        reportWindow.location.replace(objectUrl);
+      } else {
+        window.location.href = objectUrl;
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (e: unknown) {
+      reportWindow?.close();
+      setError(e instanceof Error ? e.message : "Failed to open paid report");
+    } finally {
+      setOpeningReportId(null);
+    }
   };
 
   // If we already have a stored token, auto-load on first render
@@ -207,6 +236,7 @@ export default function PurchasesPage() {
                           <th className="text-right px-4 py-2 font-medium">Amount</th>
                           <th className="text-left px-4 py-2 font-medium">Credits</th>
                           <th className="text-left px-4 py-2 font-medium">Paid At</th>
+                          <th className="text-right px-4 py-2 font-medium">Report</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -232,6 +262,20 @@ export default function PurchasesPage() {
                             </td>
                             <td className="px-4 py-3 text-xs text-muted-foreground">
                               {p.paidAt ? new Date(p.paidAt).toLocaleString() : "—"}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={openingReportId === p.id}
+                                onClick={() => openPaidReport(p.id)}
+                              >
+                                {openingReportId === p.id
+                                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  : <FileText className="mr-2 h-4 w-4" />}
+                                Open PDF
+                              </Button>
                             </td>
                           </tr>
                         ))}

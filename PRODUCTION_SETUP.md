@@ -17,6 +17,7 @@ Set all of these in the **Replit Secrets** tab (not `.env` files — those are f
 | `STRIPE_PUBLISHABLE_KEY` | ✅ | Stripe publishable key (`pk_live_...` or `pk_test_...`) |
 | `STRIPE_PRICE_ID` | ✅ | Legacy fallback price ID for the $19 homeowner full report (see Stripe Setup below) |
 | `STRIPE_WEBHOOK_SECRET` | ✅ | Webhook signing secret — required in production to verify payment events |
+| `REPORT_EMAIL_WEBHOOK_URL` | Recommended | HTTPS email-provider automation endpoint. Receives the customer email, subject/body, secure report link, and secure PDF link after payment. Without it, entitlement still unlocks but delivery remains queued. |
 | `PVWATTS_API_KEY` | Optional | NREL PVWatts v8 API key for real solar production data. Without it, calculations fall back to state-based estimates. Free key at [developer.nrel.gov](https://developer.nrel.gov/signup/) |
 
 ---
@@ -42,8 +43,8 @@ Copy the printed `price_xxx...` ID and set it as `STRIPE_PRICE_ID`.
 ### Step 3 — Register the webhook
 
 1. Go to **Stripe Dashboard → Developers → Webhooks → Add endpoint**
-2. Set the endpoint URL to: `https://offgridsolarbuilder.replit.app/api/webhooks/stripe`
-3. Select the event: `checkout.session.completed`
+2. Set the endpoint URL to: `https://offgridsolarbuilder.com/api/stripe/webhook`
+3. Select `checkout.session.completed`, `payment_intent.payment_failed`, and the subscription lifecycle events if contractor subscriptions are enabled
 4. Copy the **Signing secret** (`whsec_...`) and set it as `STRIPE_WEBHOOK_SECRET`
 
 ### Step 4 — Verify
@@ -79,6 +80,7 @@ Before going live, verify:
 - [ ] `STRIPE_SECRET_KEY` is a live key (`sk_live_...`), not test (`sk_test_...`)
 - [ ] `STRIPE_PRICE_ID` was created by the `seed-stripe-live` script against live keys
 - [ ] Stripe webhook endpoint is registered and `STRIPE_WEBHOOK_SECRET` is set
+- [ ] `REPORT_EMAIL_WEBHOOK_URL` is set and a test payload reaches the configured email provider
 - [ ] `PVWATTS_API_KEY` is set (or you accept the state-estimate fallback)
 - [ ] The app is deployed via Replit autoscale (not just the development server)
 - [ ] A test purchase completes end-to-end on the live app

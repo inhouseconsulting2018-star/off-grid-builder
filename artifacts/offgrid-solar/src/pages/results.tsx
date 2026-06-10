@@ -18,7 +18,8 @@ import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
 import { createProjectCheckoutSession } from "@/services/projectService";
 import { trackEvent } from "@/services/analytics";
-import { getPaymentLinkCheckoutUrl, parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
+import { parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
+import { saveCustomerProjectAccess } from "@/services/customerProjects";
 import {
   BarChart, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine, Line, Legend,
@@ -33,7 +34,7 @@ export default function Results() {
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get("accessToken") ?? "";
     if (urlToken) {
-      try { sessionStorage.setItem(`project-token-${projectId}`, urlToken); } catch { /* ignore */ }
+      saveCustomerProjectAccess({ id: projectId, accessToken: urlToken });
     }
     try {
       return urlToken || sessionStorage.getItem(`project-token-${projectId}`) || "";
@@ -58,11 +59,6 @@ export default function Results() {
     trackEvent("checkout_clicked", { projectId, plan: selectedPlan });
     if (selectedPlan === "contractor_lifetime_beta") {
       trackEvent("contractor_beta_clicked", { projectId });
-    }
-    const paymentLinkUrl = getPaymentLinkCheckoutUrl(selectedPlan, projectId);
-    if (paymentLinkUrl) {
-      window.location.href = paymentLinkUrl;
-      return;
     }
     setIsRedirecting(true);
     createCheckoutSession.mutate(
@@ -104,6 +100,16 @@ export default function Results() {
       });
     }
   }, [project, projectId, queryClient, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!token || !project) return;
+    saveCustomerProjectAccess({
+      id: projectId,
+      accessToken: token,
+      name: project.name,
+      address: [project.address, project.city, project.state].filter(Boolean).join(", "),
+    });
+  }, [project, projectId, token]);
 
   if (isLoading || (!project?.calculationResult && !error)) {
     return (
