@@ -5,7 +5,7 @@ export type ReportDeliveryStatus = "sent" | "queued" | "failed" | "not_configure
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const DEFAULT_FROM = "OffGrid Solar Builder <onboarding@resend.dev>";
-const SUPPORT_EMAIL = "support@offgridsolarbuilder.com";
+const SUPPORT_EMAIL = env.reportSupportEmail || env.gmailUser || "support@offgridsolarbuilder.com";
 
 export interface DeliverReportEmailInput {
   projectId: number;
@@ -184,6 +184,39 @@ async function sendViaWebhook(webhookUrl: string, input: DeliverReportEmailInput
   return "sent";
 }
 
+async function sendViaGmail(
+  user: string,
+  appPassword: string,
+  input: DeliverReportEmailInput,
+): Promise<ReportDeliveryStatus> {
+  const { subject, html, text } = buildEmailContent(input);
+  const from = env.reportEmailFrom || `OffGrid Solar Builder <${user}>`;
+
+  // nodemailer is externalized from the esbuild bundle; load it lazily so it is
+  // only resolved at runtime when Gmail is actually configured.
+  const mod = (await import("nodemailer")) as unknown as {
+    default?: { createTransport: (opts: unknown) => unknown };
+    createTransport?: (opts: unknown) => unknown;
+  };
+  const nodemailer = mod.default ?? mod;
+
+  const transporter = nodemailer.createTransport!({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    // Gmail App Passwords are shown with spaces but must be sent without them.
+    auth: { user, pass: appPassword.replace(/\s+/g, "") },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+  }) as { sendMail: (opts: unknown) => Promise<unknown> };
+
+  await transporter.sendMail({ from, to: input.email, replyTo: user, subject, html, text });
+
+  logger.info({ projectId: input.projectId }, "Report email sent via Gmail SMTP");
+  return "sent";
+}
+
 /**
  * Delivers the report-ready email. This function NEVER throws — email delivery
  * must not block or roll back the customer's paid entitlement. It returns a
@@ -192,6 +225,10 @@ async function sendViaWebhook(webhookUrl: string, input: DeliverReportEmailInput
 export async function deliverReportEmail(input: DeliverReportEmailInput): Promise<ReportDeliveryStatus> {
   try {
     if (!input.email) return "not_configured";
+
+    if (env.gmailUser && env.gmailAppPassword) {
+      return await sendViaGmail(env.gmailUser, env.gmailAppPassword, input);
+    }
 
     const apiKey = await getResendApiKey();
     if (apiKey) {
@@ -204,7 +241,7 @@ export async function deliverReportEmail(input: DeliverReportEmailInput): Promis
 
     logger.info(
       { projectId: input.projectId },
-      "No email provider configured (Resend connector / RESEND_API_KEY / REPORT_EMAIL_WEBHOOK_URL); report email skipped",
+      "No email provider configured (Gmail SMTP / Resend connector / RESEND_API_KEY / REPORT_EMAIL_WEBHOOK_URL); report email skipped",
     );
     return "not_configured";
   } catch (err) {
