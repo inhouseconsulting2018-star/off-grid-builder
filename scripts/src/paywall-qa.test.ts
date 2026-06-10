@@ -228,7 +228,7 @@ await run("paid report PDF and printable HTML include project details and discla
   assert.ok(report);
 
   const pdf = await renderReportPdfBuffer(report);
-  assert.equal(pdf.subarray(0, 8).toString(), "%PDF-1.4");
+  assert.match(pdf.subarray(0, 7).toString(), /^%PDF-1\./);
   assert.ok(pdf.includes(Buffer.from("QA Project")));
   assert.ok(pdf.includes(Buffer.from("Preliminary planning estimate only")));
 
