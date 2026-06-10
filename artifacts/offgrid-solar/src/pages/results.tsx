@@ -17,9 +17,9 @@ import { ProjectMap } from "@/components/maps/ProjectMap";
 import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
 import { createProjectCheckoutSession } from "@/services/projectService";
+import { addProjectToRegistry } from "@/services/projectRegistry";
 import { trackEvent } from "@/services/analytics";
 import { parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
-import { saveCustomerProjectAccess } from "@/services/customerProjects";
 import {
   BarChart, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine, Line, Legend,
@@ -34,10 +34,10 @@ export default function Results() {
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get("accessToken") ?? "";
     if (urlToken) {
-      saveCustomerProjectAccess({ id: projectId, accessToken: urlToken });
+      try { localStorage.setItem(`project-token-${projectId}`, urlToken); } catch { /* ignore */ }
     }
     try {
-      return urlToken || sessionStorage.getItem(`project-token-${projectId}`) || "";
+      return urlToken || localStorage.getItem(`project-token-${projectId}`) || "";
     } catch {
       return urlToken;
     }
@@ -87,6 +87,18 @@ export default function Results() {
     window.location.href = url;
   };
 
+  // Backfill the local registry so projects opened via an email/URL link
+  // (e.g. existing paid customers) show up on the dashboard on this device.
+  useEffect(() => {
+    if (project && token) {
+      addProjectToRegistry({
+        id: projectId,
+        accessToken: token,
+        name: (project as { name?: string }).name,
+      });
+    }
+  }, [project, projectId, token]);
+
   useEffect(() => {
     if (project && !project.calculationResult && !hasTriggeredCalc.current) {
       hasTriggeredCalc.current = true;
@@ -100,16 +112,6 @@ export default function Results() {
       });
     }
   }, [project, projectId, queryClient, toast]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!token || !project) return;
-    saveCustomerProjectAccess({
-      id: projectId,
-      accessToken: token,
-      name: project.name,
-      address: [project.address, project.city, project.state].filter(Boolean).join(", "),
-    });
-  }, [project, projectId, token]);
 
   if (isLoading || (!project?.calculationResult && !error)) {
     return (
@@ -132,7 +134,11 @@ export default function Results() {
   }
 
   // isPaid: true when the project has been unlocked via a successful Stripe payment
-  const isPaid = !!project.paidAt;
+  const isPaid = !!project.paidAt && (
+    project.selectedPlan === "contractor_annual"
+      ? ["paid", "active", "trialing"].includes(project.paymentStatus ?? "")
+      : project.paymentStatus === "paid"
+  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const calc = project.calculationResult as any;
 
@@ -270,13 +276,13 @@ export default function Results() {
           {hasPVWatts && (
             <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border border-green-300 bg-green-50 text-green-700 mt-1 w-fit">
               <Sun className="h-3 w-3" />
-              Based on real local solar data
+              Real NREL PVWatts Data
             </div>
           )}
           {pvCalc.pvwattsSource === "fallback" && (
             <div className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-700 mt-1 w-fit">
               <Info className="h-3 w-3" />
-              {project.state} state-level estimate
+              State estimate (no PVWatts key)
             </div>
           )}
           {/* Action buttons — compact icon+label on mobile, full on desktop */}
@@ -440,29 +446,6 @@ export default function Results() {
               </CardContent>
             </Card>
           </div>
-          {/* ── Data source callout ───────────────────────────────────────── */}
-          {hasPVWatts && (
-            <div className="flex items-start gap-3 mt-4 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 px-4 py-3">
-              <Sun className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <span className="font-semibold text-green-800 dark:text-green-300">Based on real local solar data from NREL PVWatts.</span>
-                <span className="text-green-700 dark:text-green-400 ml-1">
-                  Your estimate uses actual hourly weather station measurements for your location — the same data professional solar engineers use. This gives you the most accurate production forecast available.
-                </span>
-              </div>
-            </div>
-          )}
-          {pvCalc.pvwattsSource === "fallback" && (
-            <div className="flex items-start gap-3 mt-4 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
-              <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <span className="font-semibold text-amber-800 dark:text-amber-300">Using a {project.state} state-level solar average.</span>
-                <span className="text-amber-700 dark:text-amber-400 ml-1">
-                  This estimate is based on a typical solar resource value for your state rather than weather data for your exact location. It's a good starting point, but actual production at your site may vary by 10–20% depending on local climate, elevation, and microclimate conditions.
-                </span>
-              </div>
-            </div>
-          )}
         </section>
 
         {/* ── Monthly Production Chart (PVWatts only — hidden for state-average fallback) ── */}

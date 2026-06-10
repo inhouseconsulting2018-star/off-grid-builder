@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "HTufxEHDUdnLLZ_AdM07U"
+uri = "file://.local/downloads/solar-report-project-1.pdf"
+type = "pdf"
+title = "OffGrid Solar Report — In House Consulting (Project 1)"

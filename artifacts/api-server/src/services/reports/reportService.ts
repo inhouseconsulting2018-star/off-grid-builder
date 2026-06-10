@@ -1,8 +1,10 @@
 import type { Project } from "@workspace/db";
+import { createRequire } from "node:module";
 import { generateBom } from "./bom";
 
 type Calc = Record<string, any>;
 
+const require = createRequire(import.meta.url);
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function range(value: unknown, spreadPct: number, minSpread: number, decimals = 0) {
@@ -113,7 +115,7 @@ export function buildPaidReport(project: Project) {
 export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildPaidReport>>): string {
   const { project, calculation: calc, bom, monthlyChartData } = report;
   const annualProduction = calc.pvwattsAnnualKwh ?? calc.yearlyProductionKwh;
-  const equipmentRows = bom.map((item) => `
+  const equipmentRows = bom.slice(0, 18).map((item) => `
     <tr>
       <td>${escapeHtml(item.category)}</td>
       <td><strong>${escapeHtml(item.model)}</strong><br><span>${escapeHtml(item.specs)}</span></td>
@@ -135,7 +137,7 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
         h1 { font-size: 32px; margin: 0 0 6px; }
         h2 { font-size: 18px; margin-top: 28px; border-bottom: 2px solid #f97316; padding-bottom: 6px; }
         .brand { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
-        .logo { border: 2px solid #f97316; padding: 10px 14px; font-weight: 800; color: #f97316; }
+        .logo { width: 86px; height: 54px; border: 2px solid #f97316; display: grid; place-items: center; font-weight: 800; color: #f97316; }
         .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
         .metric { background: #fff7ed; border: 1px solid #fed7aa; padding: 14px; border-radius: 8px; }
         .metric span { display: block; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .06em; }
@@ -156,7 +158,7 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
           <h1>${escapeHtml(project.name)}</h1>
           <div>${escapeHtml(project.address)}, ${escapeHtml(project.city)}, ${escapeHtml(project.state)} ${escapeHtml(project.zip)}</div>
         </div>
-        <div class="logo">OFFGRID SOLAR BUILDER</div>
+        <div class="logo">LOGO</div>
       </div>
       <div class="grid">
         <div class="metric"><span>Array</span><strong>${calc.adjustedArraySizeKw.toFixed(2)} kW DC</strong></div>
@@ -183,327 +185,339 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
   </html>`;
 }
 
-export function renderReportPdfBuffer(report: NonNullable<ReturnType<typeof buildPaidReport>>): Buffer {
+export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeof buildPaidReport>>): Promise<Buffer> {
+  const _pdfMod = require("pdfkit");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const PDFDocument = (_pdfMod.default ?? _pdfMod) as any;
   const { project, calculation: calc, bom, monthlyChartData } = report;
   const annualProduction = calc.pvwattsAnnualKwh ?? calc.yearlyProductionKwh;
-  const bomTotal = bom.reduce(
-    (total, item) => ({
-      low: total.low + item.totalPriceLow,
-      high: total.high + item.totalPriceHigh,
-    }),
-    { low: 0, high: 0 },
-  );
-  const lines: PdfLine[] = [];
-  const add = (text: string, style: PdfLine["style"] = "body") => lines.push({ text, style });
-  const heading = (text: string) => add(text, "heading");
-  const subheading = (text: string) => add(text, "subheading");
-  const detail = (label: string, value: unknown) => add(`${label}: ${value}`, "detail");
 
-  add("OFFGRID SOLAR BUILDER", "brand");
-  add("Detailed Solar Planning Report", "title");
-  add(project.name, "subtitle");
-  add(`${project.address}, ${project.city}, ${project.state} ${project.zip}`, "body");
-  add(`Prepared ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`, "muted");
+  // Fetch satellite map image (Esri World Imagery, no API key required)
+  let mapImageBuffer: Buffer | null = null;
+  if (typeof project.lat === "number" && typeof project.lon === "number") {
+    try {
+      const pad = 0.004;
+      const bbox = `${project.lon - pad},${project.lat - pad},${project.lon + pad},${project.lat + pad}`;
+      const mapUrl =
+        `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export` +
+        `?bbox=${bbox}&bboxSR=4326&size=512,180&imageSR=4326&format=png&f=image`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const resp = await fetch(mapUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (resp.ok) mapImageBuffer = Buffer.from(await resp.arrayBuffer());
+    } catch { /* skip map if fetch fails */ }
+  }
 
-  heading("Executive Summary");
-  add(
-    `This preliminary design recommends a ${calc.adjustedArraySizeKw.toFixed(2)} kW DC ${project.systemType} ` +
-    `${project.installationType}-mount system using ${calc.numPanels} solar panels and a ` +
-    `${calc.inverterSizeKw.toFixed(1)} kW AC inverter. Estimated annual production is ` +
-    `${formatNumber(annualProduction)} kWh.`,
-  );
-  detail("System configuration", systemRecommendation(project.systemType, project.installationType));
-  detail("Annual site energy use", `${formatNumber(project.annualKwh)} kWh`);
-  detail("Average daily energy use", `${number(calc.dailyKwh, 1)} kWh/day`);
-  detail("Recommended array", `${number(calc.adjustedArraySizeKw, 2)} kW DC`);
-  detail("Solar panels", `${calc.numPanels} modules`);
-  detail("Required mounting area", `${formatNumber(calc.squareFeetRequired)} sq ft`);
-  detail("Recommended inverter", `${number(calc.inverterSizeKw, 1)} kW AC`);
-  detail("Annual production estimate", `${formatNumber(annualProduction)} kWh`);
-  detail("Production data source", calc.pvwattsSource === "pvwatts" ? "NREL PVWatts" : "State-level fallback estimate");
-  detail("Installed cost range", `${money(calc.installedCostLow)} - ${money(calc.installedCostHigh)}`);
-  detail("DIY equipment range", `${money(calc.diyEquipmentCostLow)} - ${money(calc.diyEquipmentCostHigh)}`);
-  detail("Estimated annual savings", money(calc.estimatedYearlySavings));
-  detail("Simple payback", calc.paybackYears ? `${number(calc.paybackYears, 1)} years` : "Not applicable");
+  const ORANGE = "#f97316";
+  const DARK   = "#172033";
+  const GRAY   = "#64748b";
+  const LIGHT  = "#fff7ed";
+  const BORDER = "#fed7aa";
+  const L = 50;
+  const R = 562;
+  const W = R - L;
+  const TOP = 50;
+  // Content must stop here; the footer is drawn at y=738/750 on every page.
+  const BOTTOM = 712;
 
-  heading("Project Inputs and Design Basis");
-  detail("System type", project.systemType);
-  detail("Installation type", project.installationType);
-  detail("Budget tier", project.budgetTier);
-  detail("Roof direction", project.roofDirection || "Not provided");
-  detail("Roof pitch", project.roofPitch || "Not provided");
-  detail("Shade level", project.shadeLevel);
-  detail("Utility rate", `$${number(project.utilityRatePerKwh, 3)}/kWh`);
-  detail("Backup requirement", project.backupHours > 0 ? `${project.backupHours} hours` : "No battery backup selected");
-  detail("Battery chemistry", project.batteryChemistry || "None");
-  detail("Location accuracy", project.locationAccuracy || "Not recorded");
-  add("Sizing is based on the submitted annual usage, site location, mounting choice, shading, backup requirement, and equipment tier.", "muted");
+  const chunks: Buffer[] = [];
+  const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
+  doc.on("data", (c: Buffer) => chunks.push(c));
+  const pdfReady = new Promise<Buffer>((resolve, reject) => {
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+  });
 
-  heading("System Sizing Calculations");
-  detail("Raw array requirement", `${number(calc.arraySizeKw, 2)} kW DC before design adjustments`);
-  detail("Final adjusted array", `${number(calc.adjustedArraySizeKw, 2)} kW DC`);
-  detail("Peak sun hours", `${number(calc.peakSunHours, 2)} hours/day`);
-  detail("Design peak sun hours", `${number(calc.designPeakSunHours ?? calc.peakSunHours, 2)} hours/day`);
-  detail("Panel count", `${calc.numPanels}`);
-  detail("Inverter continuous rating", `${number(calc.inverterSizeKw, 1)} kW AC`);
-  detail("DC-to-AC ratio", number(calc.adjustedArraySizeKw / Math.max(calc.inverterSizeKw, 0.1), 2));
-  detail("Modeled total losses", `${number(calc.totalSystemLossPct, 1)}%`);
-  detail("PV production losses", `${number(calc.pvProductionLossPct, 1)}%`);
-  detail("Shade loss", `${number(calc.shadeLossPct, 1)}%`);
-  detail("Wire loss", `${number(calc.wireLossPct, 1)}%`);
-  detail("Inverter loss", `${number(calc.inverterLossPct, 1)}%`);
-  detail("Temperature loss", `${number(calc.tempLossPct, 1)}%`);
-  detail("Soiling loss", `${number(calc.dirtLossPct, 1)}%`);
+  // Add a page if `h` points of content won't fit before the footer zone.
+  // Returns true if a new page was started so callers can re-draw headers.
+  function ensureSpace(h: number): boolean {
+    if (doc.y + h > BOTTOM) {
+      doc.addPage();
+      doc.y = TOP;
+      return true;
+    }
+    return false;
+  }
 
-  heading("Monthly Production Estimate");
-  if (monthlyChartData?.length) {
-    monthlyChartData.forEach((row) => {
-      add(
-        `${row.month.padEnd(3)}   ${formatNumber(row.kwh).padStart(7)} kWh` +
-        `${row.solrad != null ? `   Solar resource ${number(row.solrad, 1)} kWh/m2/day` : ""}`,
-        "mono",
-      );
+  function sectionHeader(title: string) {
+    // Reserve room for the rule, the heading, and at least one following line.
+    ensureSpace(54);
+    doc.moveDown(0.5);
+    doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor(ORANGE).lineWidth(1.5).stroke();
+    doc.moveDown(0.3);
+    doc.fontSize(13).fillColor(ORANGE).font("Helvetica-Bold").text(title.toUpperCase(), L, doc.y);
+    doc.moveDown(0.4);
+    doc.font("Helvetica").fillColor(DARK);
+  }
+
+  function row2(label: string, value: string) {
+    const labelW = W * 0.55;
+    const valueW = W * 0.43;
+    const valueX = L + W * 0.57;
+    doc.fontSize(10).font("Helvetica");
+    const hLabel = doc.heightOfString(label, { width: labelW });
+    doc.font("Helvetica-Bold");
+    const hValue = doc.heightOfString(value, { width: valueW });
+    const h = Math.max(hLabel, hValue);
+    ensureSpace(h + 5);
+    const y = doc.y;
+    doc.fontSize(10).fillColor(GRAY).font("Helvetica").text(label, L, y, { width: labelW });
+    doc.fontSize(10).fillColor(DARK).font("Helvetica-Bold").text(value, valueX, y, { width: valueW, align: "right" });
+    doc.y = y + h + 5;
+  }
+
+  function metricBox(x: number, y: number, w: number, label: string, value: string) {
+    doc.save();
+    doc.rect(x, y, w, 52).fillAndStroke(LIGHT, BORDER);
+    doc.fillColor(GRAY).fontSize(8).font("Helvetica").text(label.toUpperCase(), x + 8, y + 8, { width: w - 16 });
+    doc.fillColor(DARK).fontSize(15).font("Helvetica-Bold").text(value, x + 8, y + 22, { width: w - 16 });
+    doc.restore();
+  }
+
+  // Paragraph helper that respects page breaks (PDFKit can auto-split, but we
+  // keep doc.y in sync and avoid drawing under the footer zone).
+  function paragraph(text: string, opts: { size?: number; color?: string; gap?: number } = {}) {
+    const size = opts.size ?? 9;
+    doc.fontSize(size).font("Helvetica");
+    const h = doc.heightOfString(text, { width: W });
+    ensureSpace(Math.min(h, BOTTOM - TOP) + 4);
+    doc.fillColor(opts.color ?? DARK).fontSize(size).font("Helvetica").text(text, L, doc.y, { width: W });
+    doc.moveDown(opts.gap ?? 0.4);
+  }
+
+  function pageFooter() {
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(range.start + i);
+      // Zero the bottom margin while writing — otherwise PDFKit treats footer
+      // text below the bottom margin as overflow and auto-inserts a blank page.
+      const prevBottom = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
+      doc.fontSize(8).fillColor(GRAY).font("Helvetica")
+        .text("OffGrid Solar Builder  •  offgridsolarbuilder.com  •  Preliminary planning estimate only",
+          L, 738, { width: W, align: "center", lineBreak: false })
+        .text(`Page ${i + 1} of ${range.count}`, L, 750, { width: W, align: "center", lineBreak: false });
+      doc.page.margins.bottom = prevBottom;
+    }
+  }
+
+  const systemLabel = (s: string) =>
+    s === "off-grid" ? "Off-Grid with Battery Storage" :
+    s === "hybrid"   ? "Hybrid Grid-Tie + Battery"     : "Grid-Tied";
+
+  const mountLabel = (s: string) => s === "ground" ? "Ground Mount" : "Roof Mount";
+
+  // ── PAGE 1: Header + Key Metrics + System Overview ─────────────────────────
+  doc.rect(L - 10, 40, W + 20, 70).fill(ORANGE);
+  doc.fontSize(22).fillColor("#ffffff").font("Helvetica-Bold")
+     .text("OffGrid Solar Builder", L, 52, { width: W });
+  doc.fontSize(11).fillColor("#ffe8d0").font("Helvetica")
+     .text("Contractor-Grade Solar Proposal  •  offgridsolarbuilder.com", L, 76, { width: W });
+
+  doc.y = 122;
+  doc.fontSize(18).fillColor(DARK).font("Helvetica-Bold").text(String(project.name), L);
+  doc.fontSize(11).fillColor(GRAY).font("Helvetica")
+     .text(`${project.address}, ${project.city}, ${project.state} ${project.zip}  |  ${systemLabel(project.systemType ?? "")}  |  ${mountLabel(project.installationType ?? "")}`);
+  doc.fontSize(9).fillColor(GRAY)
+     .text(`Report generated: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}  •  Solar data: ${calc.pvwattsSource ?? "NREL PVWatts / state average"}`);
+
+  doc.moveDown(1);
+  const mw = (W - 18) / 4;
+  ensureSpace(62);
+  const my = doc.y;
+  metricBox(L,           my, mw, "Array Size",        `${calc.adjustedArraySizeKw.toFixed(2)} kW DC`);
+  metricBox(L + mw + 6,  my, mw, "Panel Count",       `${calc.numPanels} panels`);
+  metricBox(L + (mw+6)*2,my, mw, "Annual Production", `${Math.round(annualProduction).toLocaleString()} kWh`);
+  metricBox(L + (mw+6)*3,my, mw, "Payback Est.",      calc.paybackYears ? `${calc.paybackYears.toFixed(1)} yrs` : "N/A");
+  doc.y = my + 62;
+
+  if (calc.batteryUsableKwh > 0) {
+    ensureSpace(62);
+    const my2 = doc.y;
+    metricBox(L,           my2, mw, "Battery Usable",    `${(calc.batteryUsableKwh ?? 0).toFixed(1)} kWh`);
+    metricBox(L + mw + 6,  my2, mw, "Total Bank",        `${(calc.totalBatteryBankKwh ?? 0).toFixed(1)} kWh`);
+    metricBox(L + (mw+6)*2,my2, mw, "Inverter Size",     `${calc.inverterSizeKw.toFixed(1)} kW AC`);
+    metricBox(L + (mw+6)*3,my2, mw, "Autonomy Days",     calc.batteryAutonomyDays ? `${Number(calc.batteryAutonomyDays).toFixed(1)} days` : "—");
+    doc.y = my2 + 62;
+  }
+
+  // Satellite map (if coordinates were available and image fetched successfully)
+  if (mapImageBuffer) {
+    const mapH = Math.round(W * 180 / 512);
+    ensureSpace(mapH + 16);
+    doc.image(mapImageBuffer, L, doc.y, { width: W, height: mapH });
+    doc.y += mapH + 4;
+    doc.fontSize(7).fillColor(GRAY).font("Helvetica")
+       .text("Satellite imagery © Esri, Maxar, Earthstar Geographics", L, doc.y, { width: W, align: "right" });
+    doc.moveDown(0.3);
+  }
+
+  sectionHeader("System Overview");
+  row2("System type",            systemLabel(project.systemType ?? ""));
+  row2("Installation",           mountLabel(project.installationType ?? ""));
+  row2("Budget tier",            String(project.budgetTier ?? "mid-range"));
+  row2("Shade level",            String(project.shadeLevel ?? "none"));
+  row2("Available area",         project.availableSqft ? `${project.availableSqft.toLocaleString()} sq ft` : "—");
+  row2("Array required",         calc.squareFeetRequired ? `${Math.round(calc.squareFeetRequired).toLocaleString()} sq ft` : "—");
+  row2("Annual load",            project.annualKwh ? `${project.annualKwh.toLocaleString()} kWh` : "—");
+  row2("Daily average load",     `${(calc.dailyKwh ?? 0).toFixed(1)} kWh`);
+  row2("Peak sun hours",         `${(calc.peakSunHours ?? calc.designPeakSunHours ?? 0).toFixed(2)} hrs/day`);
+  if (calc.batteryUsableKwh > 0) {
+    row2("Backup hours target",  project.backupHours ? `${project.backupHours} hrs` : "—");
+    row2("Autonomy days",        calc.batteryAutonomyDays ? `${Number(calc.batteryAutonomyDays).toFixed(1)} days` : "—");
+    row2("Battery chemistry",    String(project.batteryChemistry ?? "LiFePO4"));
+  }
+
+  // ── PAGE 2: Cost + Monthly Production ──────────────────────────────────────
+  doc.addPage();
+
+  sectionHeader("Cost Estimates");
+  row2("Installed cost (professional)", `$${Math.round(calc.installedCostLow).toLocaleString()} – $${Math.round(calc.installedCostHigh).toLocaleString()}`);
+  row2("DIY equipment only",            `$${Math.round(calc.diyEquipmentCostLow ?? 0).toLocaleString()} – $${Math.round(calc.diyEquipmentCostHigh ?? 0).toLocaleString()}`);
+  if (calc.batteryUsableKwh > 0) {
+    row2("Solar array (installed)",     `$${Math.round(calc.solarArrayInstalledCostLow ?? 0).toLocaleString()} – $${Math.round(calc.solarArrayInstalledCostHigh ?? 0).toLocaleString()}`);
+    row2("Battery system (installed)",  `$${Math.round(calc.batteryInstalledCostLow ?? 0).toLocaleString()} – $${Math.round(calc.batteryInstalledCostHigh ?? 0).toLocaleString()}`);
+  }
+  row2("Used/refurb equipment est.",    `$${Math.round(calc.usedSolarEquipCostLow ?? 0).toLocaleString()} – $${Math.round(calc.usedSolarEquipCostHigh ?? 0).toLocaleString()}`);
+  if (project.systemType !== "off-grid") {
+    row2("Est. annual savings",         `$${Math.round(calc.estimatedYearlySavings ?? 0).toLocaleString()}/yr`);
+    row2("Simple payback",              calc.paybackYears ? `${calc.paybackYears.toFixed(1)} years` : "N/A");
+  }
+  row2("Utility rate used",             `$${(project.utilityRatePerKwh ?? 0).toFixed(3)}/kWh`);
+
+  sectionHeader("System Loss Breakdown");
+  row2("Total modeled losses",          `${(calc.totalSystemLossPct ?? 0).toFixed(1)}%`);
+  row2("Shade loss",                    `${(calc.shadeLossPct ?? 0).toFixed(1)}%`);
+  row2("Temperature loss",              `${(calc.tempLossPct ?? 0).toFixed(1)}%`);
+  row2("Wiring loss",                   `${(calc.wireLossPct ?? 0).toFixed(1)}%`);
+  row2("Dirt/soiling loss",             `${(calc.dirtLossPct ?? 0).toFixed(1)}%`);
+  row2("Inverter efficiency loss",      `${(calc.inverterLossPct ?? 0).toFixed(1)}%`);
+  row2("Mismatch loss",                 `${(calc.misMatchLossPct ?? 0).toFixed(1)}%`);
+  if (calc.batteryUsableKwh > 0) {
+    row2("Battery round-trip loss",     `${(calc.batteryLossPct ?? 0).toFixed(1)}%`);
+    row2("Battery effective DoD",       `${(calc.batteryEffectiveDodPct ?? 0).toFixed(0)}%`);
+    row2("Cold derating",               `${(calc.batteryColdDeratingPct ?? 0).toFixed(0)}%`);
+    row2("Temp derating",               `${(calc.batteryTempDeratingPct ?? 0).toFixed(0)}%`);
+  }
+
+  if (monthlyChartData && monthlyChartData.length === 12) {
+    sectionHeader("Monthly Solar Production");
+    const maxKwh = Math.max(...monthlyChartData.map((r) => r.kwh ?? 0), 1);
+    const chartH = 90;
+    ensureSpace(chartH + 22 + 26);
+    const chartTop = doc.y;
+    const barW = (W - 2) / 12;
+    doc.rect(L, chartTop, W, chartH + 22).fillAndStroke("#f8fafc", "#e5e7eb");
+    monthlyChartData.forEach((row, i) => {
+      const barH = Math.max(4, ((row.kwh ?? 0) / maxKwh) * chartH * 0.85);
+      const bx = L + 1 + i * barW;
+      const by = chartTop + chartH - barH + 4;
+      doc.rect(bx + 2, by, barW - 4, barH).fill(ORANGE);
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica")
+         .text(row.month, bx, chartTop + chartH + 7, { width: barW, align: "center" });
+      doc.fontSize(7).fillColor(DARK)
+         .text(`${Math.round(row.kwh ?? 0)}`, bx, by - 11, { width: barW, align: "center" });
     });
-  } else {
-    add("Monthly production data was not available for this calculation.", "muted");
+    doc.y = chartTop + chartH + 22;
+    doc.moveDown(0.5);
+    const annualLabel = `Annual PVWatts production: ${Math.round(calc.pvwattsAnnualKwh ?? annualProduction).toLocaleString()} kWh  |  Annual solar radiation: ${(calc.pvwattsSolradAnnual ?? 0).toFixed(2)} kWh/m²/day`;
+    doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(annualLabel, L, doc.y, { width: W, align: "center" });
+    doc.moveDown(0.5);
   }
 
-  heading("Battery and Backup Design");
-  if ((calc.totalBatteryBankKwh ?? 0) > 0) {
-    detail("Usable battery capacity", `${number(calc.batteryUsableKwh, 1)} kWh`);
-    detail("Total nameplate bank", `${number(calc.totalBatteryBankKwh, 1)} kWh`);
-    detail("Autonomy", `${number(calc.batteryAutonomyDays, 1)} days`);
-    detail("Effective depth of discharge", `${number(calc.batteryEffectiveDodPct, 0)}%`);
-    detail("Energy reserve", `${number(calc.batteryEnergyReservePct, 0)}%`);
-    detail("Inverter efficiency assumption", `${number(calc.batteryInverterEfficiencyPct, 1)}%`);
-    detail("Cold-weather derating", `${number(calc.batteryColdDeratingPct, 0)}%`);
-  } else {
-    add("No battery storage was selected. This system will not provide backup power during a utility outage unless storage and transfer equipment are added.", "body");
-  }
+  // ── PAGE 3: Equipment BOM ───────────────────────────────────────────────────
+  doc.addPage();
+  sectionHeader("Equipment & Bill of Materials");
 
-  heading("Cost and Financial Overview");
-  detail("Solar equipment estimate", `${money(calc.solarArrayDiyCostLow)} - ${money(calc.solarArrayDiyCostHigh)}`);
-  detail("Battery equipment estimate", `${money(calc.batteryDiyCostLow)} - ${money(calc.batteryDiyCostHigh)}`);
-  detail("Complete BOM estimate", `${money(bomTotal.low)} - ${money(bomTotal.high)}`);
-  detail("Installed project estimate", `${money(calc.installedCostLow)} - ${money(calc.installedCostHigh)}`);
-  detail("Estimated annual savings", money(calc.estimatedYearlySavings));
-  detail("Simple payback before incentives", calc.paybackYears ? `${number(calc.paybackYears, 1)} years` : "Not applicable");
-  add("Equipment pricing is a planning range and excludes site-specific engineering, permitting, taxes, freight, trenching, roofing work, utility upgrades, and contractor labor unless explicitly included.", "muted");
+  // Column geometry — all five columns fit inside the content width (W = 512).
+  // [Category, Model/Description, Specs, Qty, Est. Price] => 95+175+130+40+72 = 512.
+  const colW  = [95, 175, 130, 40, 72];
+  const colX  = [L, L + 95, L + 270, L + 400, L + 440];
+  const heads = ["Category", "Model / Description", "Specs", "Qty", "Est. Price"];
+  const alignRight = [false, false, false, true, true];
+  const CELL_PAD = 6;
 
-  heading("Detailed Bill of Materials");
-  add(`Estimated equipment total: ${money(bomTotal.low)} - ${money(bomTotal.high)}`, "callout");
-  bom.forEach((item, index) => {
-    subheading(`${index + 1}. ${item.category} - ${item.item}`);
-    detail("Recommended", `${item.brand} ${item.model}`);
-    detail("Quantity", item.qty);
-    detail("Specifications", item.specs);
-    detail("Estimated unit price", item.unitPrice);
-    detail("Estimated total", item.totalPrice);
-    add(`Why included: ${item.reason}`, "body");
-    if (item.alternatives?.length) {
-      add(
-        `Alternatives: ${item.alternatives.map((alternative) => `${alternative.brand} ${alternative.model}`).join("; ")}`,
-        "muted",
-      );
-    }
-  });
-
-  heading("Engineering Flags and Recommendations");
-  const engineeringNotes = Array.isArray(calc.notes) ? calc.notes : [];
-  if (engineeringNotes.length) {
-    engineeringNotes.forEach((note: unknown) => add(String(note), "bullet"));
-  } else {
-    add("No additional calculation flags were generated.", "body");
-  }
-  add("Confirm final conductor sizes, overcurrent protection, rapid shutdown, grounding, structural loading, equipment compatibility, utility interconnection, and local code requirements with licensed professionals.", "bullet");
-
-  heading("Recommended Next Steps");
-  add("Obtain a site survey confirming usable roof or ground-mount area, azimuth, tilt, shading, structural capacity, and equipment locations.", "numbered");
-  add("Have a licensed solar/electrical professional verify the final one-line diagram, string sizing, conductor ampacity, voltage drop, disconnects, grounding, and protection devices.", "numbered");
-  add("Request itemized contractor quotes using this system size and equipment list so proposals can be compared on equal terms.", "numbered");
-  add("Confirm utility interconnection, net-metering rules, permit requirements, incentives, and tax-credit eligibility before purchasing equipment.", "numbered");
-
-  heading("Important Disclaimer");
-  add("Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional.", "callout");
-  add("This report is not a permit-ready engineering plan. Equipment quantities, conductor sizing, protection-device ratings, structural requirements, pricing, production, savings, incentives, and code requirements must be verified for the actual site.", "body");
-
-  return makeDetailedPdf(lines);
-}
-
-type PdfLineStyle =
-  | "brand"
-  | "title"
-  | "subtitle"
-  | "heading"
-  | "subheading"
-  | "body"
-  | "detail"
-  | "muted"
-  | "callout"
-  | "bullet"
-  | "numbered"
-  | "mono";
-
-type PdfLine = { text: string; style: PdfLineStyle };
-
-function makeDetailedPdf(lines: PdfLine[]): Buffer {
-  const pageStreams: string[] = [];
-  let commands: string[] = [];
-  let y = 744;
-  let pageNumber = 1;
-  let numberedIndex = 0;
-
-  const beginPage = () => {
-    commands = [
-      "0.96 0.97 0.98 rg",
-      "0 760 612 32 re f",
-      "0.97 0.36 0.06 rg",
-      "0 756 612 4 re f",
-      "0.10 0.13 0.20 rg",
-    ];
-    y = 736;
-  };
-  const endPage = () => {
-    commands.push(
-      "BT",
-      "/F1 8 Tf",
-      "0.40 0.45 0.53 rg",
-      `48 24 Td`,
-      `(OffGrid Solar Builder - Detailed Planning Report) Tj`,
-      `450 0 Td`,
-      `(Page ${pageNumber}) Tj`,
-      "ET",
-    );
-    pageStreams.push(commands.join("\n"));
-    pageNumber += 1;
-  };
-
-  const styleConfig: Record<PdfLineStyle, { size: number; font: "F1" | "F2" | "F3"; color: string; before: number; after: number; indent: number }> = {
-    brand: { size: 10, font: "F2", color: "0.97 0.36 0.06", before: 0, after: 5, indent: 0 },
-    title: { size: 25, font: "F2", color: "0.10 0.13 0.20", before: 0, after: 7, indent: 0 },
-    subtitle: { size: 15, font: "F2", color: "0.20 0.25 0.33", before: 0, after: 4, indent: 0 },
-    heading: { size: 15, font: "F2", color: "0.10 0.13 0.20", before: 15, after: 7, indent: 0 },
-    subheading: { size: 11, font: "F2", color: "0.12 0.28 0.45", before: 9, after: 3, indent: 0 },
-    body: { size: 9.5, font: "F1", color: "0.15 0.18 0.24", before: 1, after: 3, indent: 0 },
-    detail: { size: 9, font: "F1", color: "0.15 0.18 0.24", before: 0, after: 2, indent: 8 },
-    muted: { size: 8.5, font: "F3", color: "0.38 0.43 0.50", before: 1, after: 3, indent: 0 },
-    callout: { size: 10, font: "F2", color: "0.70 0.25 0.03", before: 4, after: 5, indent: 8 },
-    bullet: { size: 9, font: "F1", color: "0.15 0.18 0.24", before: 1, after: 3, indent: 14 },
-    numbered: { size: 9, font: "F1", color: "0.15 0.18 0.24", before: 1, after: 3, indent: 14 },
-    mono: { size: 8.5, font: "F1", color: "0.18 0.23 0.30", before: 0, after: 2, indent: 16 },
-  };
-
-  const writeLine = (text: string, config: (typeof styleConfig)[PdfLineStyle], prefix = "") => {
-    const wrapped = wrapPdfText(prefix + text, config.size, 516 - config.indent);
-    const lineHeight = config.size * 1.35;
-    const required = config.before + wrapped.length * lineHeight + config.after;
-    if (y - required < 48) {
-      endPage();
-      beginPage();
-    }
-    y -= config.before;
-    wrapped.forEach((row) => {
-      commands.push(
-        "BT",
-        `/${config.font} ${config.size} Tf`,
-        `${config.color} rg`,
-        `${48 + config.indent} ${y.toFixed(2)} Td`,
-        `(${escapePdfText(row)}) Tj`,
-        "ET",
-      );
-      y -= lineHeight;
+  function drawBomHeader() {
+    const hy = doc.y;
+    doc.rect(L, hy, W, 16).fill("#f1f5f9");
+    heads.forEach((h, i) => {
+      doc.fontSize(8).fillColor(GRAY).font("Helvetica-Bold")
+         .text(h, colX[i] + 2, hy + 4, { width: colW[i] - 4, align: alignRight[i] ? "right" : "left" });
     });
-    y -= config.after;
-  };
-
-  beginPage();
-  lines.forEach((line) => {
-    const config = styleConfig[line.style];
-    let prefix = "";
-    if (line.style === "bullet") prefix = "- ";
-    if (line.style === "numbered") {
-      numberedIndex += 1;
-      prefix = `${numberedIndex}. `;
-    }
-    writeLine(line.text, config, prefix);
-  });
-  endPage();
-
-  const pageObjectNumbers = pageStreams.map((_, index) => 5 + index * 2);
-  const objects = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    `<< /Type /Pages /Kids [${pageObjectNumbers.map((number) => `${number} 0 R`).join(" ")}] /Count ${pageStreams.length} >>`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
-  ];
-  pageStreams.forEach((content, index) => {
-    const pageObject = 5 + index * 2;
-    const contentObject = pageObject + 1;
-    objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 3 0 R >> >> /Contents ${contentObject} 0 R >>`,
-      `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`,
-    );
-  });
-
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  objects.forEach((obj, index) => {
-    offsets.push(Buffer.byteLength(pdf));
-    pdf += `${index + 1} 0 obj\n${obj}\nendobj\n`;
-  });
-  const xrefOffset = Buffer.byteLength(pdf);
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 1; i <= objects.length; i++) {
-    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+    doc.y = hy + 16;
+    doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+    doc.moveDown(0.2);
   }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-  return Buffer.from(pdf);
-}
 
-function wrapPdfText(value: string, fontSize: number, width: number): string[] {
-  const normalized = asciiText(value);
-  const maxChars = Math.max(18, Math.floor(width / (fontSize * 0.52)));
-  const words = normalized.split(/\s+/).filter(Boolean);
-  if (!words.length) return [""];
-  const rows: string[] = [];
-  let row = "";
-  for (const word of words) {
-    const next = row ? `${row} ${word}` : word;
-    if (next.length <= maxChars) {
-      row = next;
-      continue;
-    }
-    if (row) rows.push(row);
-    row = word.length > maxChars ? word.slice(0, maxChars) : word;
+  function measureBomRow(cells: unknown[]): number {
+    let max = 0;
+    cells.forEach((cell, i) => {
+      doc.fontSize(8.5).font(i === 1 ? "Helvetica-Bold" : "Helvetica");
+      const h = doc.heightOfString(String(cell ?? ""), { width: colW[i] - CELL_PAD });
+      if (h > max) max = h;
+    });
+    return max + CELL_PAD;
   }
-  if (row) rows.push(row);
-  return rows;
-}
 
-function escapePdfText(value: string): string {
-  return asciiText(value).replace(/[\\()]/g, "\\$&");
-}
+  drawBomHeader();
 
-function asciiText(value: unknown): string {
-  return String(value ?? "")
-    .replaceAll("–", "-")
-    .replaceAll("—", "-")
-    .replaceAll("•", "-")
-    .replaceAll("×", "x")
-    .replaceAll("²", "2")
-    .replace(/[^\x20-\x7E]/g, "");
-}
+  bom.forEach((item, idx) => {
+    const cells = [item.category, item.model, item.specs, item.qty, item.totalPrice];
+    const rowH = measureBomRow(cells);
+    if (ensureSpace(rowH)) drawBomHeader();
+    const rowY = doc.y;
+    if (idx % 2 === 0) doc.rect(L, rowY, W, rowH).fill("#fafafa");
+    cells.forEach((cell, i) => {
+      doc.fontSize(8.5).fillColor(DARK).font(i === 1 ? "Helvetica-Bold" : "Helvetica")
+         .text(String(cell ?? ""), colX[i] + 2, rowY + 3, { width: colW[i] - CELL_PAD, align: alignRight[i] ? "right" : "left" });
+    });
+    doc.y = rowY + rowH;
+    doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor("#f1f5f9").lineWidth(0.3).stroke();
+  });
 
-function number(value: unknown, decimals = 0): string {
-  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(decimals) : "0";
-}
+  // Recommended brands
+  doc.moveDown(0.5);
+  sectionHeader("Recommended Brands (for this system size & budget)");
+  if (calc.recommendedPanelBrand)   row2("Solar panels",   String(calc.recommendedPanelBrand));
+  if (calc.recommendedInverterBrand) row2("Inverter/charger", String(calc.recommendedInverterBrand));
+  if (calc.recommendedBatteryBrand)  row2("Battery",        String(calc.recommendedBatteryBrand));
+  if (calc.recommendedMountingBrand) row2("Mounting",       String(calc.recommendedMountingBrand));
 
-function formatNumber(value: unknown): string {
-  return typeof value === "number" && Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "0";
-}
+  // ── PAGE 4: Planning Notes + Disclaimer ────────────────────────────────────
+  if (Array.isArray(calc.notes) && calc.notes.length > 0) {
+    doc.addPage();
+    sectionHeader("Planning Notes & Assumptions");
+    (calc.notes as string[]).forEach((note) => {
+      const text = `• ${note}`;
+      doc.fontSize(9.5).font("Helvetica");
+      const h = doc.heightOfString(text, { width: W - 10 });
+      ensureSpace(h + 5);
+      doc.fontSize(9.5).fillColor(DARK).font("Helvetica")
+         .text(text, L + 10, doc.y, { width: W - 10 });
+      doc.moveDown(0.4);
+    });
+  }
 
-function money(value: unknown): string {
-  return `$${formatNumber(value)}`;
+  sectionHeader("Disclaimers");
+  [
+    "Preliminary planning estimate only. This report is intended to support early-stage feasibility analysis and project scoping. " +
+    "Final system design, sizing, equipment selection, structural loading, electrical code compliance, and permitting must be verified and " +
+    "engineered by a licensed solar and electrical professional in your jurisdiction.",
+    "Production estimates are based on PVWatts v8 solar irradiance data (NREL) or state-average fallback values. Actual system " +
+    "performance may vary due to local shading, weather, equipment degradation, installation quality, and other factors.",
+    "Cost estimates are indicative ranges based on typical market pricing as of the report date and may vary significantly by region, " +
+    "installer, supply availability, and incentive programs. This report is not a quote, contract, or permit-ready engineering plan.",
+    "Battery autonomy and backup calculations assume average daily load. Actual backup performance depends on load profile, " +
+    "temperature, battery state of health, and usage patterns.",
+    "Federal, state, and local incentives (ITC, SGIP, net metering, etc.) are not included in cost or payback estimates unless noted. " +
+    "Consult a tax professional and your local utility regarding applicable programs.",
+  ].forEach((para) => paragraph(para, { size: 9, gap: 0.6 }));
+
+  pageFooter();
+  doc.end();
+
+  return pdfReady;
 }
 
 function escapeHtml(value: unknown): string {

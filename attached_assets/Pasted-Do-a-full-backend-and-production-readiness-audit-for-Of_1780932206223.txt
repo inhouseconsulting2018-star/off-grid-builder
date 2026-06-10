@@ -1,0 +1,288 @@
+Do a full backend and production readiness audit for OffGrid Solar Builders.
+
+Current live app:
+https://off-grid-builder-1.replit.app
+
+Custom domain:
+https://offgridsolarbuilders.com
+
+Latest launch-mvp SHA:
+304c467c793a54c00ab2eb1d29fe82cd07024a2a
+
+Important rules:
+Do NOT print secrets.
+Do NOT commit secrets.
+Do NOT switch Stripe live/test modes.
+Do NOT embed Stripe Buy Button.
+Do NOT weaken paywall/security.
+Do NOT expose paid report, PDF, BOM, cost detail, or entitlement data before payment.
+
+Goal:
+Check the entire backend, API, database, payments, webhook, report generation, PDF generation, entitlement system, auth/security, deployment configuration, and production logs.
+
+PART 1 — Backend structure audit
+
+Inspect the backend and explain:
+
+1. What server framework is running.
+2. What port/start command Replit uses.
+3. What API routes exist.
+4. Which routes are public.
+5. Which routes require accessToken.
+6. Which routes require ADMIN_TOKEN.
+7. Which routes require successful payment entitlement.
+8. Whether any paid data can leak before payment.
+9. Whether any admin route is exposed without auth.
+10. Whether CORS and frontend URL settings are safe.
+
+PART 2 — Environment / Replit Secrets audit
+
+Verify these Replit Secrets exist by name only.
+Do not print values.
+
+DATABASE_URL
+ADMIN_TOKEN
+STRIPE_SECRET_KEY
+STRIPE_WEBHOOK_SECRET
+STRIPE_HOMEOWNER_REPORT_PRICE_ID
+STRIPE_PROPERTY_PACK_PRICE_ID
+STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
+STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
+STRIPE_PRICE_ID
+NREL_API_KEY
+FRONTEND_URL
+
+Confirm:
+- No secret values are committed in code.
+- No secret values are logged.
+- No secret values are exposed to the frontend.
+- FRONTEND_URL is correct for the deployed environment.
+- Stripe price IDs match the intended active products.
+
+PART 3 — Database audit
+
+Using DATABASE_URL securely, inspect the database schema.
+
+Do not print DATABASE_URL.
+
+Confirm migrations are applied:
+
+001_add_access_token.sql
+002_add_payment_entitlement.sql
+
+Check that required fields exist, including any needed fields for:
+
+accessToken
+paymentStatus
+paidAt
+stripeCheckoutSessionId
+stripePaymentIntentId
+stripeCustomerId
+selectedPlan
+reportCredits
+entitlement/payment unlock state
+
+Confirm:
+1. New projects save correctly.
+2. Old projects do not break.
+3. accessToken is generated.
+4. accessToken is required where intended.
+5. Paid entitlement state persists correctly.
+6. Report credits work for property pack/contractor plans if implemented.
+7. Duplicate Stripe webhook events do not double-credit or double-unlock incorrectly.
+8. Failed payments do not unlock reports.
+
+PART 4 — Stripe checkout audit
+
+Inspect checkout session creation.
+
+Confirm:
+1. Checkout sessions are created server-side only.
+2. Correct Stripe secret key is used from environment.
+3. Correct price IDs are used.
+4. selectedPlan is required/validated.
+5. projectId is included in metadata.
+6. accessToken is included in metadata or otherwise safely linked.
+7. success_url is correct.
+8. cancel_url is correct.
+9. Homeowner report uses the $19 price.
+10. Property pack uses the $39 price.
+11. Contractor annual uses the $149/year price.
+12. Contractor lifetime beta uses the $199 one-time price.
+13. No old $199/year annual or $299 beta pricing remains active.
+14. Stripe Buy Button is not embedded and not used.
+
+PART 5 — Stripe webhook audit
+
+Inspect webhook route:
+
+/api/stripe/webhook
+
+Confirm:
+1. It uses raw request body where required.
+2. It verifies Stripe signature using STRIPE_WEBHOOK_SECRET.
+3. It handles checkout.session.completed.
+4. It handles payment_intent.payment_failed if implemented.
+5. It handles subscription events if implemented.
+6. It rejects unsigned/invalid webhook requests.
+7. It does not unlock anything before verified payment.
+8. It updates the correct project.
+9. It uses projectId/accessToken metadata safely.
+10. It is idempotent or safe for duplicate webhook delivery.
+11. It logs enough for debugging without logging secrets.
+
+PART 6 — Paywall/backend security audit
+
+Confirm unpaid users cannot access:
+
+1. Full report API data.
+2. PDF report.
+3. BOM/material details.
+4. Exact cost breakdowns meant for paid reports.
+5. Contractor-only features.
+6. Admin/project list data.
+
+Test expected behavior:
+
+Unpaid full report request should return 402 or locked response.
+Unpaid PDF request should return 402 or locked response.
+Paid full report request should return full report.
+Paid PDF request should return PDF.
+Invalid accessToken should fail.
+Missing accessToken should fail where required.
+Invalid ADMIN_TOKEN should fail.
+Missing ADMIN_TOKEN should fail on admin routes.
+
+PART 7 — Report and PDF backend audit
+
+Inspect report generation and PDF generation.
+
+Confirm:
+1. Free preview works without payment.
+2. Free preview only exposes allowed summary data.
+3. Paid report includes required sections.
+4. PDF generation happens server-side or safely.
+5. PDF cannot be downloaded before payment.
+6. PDF download works after payment.
+7. PDF has correct disclaimer.
+8. PDF output does not contain debug data or secrets.
+9. PDF filename is professional.
+10. Report logic handles missing address/API/irradiance data gracefully.
+
+Required disclaimer:
+“Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional.”
+
+PART 8 — API and error handling audit
+
+Check all backend routes for:
+
+1. Bad request validation.
+2. Missing project handling.
+3. Invalid accessToken handling.
+4. Stripe failure handling.
+5. NREL API failure handling.
+6. Geocoding/location failure handling.
+7. Database connection failure handling.
+8. PDF generation failure handling.
+9. Safe user-facing error messages.
+10. No stack traces exposed to users in production.
+
+PART 9 — Production deployment audit
+
+Check deployed app health:
+
+https://off-grid-builder-1.replit.app
+
+If DNS is resolving, also check:
+
+https://offgridsolarbuilders.com
+
+Confirm:
+1. App boots without backend errors.
+2. API health route works if available.
+3. Frontend can call backend.
+4. Checkout button reaches backend.
+5. Backend logs are clean.
+6. No repeated runtime errors.
+7. No missing environment variable errors.
+8. No 500 errors on core routes.
+9. Domain and HTTPS are working or clearly list DNS blockers.
+
+PART 10 — Run backend tests
+
+Run all applicable checks:
+
+TypeScript backend check
+API TypeScript check
+Frontend TypeScript check
+Scripts TypeScript check
+PVWatts QA
+Paywall QA
+Production build
+Backend/API production bundle
+
+Also add or run smoke checks for:
+
+Project create
+Preview generate
+Checkout session create
+Webhook signature validation
+Unpaid full report block
+Unpaid PDF block
+Paid entitlement unlock
+Paid report access
+Paid PDF access
+Failed payment stays locked
+Admin route auth
+
+PART 11 — Security red flags
+
+Search for and report any issue involving:
+
+1. Hardcoded secrets.
+2. Public admin tokens.
+3. Stripe secret exposed client-side.
+4. Webhook secret exposed.
+5. DATABASE_URL exposed.
+6. Paid data exposed in frontend bundle.
+7. Access token not checked.
+8. Payment status trusted from frontend.
+9. Webhook not signature verified.
+10. Missing idempotency/double webhook protection.
+11. Overly permissive CORS.
+12. Console logs containing secrets.
+13. Debug/test routes enabled in production.
+
+PART 12 — Final backend report
+
+Give me a clear final report with:
+
+1. Backend health: PASS/FAIL
+2. Database health: PASS/FAIL
+3. Replit Secrets status: PASS/FAIL/MISSING NAMES ONLY
+4. Migration status: PASS/FAIL
+5. Stripe checkout status: PASS/FAIL
+6. Stripe webhook status: PASS/FAIL
+7. Paywall security status: PASS/FAIL
+8. Paid report API status: PASS/FAIL
+9. Paid PDF status: PASS/FAIL
+10. Access token security: PASS/FAIL
+11. Admin auth security: PASS/FAIL
+12. Error handling: PASS/FAIL
+13. Production deployment health: PASS/FAIL
+14. Domain/HTTPS status: PASS/FAIL
+15. Remaining blockers
+16. Exact files changed if fixes were made
+17. Exact tests run
+18. Exact test results
+19. Safe to accept test payments: YES/NO
+20. Safe to accept live payments: YES/NO
+21. Safe to soft market: YES/NO
+22. Exact next step for me
+
+If you find bugs:
+- Fix them on a new branch.
+- Do not change launch-mvp directly.
+- Do not commit secrets.
+- Run all tests again.
+- Open a PR with a clear summary.

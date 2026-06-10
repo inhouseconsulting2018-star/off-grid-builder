@@ -1,0 +1,326 @@
+This is a P0 production blocker. Stop treating this like optional polish.
+
+The app cannot be considered marketable, scalable, or launch-ready while paid customers cannot reliably see their paid projects, access their dashboard, download their PDF, receive their PDF by email, or use settings.
+
+I paid to get a working production software product, not repeated partial fixes. The same issues keep coming back. I need this fixed end-to-end now.
+
+Production domain:
+https://offgridsolarbuilder.com
+
+Replit app:
+https://off-grid-builder-1.replit.app
+
+Current launch-mvp SHA:
+6027b7f09d14eaedfd894342381eb4640a40c9c3
+
+Important rules:
+Do NOT print secrets.
+Do NOT commit secrets.
+Do NOT expose DATABASE_URL.
+Do NOT expose STRIPE_SECRET_KEY.
+Do NOT expose STRIPE_WEBHOOK_SECRET.
+Do NOT expose ADMIN_TOKEN.
+Do NOT weaken the paywall.
+Do NOT bypass projectId/accessToken metadata.
+Do NOT embed Stripe Buy Button.
+Do NOT mark this complete with static checks only.
+Do NOT claim launch-ready unless the live deployed app actually works.
+
+This must be fixed as a real customer-facing production app.
+
+P0 ISSUES TO FIX
+
+1. Dashboard is not working.
+   A customer who creates projects must be able to see their projects on the dashboard.
+   If a customer paid for a report, that paid project must appear in the dashboard.
+   The dashboard must show project status, paid/unpaid status, report access, PDF download access, and created date.
+   The dashboard must not be blank or useless after payment.
+
+2. Paid project history must work.
+   Even if the user does not immediately print or download the PDF, the paid report must remain accessible later.
+   Paid projects must persist.
+   Users must be able to return to the dashboard and reopen projects they worked on.
+   Users must be able to access paid reports they already purchased.
+
+3. PDF delivery must work.
+   After successful payment:
+
+* paid report unlocks
+* PDF download works
+* PDF opens correctly
+* PDF prints cleanly
+* PDF remains available from the dashboard/project page later
+
+4. Email PDF copy must be added.
+   After successful payment, email the customer a copy of the PDF or a secure download link as a courtesy.
+   The email should include:
+
+* customer/project reference
+* link to reopen the paid report
+* PDF attachment or secure PDF download link
+* support/contact information
+* disclaimer
+
+If the app does not currently collect customer email directly, use the Stripe Checkout customer email from the completed checkout session.
+
+Do not expose paid PDFs publicly.
+The emailed link must require accessToken or another secure access method.
+
+5. Settings page is not working.
+   Fix the Settings page so it actually loads and functions.
+   If settings are not implemented yet, build a useful minimal settings page.
+   At minimum, settings should allow the user/customer to see or manage:
+
+* account/contact email if available
+* saved projects access explanation
+* report/PDF access explanation
+* support/contact information
+* basic preferences if already supported
+* clear logout/reset/access instructions if applicable
+
+No dead settings buttons.
+No placeholder-only page.
+No broken route.
+
+6. Payment-to-dashboard connection must work.
+   After checkout success, the user must return to the correct project.
+   The project must show paid/unlocked state.
+   The dashboard must show that same paid project.
+   The PDF must be accessible from that dashboard/project.
+   The entitlement state must be stored in the database and survive refreshes/redeploys.
+
+7. Frontend and backend must both be production-ready.
+   Do not only check the frontend.
+   Do not only check the backend.
+   Verify the entire live customer flow.
+
+REQUIRED CUSTOMER FLOW
+
+Run this exact flow on the live deployed app:
+
+1. Open https://offgridsolarbuilder.com
+2. Create a new project.
+3. Enter address and usage.
+4. Generate free preview.
+5. Confirm free preview works.
+6. Confirm full report is locked before payment.
+7. Confirm PDF is locked before payment.
+8. Click Get Full Report.
+9. Complete payment through Stripe.
+10. Confirm checkout success returns to the correct project.
+11. Confirm webhook fires and returns 200.
+12. Confirm paid report unlocks.
+13. Confirm PDF download works.
+14. Confirm PDF opens.
+15. Confirm PDF prints cleanly.
+16. Confirm project appears on dashboard.
+17. Confirm paid status appears on dashboard.
+18. Confirm user can reopen paid project from dashboard.
+19. Confirm user can download PDF later from dashboard/project.
+20. Confirm customer receives email with PDF or secure PDF link.
+21. Confirm failed/declined payment does not unlock anything.
+22. Confirm canceled checkout does not unlock anything.
+23. Confirm invalid accessToken cannot access paid report/PDF.
+24. Confirm settings page loads and works.
+
+DASHBOARD REQUIREMENTS
+
+Build/fix dashboard so it includes:
+
+* list of saved projects
+* project name/address
+* created date
+* updated date if available
+* status: preview generated / paid / unpaid / failed / canceled
+* selected plan
+* button to continue/edit project if unpaid
+* button to view paid report if paid
+* button to download PDF if paid
+* clear empty state if no projects exist
+* clear error state if data cannot load
+* mobile-friendly layout
+* no broken buttons
+* no blank screen
+
+If user identity/account login is not implemented, use the existing secure accessToken/project storage approach and make the dashboard work with the current system. If this requires storing recent project access tokens in browser localStorage, implement it safely and explain the limitation.
+
+PAYMENT / ENTITLEMENT REQUIREMENTS
+
+Verify:
+
+* checkout sessions are server-side only
+* selectedPlan is validated
+* projectId metadata is preserved
+* accessToken metadata or secure equivalent is preserved
+* webhook validates signature
+* webhook unlocks correct project only
+* duplicate webhook does not double-credit incorrectly
+* failed payment does not unlock report
+* canceled checkout does not unlock report
+* paidAt/paymentStatus are stored correctly
+* reportCredits work if plan uses credits
+* dashboard reads true backend entitlement state, not fake frontend state
+
+PDF EMAIL REQUIREMENTS
+
+Implement email delivery after successful payment.
+
+If a report email provider secret exists, use it.
+If not, add a clear required Replit Secret name and do not block PDF download.
+
+Email behavior:
+
+* Trigger only after confirmed payment/webhook
+* Use Stripe customer email if available
+* Include secure report/PDF link
+* Attach PDF if technically reliable, or include secure PDF download link
+* Do not email unpaid users
+* Do not expose public PDF URL
+* Log email success/failure without secrets
+* If email fails, paid report/PDF should still remain downloadable in dashboard
+
+Suggested email subject:
+Your OffGrid Solar Builder Solar Report
+
+Suggested email body:
+Thank you for using OffGrid Solar Builder. Your solar planning report is ready. You can view your paid report and download your PDF using the secure link below.
+
+Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional.
+
+SETTINGS REQUIREMENTS
+
+Fix or build Settings page.
+
+It must:
+
+* load without errors
+* not be blank
+* not have dead buttons
+* explain how customers access saved projects/reports
+* show support/contact info
+* show current app/product info if useful
+* include links back to dashboard and home
+* be mobile-friendly
+
+MARKETABLE / SCALABLE REQUIREMENTS
+
+Do not call this done unless the app is ready for real customers.
+
+Confirm:
+
+* dashboard works
+* settings works
+* paid report works
+* PDF works
+* email delivery works or has a clearly documented provider-secret blocker
+* payment unlock works
+* failed payment stays locked
+* customer can return later
+* frontend has no obvious dead pages
+* backend logs are clean
+* no secrets exposed
+* no paid data leaks
+* no old pricing
+* no Stripe Buy Button
+* production domain is singular:
+  https://offgridsolarbuilder.com
+
+BRANCH / FIX PROCESS
+
+If fixes are needed:
+
+1. Create a new branch from launch-mvp.
+2. Fix the problems.
+3. Do not change launch-mvp directly.
+4. Do not commit secrets.
+5. Run all tests.
+6. Run live deployed smoke QA if possible.
+7. Open a PR.
+8. Include exact files changed.
+9. Include exact tests run.
+10. Include before/after behavior.
+
+TESTS TO RUN
+
+Run:
+
+* TypeScript root check
+* API TypeScript check
+* Frontend TypeScript check
+* Scripts TypeScript check
+* PVWatts QA
+* Paywall QA
+* frontend production build
+* API production build
+* project create test
+* preview generate test
+* checkout session create test
+* webhook test
+* unpaid full report block test
+* unpaid PDF block test
+* paid entitlement unlock test
+* paid PDF access test
+* dashboard project list test
+* dashboard paid project access test
+* settings page test
+* email PDF/link delivery test
+* failed payment remains locked test
+* invalid accessToken security test
+* admin auth test
+* mobile smoke test
+* desktop smoke test
+
+FINAL REPORT REQUIRED
+
+Give me a direct final report:
+
+1. Dashboard status: PASS/FAIL
+2. Paid projects show on dashboard: PASS/FAIL
+3. Paid report can be reopened later: PASS/FAIL
+4. PDF download status: PASS/FAIL
+5. PDF print status: PASS/FAIL
+6. PDF email/link delivery status: PASS/FAIL
+7. Settings page status: PASS/FAIL
+8. Checkout success flow: PASS/FAIL
+9. Webhook unlock status: PASS/FAIL
+10. Failed payment stays locked: PASS/FAIL
+11. AccessToken security: PASS/FAIL
+12. Backend API health: PASS/FAIL
+13. Frontend health: PASS/FAIL
+14. Mobile layout: PASS/FAIL
+15. Desktop layout: PASS/FAIL
+16. Production logs: PASS/FAIL
+17. Secrets exposure check: PASS/FAIL
+18. Domain correctness: PASS/FAIL
+19. Remaining blockers
+20. Exact files changed
+21. Exact tests run
+22. Exact test results
+23. PR link if opened
+24. Safe to accept live payments: YES/NO
+25. Safe to fully market: YES/NO
+
+Final decision must be one of:
+
+FULL LAUNCH GO
+
+or
+
+NO-GO — BLOCKERS REMAIN
+
+Do not say FULL LAUNCH GO unless:
+
+* dashboard works
+* settings works
+* paid report can be reopened later
+* PDF downloads
+* PDF email/link delivery works or is clearly documented with a non-blocking fallback
+* successful payment unlocks correct project
+* failed payment stays locked
+* webhook returns 200
+* no paid data leaks before payment
+* production logs are clean
+* customer can realistically use the app without me manually helping them
+
+End with:
+Exact next step for me.

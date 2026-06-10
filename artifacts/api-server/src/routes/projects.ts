@@ -112,7 +112,7 @@ async function createCheckoutSession(req: Request, res: Response, input: {
     return;
   }
   const plan = getCheckoutPlan(planId);
-  if (project.paidAt && plan.id === "homeowner_report") {
+  if (hasActivePaidEntitlement(project) && plan.id === "homeowner_report") {
     res.status(400).json({ error: "Project is already unlocked" });
     return;
   }
@@ -130,7 +130,6 @@ async function createCheckoutSession(req: Request, res: Response, input: {
   const cancelUrl = `${baseOrigin}/payment-cancel?projectId=${project.id}&accessToken=${encodeURIComponent(project.accessToken ?? "")}&selectedPlan=${encodeURIComponent(plan.id)}`;
   const metadata = {
     projectId: String(project.id),
-    accessToken: project.accessToken ?? "",
     selectedPlan: plan.id,
     productType: plan.id,
     creditAmount: String(plan.includedCredits),
@@ -507,9 +506,8 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
 });
 
 // ── GET /projects/:id/report ───────────────────────────────────────────────────
-// Requires valid accessToken AND payment entitlement (paidAt must be set).
+// Requires valid accessToken and an active payment entitlement.
 // Returns full calculation result and BOM data as JSON.
-// PDF rendering is a TODO — this endpoint enforces the payment gate now.
 router.get("/projects/:id/report", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(raw, 10);
@@ -555,7 +553,7 @@ router.get("/projects/:id/report.pdf", async (req, res): Promise<void> => {
 
   const report = buildPaidReport(project);
   if (!report) { res.status(500).json({ error: "Report is not available" }); return; }
-  const pdf = renderReportPdfBuffer(report);
+  const pdf = await renderReportPdfBuffer(report);
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="solar-report-${project.id}.pdf"`);
   res.send(pdf);

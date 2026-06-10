@@ -19,7 +19,7 @@ import { appEnv } from "@/config/env";
 import { trackEvent } from "@/services/analytics";
 import { createProjectCheckoutSession } from "@/services/projectService";
 import { getCheckoutPlan, parseCheckoutPlan } from "@/services/checkoutPlans";
-import { saveCustomerProjectAccess } from "@/services/customerProjects";
+import { addProjectToRegistry } from "@/services/projectRegistry";
 import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, CheckCircle2 } from "lucide-react";
 
 const wizardSchema = z.object({
@@ -154,12 +154,7 @@ export default function Wizard() {
       });
 
       const token = ((project as { accessToken?: string }).accessToken) ?? "";
-      saveCustomerProjectAccess({
-        id: project.id,
-        accessToken: token,
-        name: project.name,
-        address: [project.address, project.city, project.state].filter(Boolean).join(", "),
-      });
+      addProjectToRegistry({ id: project.id, accessToken: token, name: data.name });
 
       setIsCalculating(true);
       try {

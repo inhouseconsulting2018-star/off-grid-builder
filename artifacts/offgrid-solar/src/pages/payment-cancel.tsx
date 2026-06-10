@@ -4,7 +4,7 @@ import { XCircle, ArrowLeft } from "lucide-react";
 import { Link, useSearch } from "wouter";
 import { useEffect } from "react";
 import { parseCheckoutPlan } from "@/services/checkoutPlans";
-import { saveCustomerProjectAccess } from "@/services/customerProjects";
+import { addProjectToRegistry } from "@/services/projectRegistry";
 import { apiPost } from "@/services/apiService";
 
 export default function PaymentCancel() {
@@ -24,7 +24,7 @@ export default function PaymentCancel() {
   useEffect(() => {
     if (!projectId || !accessToken) return;
     const id = Number(projectId);
-    saveCustomerProjectAccess({ id, accessToken });
+    addProjectToRegistry({ id, accessToken });
     void apiPost(`/projects/${id}/checkout-canceled`, undefined, {
       headers: { "x-access-token": accessToken },
     }).catch(() => {

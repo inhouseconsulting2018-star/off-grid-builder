@@ -1,267 +1,624 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Badge } from "@/components/ui/badge";
+import { useListProjects, useGetProjectsSummary, useDeleteProject, getListProjectsQueryKey, getGetProjectsSummaryQueryKey } from "@workspace/api-client-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Link } from "wouter";
+import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldCheck, ZapOff, MapPin, BarChart3, Map, Lock, Download, FileText, Loader2, CheckCircle2, AlertTriangle, LogOut } from "lucide-react";
+import { useQueryClient, useQueries } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { useEffect, useRef, useState } from "react";
+import { getAdminToken, saveAdminToken, adminRequestOpts } from "@/hooks/useAdminToken";
 import {
-  AlertCircle,
-  CalendarDays,
-  Download,
-  Edit,
-  Eye,
-  FileText,
-  Loader2,
-  PlusCircle,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-} from "lucide-react";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { format } from "date-fns";
+import { DashboardMap } from "@/components/maps/DashboardMap";
 import { appEnv } from "@/config/env";
-import {
-  listCustomerProjectAccess,
-  removeCustomerProjectAccess,
-  type CustomerProjectAccess,
-} from "@/services/customerProjects";
+import { getProjectRegistry, removeProjectFromRegistry, type ProjectRegistryEntry } from "@/services/projectRegistry";
 
-type DashboardProject = {
-  id: number;
-  name: string;
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
-  createdAt: string;
-  updatedAt: string;
-  paidAt?: string | null;
-  paymentStatus?: string;
-  selectedPlan?: string | null;
-  calculationResult?: unknown;
-  accessToken: string;
+const systemTypeBadge: Record<string, string> = {
+  "off-grid": "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  "grid-tied": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  "hybrid": "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
 };
 
-type LoadFailure = CustomerProjectAccess & { reason: string };
+const planLabels: Record<string, string> = {
+  homeowner: "Homeowner Report",
+  homeowner_report: "Homeowner Report",
+  property_pack: "Property Pack",
+  contractor_annual: "Contractor Annual",
+  contractor_lifetime: "Contractor Lifetime",
+  contractor_lifetime_beta: "Contractor Lifetime",
+};
 
-function planLabel(plan?: string | null): string {
-  switch (plan) {
-    case "homeowner_report": return "Homeowner Full Report";
-    case "property_pack": return "Property Pack";
-    case "contractor_annual": return "Contractor Annual";
-    case "contractor_lifetime_beta": return "Contractor Lifetime";
-    default: return "No plan selected";
+// ---------------------------------------------------------------------------
+// Customer dashboard — driven by the local "my projects" registry.
+// No admin token needed; each project is fetched with its own access token.
+// ---------------------------------------------------------------------------
+
+type CustomerProject = {
+  id: number;
+  name?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  systemType?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  paidAt?: string | null;
+  paymentStatus?: string | null;
+  selectedPlan?: string | null;
+  calculationResult?: {
+    preview?: boolean;
+    adjustedArraySizeKw?: number;
+    arraySizeKw?: number;
+    systemSizeKwRange?: { low?: number; high?: number };
+  } | null;
+};
+
+type FetchResult = CustomerProject | { notFound: true };
+
+async function fetchRegistryProject(entry: ProjectRegistryEntry): Promise<FetchResult> {
+  const res = await fetch(`${appEnv.apiBaseUrl}/projects/${entry.id}`, {
+    headers: { "x-access-token": entry.accessToken },
+  });
+  // 404 = deleted or invalid token; treat as "remove from my list".
+  if (res.status === 404 || res.status === 401 || res.status === 403) {
+    return { notFound: true };
   }
+  if (!res.ok) throw new Error(`Failed to load project (${res.status})`);
+  return (await res.json()) as CustomerProject;
 }
 
-function hasActivePaidAccess(project: DashboardProject): boolean {
-  if (!project.paidAt) return false;
-  if (project.selectedPlan === "contractor_annual") {
-    return project.paymentStatus === "paid"
-      || project.paymentStatus === "active"
-      || project.paymentStatus === "trialing";
-  }
-  return project.paymentStatus === "paid";
+function isPaidProject(p: CustomerProject): boolean {
+  if (!p.paidAt) return false;
+  if (p.selectedPlan !== "contractor_annual") return p.paymentStatus === "paid";
+  return ["paid", "active", "trialing"].includes(p.paymentStatus ?? "");
 }
 
-function projectStatus(project: DashboardProject): { label: string; className: string } {
-  if (hasActivePaidAccess(project)) {
-    return { label: "Paid - report unlocked", className: "bg-green-100 text-green-800 border-green-200" };
-  }
-  if (project.paymentStatus === "failed") {
-    return { label: "Payment failed", className: "bg-red-100 text-red-800 border-red-200" };
-  }
-  if (project.paymentStatus === "canceled") {
-    return { label: "Checkout canceled", className: "bg-amber-100 text-amber-800 border-amber-200" };
-  }
-  if (project.paymentStatus === "pending") {
-    return { label: "Checkout pending", className: "bg-blue-100 text-blue-800 border-blue-200" };
-  }
-  if (project.calculationResult) {
-    return { label: "Preview generated - unpaid", className: "bg-slate-100 text-slate-800 border-slate-200" };
-  }
-  return { label: "Draft", className: "bg-slate-100 text-slate-700 border-slate-200" };
+function projectStatusLabel(p: CustomerProject): string {
+  if (isPaidProject(p)) return "Paid";
+  if (p.paymentStatus === "failed") return "Payment failed";
+  if (p.paymentStatus === "canceled") return "Checkout canceled";
+  if (p.paymentStatus === "pending") return "Payment pending";
+  return p.calculationResult ? "Preview" : "Draft";
 }
 
-export default function ProjectsDashboard() {
-  const [projects, setProjects] = useState<DashboardProject[]>([]);
-  const [failures, setFailures] = useState<LoadFailure[]>([]);
-  const [loading, setLoading] = useState(true);
+function capacityLabel(p: CustomerProject): string | null {
+  const calc = p.calculationResult;
+  if (!calc) return null;
+  const exact = calc.adjustedArraySizeKw ?? calc.arraySizeKw;
+  if (typeof exact === "number" && Number.isFinite(exact)) return `${exact.toFixed(2)} kW`;
+  const range = calc.systemSizeKwRange;
+  if (range && typeof range.low === "number" && typeof range.high === "number") {
+    return `${range.low.toFixed(1)}–${range.high.toFixed(1)} kW`;
+  }
+  return null;
+}
 
-  const loadProjects = useCallback(async () => {
-    setLoading(true);
-    const accessEntries = listCustomerProjectAccess();
-    const loaded = await Promise.all(accessEntries.map(async (entry) => {
-      try {
-        const base = appEnv.apiBaseUrl.replace(/\/+$/, "");
-        const response = await fetch(`${base}/projects/${entry.id}`, {
-          headers: { "x-access-token": entry.accessToken },
-        });
-        if (!response.ok) {
-          return { failure: { ...entry, reason: response.status === 404 ? "Access link is no longer valid." : `HTTP ${response.status}` } };
-        }
-        const project = await response.json() as Omit<DashboardProject, "accessToken">;
-        return { project: { ...project, accessToken: entry.accessToken } };
-      } catch {
-        return { failure: { ...entry, reason: "Could not reach the project service." } };
-      }
-    }));
+function CustomerDashboard({ onUseAdmin }: { onUseAdmin: (token: string) => void }) {
+  const { toast } = useToast();
+  const [entries, setEntries] = useState<ProjectRegistryEntry[]>(() => getProjectRegistry());
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
-    setProjects(
-      loaded.flatMap((result) => result.project ? [result.project] : [])
-        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    );
-    setFailures(loaded.flatMap((result) => result.failure ? [result.failure] : []));
-    setLoading(false);
-  }, []);
+  const queries = useQueries({
+    queries: entries.map((entry) => ({
+      queryKey: ["my-project", entry.id],
+      queryFn: () => fetchRegistryProject(entry),
+      retry: false,
+      staleTime: 15_000,
+    })),
+  });
 
+  // Prune projects that 404 (deleted elsewhere or invalid token) from the registry.
+  const notFoundIds = entries
+    .filter((_, i) => {
+      const data = queries[i]?.data;
+      return !!data && "notFound" in data;
+    })
+    .map((e) => e.id);
+  const notFoundKey = notFoundIds.join(",");
   useEffect(() => {
-    void loadProjects();
-  }, [loadProjects]);
+    if (notFoundIds.length === 0) return;
+    notFoundIds.forEach((id) => removeProjectFromRegistry(id));
+    setEntries((prev) => prev.filter((e) => !notFoundIds.includes(e.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notFoundKey]);
 
-  const paidCount = useMemo(() => projects.filter(hasActivePaidAccess).length, [projects]);
-  const previewCount = projects.length - paidCount;
+  const handleDelete = async (entry: ProjectRegistryEntry) => {
+    setDeletingId(entry.id);
+    try {
+      const res = await fetch(`${appEnv.apiBaseUrl}/projects/${entry.id}`, {
+        method: "DELETE",
+        headers: { "x-access-token": entry.accessToken },
+      });
+      if (!res.ok && res.status !== 404) throw new Error("Delete failed");
+      removeProjectFromRegistry(entry.id);
+      setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+      toast({ title: "Project deleted" });
+    } catch {
+      toast({ title: "Delete failed.", variant: "destructive" });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const isInitialLoading = entries.length > 0 && queries.some((q) => q.isLoading);
+  const loadedProjects = entries
+    .map((entry, i) => {
+      const data = queries[i]?.data;
+      if (!data || "notFound" in data) return null;
+      return { entry, project: data as CustomerProject };
+    })
+    .filter((x): x is { entry: ProjectRegistryEntry; project: CustomerProject } => x !== null);
 
   return (
     <AppLayout>
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Your Solar Projects</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Projects saved in this browser are verified against the live backend each time this page loads.
-            </p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">My Projects</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Your saved solar designs and purchased reports on this device.</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => void loadProjects()} disabled={loading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+          <Link href="/wizard">
+            <Button className="gap-2 w-full sm:w-auto">
+              <PlusCircle className="h-4 w-4" />
+              New Project
+            </Button>
+          </Link>
+        </div>
+
+        {isInitialLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <Card key={i} className="h-28 animate-pulse bg-muted" />
+            ))}
+          </div>
+        ) : loadedProjects.length > 0 ? (
+          <div className="grid gap-3">
+            {loadedProjects.map(({ entry, project }) => {
+              const paid = isPaidProject(project);
+              const statusLabel = projectStatusLabel(project);
+              const name = project.name || entry.name || `Project #${entry.id}`;
+              const token = entry.accessToken;
+              const cap = capacityLabel(project);
+              const planLabel = project.selectedPlan ? planLabels[project.selectedPlan] ?? null : null;
+              const resultsHref = `/results/${entry.id}?accessToken=${encodeURIComponent(token)}`;
+              const editHref = `/projects/${entry.id}/edit?accessToken=${encodeURIComponent(token)}`;
+              const pdfHref = `${appEnv.apiBaseUrl}/projects/${entry.id}/report.pdf?accessToken=${encodeURIComponent(token)}`;
+              return (
+                <Card key={entry.id} className="overflow-hidden">
+                  <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5">
+                    <div className="space-y-1.5 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link href={resultsHref}>
+                          <h3 className="font-semibold text-base hover:text-primary hover:underline cursor-pointer truncate">{name}</h3>
+                        </Link>
+                        {paid ? (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 inline-flex items-center gap-1 shrink-0">
+                            <CheckCircle2 className="h-3 w-3" /> Paid
+                          </span>
+                        ) : (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+                            project.paymentStatus === "failed"
+                              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                              : project.paymentStatus === "pending"
+                                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                : project.calculationResult
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                  : "bg-secondary text-secondary-foreground"
+                          }`}>
+                            {statusLabel}
+                          </span>
+                        )}
+                        {project.systemType && (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${systemTypeBadge[project.systemType] || "bg-secondary text-secondary-foreground"}`}>
+                            {project.systemType}
+                          </span>
+                        )}
+                      </div>
+                      {(project.city || project.state) && (
+                        <p className="text-sm text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          {[project.city, project.state].filter(Boolean).join(", ")}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                        {cap && <span className="font-medium text-foreground">{cap}</span>}
+                        {(project.updatedAt || project.createdAt) && (
+                          <span>Updated {format(new Date(project.updatedAt ?? project.createdAt!), "MMM d, yyyy")}</span>
+                        )}
+                        {paid && planLabel && <span className="text-green-700 dark:text-green-400 font-medium">{planLabel}</span>}
+                        {paid && project.paidAt && <span>Purchased {format(new Date(project.paidAt), "MMM d, yyyy")}</span>}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                      <Link href={resultsHref}>
+                        <Button variant="outline" size="sm" className="gap-1.5">
+                          <Eye className="h-3.5 w-3.5" /> {paid ? "View Report" : "View"}
+                        </Button>
+                      </Link>
+                      {paid ? (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => { window.location.href = pdfHref; }}
+                        >
+                          <Download className="h-3.5 w-3.5" /> PDF
+                        </Button>
+                      ) : (
+                        <Link href={editHref}>
+                          <Button variant="outline" size="sm" className="gap-1.5">
+                            <Edit className="h-3.5 w-3.5" /> Edit
+                          </Button>
+                        </Link>
+                      )}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" disabled={deletingId === entry.id}>
+                            {deletingId === entry.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Remove this project?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This permanently deletes "{name}"{paid ? ", including the purchased report" : ""}. This cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDelete(entry)}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="text-center py-16 px-4">
+              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                <Search className="h-7 w-7 text-muted-foreground opacity-50" />
+              </div>
+              <h3 className="text-lg font-semibold">No projects yet</h3>
+              <p className="text-muted-foreground mt-1 mb-6 text-sm max-w-md mx-auto">
+                Create your first solar design to get a free preview. After purchase, your full report and PDF download appear here.
+              </p>
+              <Link href="/wizard">
+                <Button><PlusCircle className="h-4 w-4 mr-2" /> Start New Design</Button>
+              </Link>
+            </CardContent>
+          </Card>
+        )}
+
+        <p className="text-xs text-muted-foreground flex items-start gap-1.5 max-w-2xl">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground/70" />
+          Projects are saved to this browser and linked to your secure report access. Use the link emailed after purchase to reopen a report on another device.
+        </p>
+
+        {/* Subtle admin entry for the site owner */}
+        <div className="border-t pt-4">
+          {showAdmin ? (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Lock className="h-3.5 w-3.5" /> Admin
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Input
+                  type="password"
+                  placeholder="Admin token"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && tokenInput.trim() && onUseAdmin(tokenInput.trim())}
+                  className="h-8 text-sm w-full sm:w-52"
+                />
+                <Button size="sm" onClick={() => tokenInput.trim() && onUseAdmin(tokenInput.trim())} disabled={!tokenInput.trim()}>Unlock</Button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAdmin(true)}
+              className="text-xs text-muted-foreground/60 hover:text-muted-foreground"
+            >
+              Admin access
+            </button>
+          )}
+        </div>
+      </div>
+    </AppLayout>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Admin dashboard — full all-projects view, stats, and map (admin token only).
+// ---------------------------------------------------------------------------
+
+function AdminDashboard({ adminToken, onExit }: { adminToken: string; onExit: () => void }) {
+  const reqOpts = adminRequestOpts(adminToken);
+  const { data: projects, isLoading: isProjectsLoading } = useListProjects({ request: reqOpts });
+  const { data: summary, isLoading: isSummaryLoading } = useGetProjectsSummary({ request: reqOpts });
+  const deleteProject = useDeleteProject({ request: reqOpts });
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const mapSectionRef = useRef<HTMLDivElement>(null);
+  const [mapSelectedId, setMapSelectedId] = useState<number | null>(null);
+
+  const handleDelete = (id: number) => {
+    deleteProject.mutate({ id }, {
+      onSuccess: () => {
+        toast({ title: "Project deleted" });
+        queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetProjectsSummaryQueryKey() });
+      },
+      onError: () => {
+        toast({ title: "Delete failed.", variant: "destructive" });
+      }
+    });
+  };
+
+  const handleViewOnMap = (id: number) => {
+    setMapSelectedId(id);
+    mapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  return (
+    <AppLayout>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2">
+              Solar Projects
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">Admin</span>
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm">All projects across every customer.</p>
+          </div>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button variant="outline" className="gap-2" onClick={onExit}>
+              <LogOut className="h-4 w-4" /> Exit admin
             </Button>
             <Link href="/wizard">
-              <Button><PlusCircle className="mr-2 h-4 w-4" /> New Project</Button>
+              <Button className="gap-2">
+                <PlusCircle className="h-4 w-4" />
+                New Project
+              </Button>
             </Link>
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Card>
-            <CardContent className="pt-5">
-              <div className="text-2xl font-bold">{projects.length}</div>
-              <div className="text-sm text-muted-foreground">Saved in this browser</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-5">
-              <div className="text-2xl font-bold text-green-700">{paidCount}</div>
-              <div className="text-sm text-muted-foreground">Paid reports</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-5">
-              <div className="text-2xl font-bold">{previewCount}</div>
-              <div className="text-sm text-muted-foreground">Drafts and previews</div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Stats Grid */}
+        {isSummaryLoading ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[1, 2, 3, 4].map(i => (
+              <Card key={i} className="animate-pulse bg-muted h-24" />
+            ))}
+          </div>
+        ) : summary ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground">Total Projects</CardTitle>
+                <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold">{summary.totalProjects}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground">Total Capacity</CardTitle>
+                <Zap className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold">{summary.totalSystemKw.toFixed(1)} kW</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground">Off-Grid</CardTitle>
+                <ZapOff className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold">{summary.offGridCount}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <CardTitle className="text-xs font-medium text-muted-foreground">Grid-Tied</CardTitle>
+                <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <div className="text-2xl font-bold">{summary.gridTiedCount}</div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Saved Projects</CardTitle>
-            <CardDescription>
-              Paid status and PDF access shown here come from the server, not browser-only state.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        {/* Projects Map */}
+        {!isProjectsLoading && projects && projects.length > 0 && (
+          <Card ref={mapSectionRef}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Map className="h-4 w-4 text-primary" />
+                  Project Locations
+                </CardTitle>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-orange-500" /> Off-Grid</span>
+                  <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-blue-500" /> Grid-Tied</span>
+                  <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-full bg-purple-500" /> Hybrid</span>
+                </div>
               </div>
-            ) : projects.length ? (
-              <div className="grid gap-4">
-                {projects.map((project) => {
-                  const status = projectStatus(project);
-                  const isPaid = hasActivePaidAccess(project);
-                  const query = `accessToken=${encodeURIComponent(project.accessToken)}`;
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <DashboardMap
+                projects={projects}
+                selectedId={mapSelectedId}
+                onPinClick={setMapSelectedId}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Project List */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">All Designs</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isProjectsLoading ? (
+              <div className="space-y-0 divide-y px-6 pb-6 pt-2">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="h-20 animate-pulse bg-muted rounded-md my-2" />
+                ))}
+              </div>
+            ) : projects && projects.length > 0 ? (
+              <div className="divide-y">
+                {projects.map(project => {
+                  const adjKw = project.calculationResult?.adjustedArraySizeKw;
+                  const grossKw = project.calculationResult?.arraySizeKw;
+                  const displayKw = adjKw ?? grossKw;
+                  const isMapSelected = project.id === mapSelectedId;
                   return (
-                    <div key={project.id} className="rounded-lg border p-4">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0 space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="truncate text-lg font-semibold">{project.name}</h2>
-                            <Badge variant="outline" className={status.className}>{status.label}</Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            {project.address}, {project.city}, {project.state} {project.zip}
-                          </p>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" /> Created {new Date(project.createdAt).toLocaleDateString()}</span>
-                            <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
-                            <span>{planLabel(project.selectedPlan)}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Link href={`/results/${project.id}?${query}`}>
-                            <Button size="sm" variant={isPaid ? "default" : "outline"}>
-                              {isPaid ? <FileText className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
-                              {isPaid ? "View Paid Report" : "View Preview"}
-                            </Button>
+                    <div
+                      key={project.id}
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between px-5 py-4 gap-3 transition-colors ${isMapSelected ? "bg-primary/5 border-l-2 border-primary" : "hover:bg-muted/30"}`}
+                    >
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Link href={`/results/${project.id}`}>
+                            <h3 className="font-semibold text-base hover:text-primary hover:underline cursor-pointer truncate">{project.name}</h3>
                           </Link>
-                          {isPaid ? (
-                            <a href={`${appEnv.apiBaseUrl}/projects/${project.id}/report.pdf?${query}`} target="_blank" rel="noreferrer">
-                              <Button size="sm" variant="outline"><Download className="mr-2 h-4 w-4" /> PDF</Button>
-                            </a>
-                          ) : (
-                            <Link href={`/projects/${project.id}/edit?${query}`}>
-                              <Button size="sm" variant="outline"><Edit className="mr-2 h-4 w-4" /> Continue/Edit</Button>
-                            </Link>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${systemTypeBadge[project.systemType] || "bg-secondary text-secondary-foreground"}`}>
+                            {project.systemType}
+                          </span>
+                          {project.paidAt && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 shrink-0">Paid</span>
                           )}
                         </div>
+                        <p className="text-sm text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          {project.city}, {project.state}
+                        </p>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          {displayKw != null && (
+                            <span className="font-medium text-foreground">{displayKw.toFixed(2)} kW</span>
+                          )}
+                          <span>{format(new Date(project.createdAt), 'MMM d, yyyy')}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Link href={`/results/${project.id}`}>
+                          <Button variant="outline" size="sm" className="hidden sm:flex gap-1.5">
+                            <Eye className="h-3.5 w-3.5" /> View
+                          </Button>
+                          <Button variant="outline" size="icon" className="sm:hidden h-8 w-8">
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                        <Button
+                          variant={isMapSelected ? "default" : "outline"}
+                          size="icon"
+                          className="h-8 w-8"
+                          title="View on map"
+                          onClick={() => handleViewOnMap(project.id)}
+                        >
+                          <MapPin className="h-3.5 w-3.5" />
+                        </Button>
+                        <Link href={`/projects/${project.id}/edit`}>
+                          <Button variant="outline" size="sm" className="hidden sm:flex gap-1.5">
+                            <Edit className="h-3.5 w-3.5" /> Edit
+                          </Button>
+                          <Button variant="outline" size="icon" className="sm:hidden h-8 w-8">
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                        </Link>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Project?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This action cannot be undone. "{project.name}" will be permanently deleted.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(project.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <div className="py-14 text-center">
-                <Search className="mx-auto mb-4 h-10 w-10 text-muted-foreground" />
-                <h2 className="text-lg font-semibold">No projects saved in this browser</h2>
-                <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-                  Create a new design here. Projects created on another browser or device need their original secure report link because customer accounts are not implemented yet.
-                </p>
-                <Link href="/wizard"><Button className="mt-5">Start New Design</Button></Link>
+              <div className="text-center py-16 px-4">
+                <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                  <Search className="h-7 w-7 text-muted-foreground opacity-50" />
+                </div>
+                <h3 className="text-lg font-semibold">No projects yet</h3>
+                <p className="text-muted-foreground mt-1 mb-6 text-sm">Create your first solar design to get started.</p>
+                <Link href="/wizard">
+                  <Button><PlusCircle className="h-4 w-4 mr-2" /> Start New Design</Button>
+                </Link>
               </div>
             )}
           </CardContent>
         </Card>
-
-        {failures.length > 0 && (
-          <Card className="border-amber-300">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base"><AlertCircle className="h-5 w-5" /> Access problems</CardTitle>
-              <CardDescription>These locally saved entries could not be verified.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {failures.map((failure) => (
-                <div key={failure.id} className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="font-medium">{failure.name || `Project #${failure.id}`}</div>
-                    <div className="text-sm text-muted-foreground">{failure.reason}</div>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => {
-                    removeCustomerProjectAccess(failure.id);
-                    void loadProjects();
-                  }}>Remove stale entry</Button>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-          <div className="mb-1 flex items-center gap-2 font-medium text-foreground">
-            <ShieldCheck className="h-4 w-4 text-primary" /> Current access model
-          </div>
-          Project access is tied to this browser and each project&apos;s secure token. Clearing browser storage removes the dashboard index but does not delete projects from the database.
-        </div>
       </div>
     </AppLayout>
+  );
+}
+
+export default function ProjectsDashboard() {
+  const [adminToken, setAdminTokenState] = useState<string>(getAdminToken);
+
+  if (adminToken) {
+    return (
+      <AdminDashboard
+        adminToken={adminToken}
+        onExit={() => { saveAdminToken(""); setAdminTokenState(""); }}
+      />
+    );
+  }
+
+  return (
+    <CustomerDashboard
+      onUseAdmin={(token) => { saveAdminToken(token); setAdminTokenState(token); }}
+    />
   );
 }

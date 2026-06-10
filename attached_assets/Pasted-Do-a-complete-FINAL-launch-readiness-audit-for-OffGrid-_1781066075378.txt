@@ -1,0 +1,487 @@
+Do a complete FINAL launch-readiness audit for OffGrid Solar Builders.
+
+Goal:
+Confirm the site is 100% ready to accept payments, unlock paid reports/PDFs correctly, protect paid data, and be ready for full public marketing — not soft launch.
+
+Production app:
+https://off-grid-builder-1.replit.app
+
+Production domain:
+https://offgridsolarbuilders.com
+
+Latest launch-mvp SHA:
+6027b7f09d14eaedfd894342381eb4640a40c9c3
+
+Important rules:
+Do NOT print secrets.
+Do NOT commit secrets.
+Do NOT expose DATABASE_URL.
+Do NOT expose STRIPE_SECRET_KEY.
+Do NOT expose STRIPE_WEBHOOK_SECRET.
+Do NOT expose ADMIN_TOKEN.
+Do NOT weaken the paywall.
+Do NOT embed Stripe Buy Button.
+Do NOT bypass projectId/accessToken metadata.
+Do NOT use fake Stripe test cards in live mode.
+Do NOT approve full marketing unless every required production check passes.
+
+The app must use server-side Stripe Checkout sessions with projectId, accessToken, selectedPlan, and proper webhook entitlement unlock.
+
+PART 1 — Confirm production domain and deployment
+
+Confirm:
+
+1. https://offgridsolarbuilders.com resolves.
+2. HTTPS works with no certificate warning.
+3. www redirects correctly or loads correctly.
+4. Replit deployed app is healthy.
+5. Deployment is running launch-mvp SHA:
+   6027b7f09d14eaedfd894342381eb4640a40c9c3
+6. Frontend loads with no major console errors.
+7. Backend API responds.
+8. Frontend can call backend successfully.
+9. No DNS NXDOMAIN remains.
+10. No mixed-content HTTP/HTTPS issues exist.
+
+If domain is wrong or FRONTEND_URL uses the singular/plural wrong domain, flag as BLOCKER.
+
+PART 2 — Verify Replit Secrets
+
+Verify these Replit Secrets exist by name only.
+Do not print values.
+
+DATABASE_URL
+ADMIN_TOKEN
+STRIPE_SECRET_KEY
+STRIPE_WEBHOOK_SECRET
+STRIPE_HOMEOWNER_REPORT_PRICE_ID
+STRIPE_PROPERTY_PACK_PRICE_ID
+STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
+STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
+STRIPE_PRICE_ID
+NREL_API_KEY
+FRONTEND_URL
+
+Confirm:
+
+1. FRONTEND_URL is exactly:
+   https://offgridsolarbuilders.com
+
+2. STRIPE_SECRET_KEY is present and matches the intended mode for launch.
+
+3. STRIPE_WEBHOOK_SECRET is present and rotated after any previous exposure.
+
+4. STRIPE_WEBHOOK_SECRET is not blank, old, fake, or mismatched.
+
+5. No secrets are committed in the repo.
+
+6. No secrets are exposed to frontend code.
+
+7. No secrets are printed in logs.
+
+8. No secret-bearing artifacts remain in the working tree or deployment files.
+
+PART 3 — Stripe products and pricing
+
+Confirm active checkout plans are exactly:
+
+Homeowner Full Report: $19 one-time
+Property Pack: $39 one-time
+Contractor Annual Access: $149/year recurring
+Contractor Lifetime Beta: $199 one-time
+
+Confirm old pricing is absent:
+
+No $199/year contractor annual
+No $299 lifetime beta
+
+Confirm these Stripe price IDs are correctly wired to the right plans:
+
+STRIPE_HOMEOWNER_REPORT_PRICE_ID
+STRIPE_PROPERTY_PACK_PRICE_ID
+STRIPE_CONTRACTOR_ANNUAL_PRICE_ID
+STRIPE_CONTRACTOR_LIFETIME_PRICE_ID
+STRIPE_PRICE_ID
+
+Confirm STRIPE_PRICE_ID fallback points to the Homeowner $19 report.
+
+PART 4 — Stripe Checkout audit
+
+Inspect checkout session creation.
+
+Confirm:
+
+1. Checkout sessions are created server-side only.
+2. Frontend never directly creates payment unlocks.
+3. selectedPlan is required and validated.
+4. projectId is included in Stripe metadata.
+5. accessToken is included or securely linked.
+6. success_url is correct.
+7. cancel_url is correct.
+8. Checkout success returns user to the correct project.
+9. Checkout failure/cancel does not unlock anything.
+10. Stripe Buy Button is not embedded anywhere.
+11. Checkout cannot be manually manipulated to unlock the wrong project.
+12. Unknown plan names are rejected.
+13. Wrong price/plan combinations are rejected.
+14. The $19 report checkout creates a valid Stripe Checkout session.
+
+PART 5 — Stripe webhook audit
+
+Verify webhook endpoint:
+
+https://offgridsolarbuilders.com/api/stripe/webhook
+
+Confirm required events exist:
+
+checkout.session.completed
+payment_intent.payment_failed
+customer.subscription.created
+customer.subscription.updated
+customer.subscription.deleted
+
+Confirm webhook code:
+
+1. Uses raw body where Stripe signature verification requires it.
+2. Verifies Stripe signature using STRIPE_WEBHOOK_SECRET.
+3. Rejects invalid signatures.
+4. Rejects unsigned webhook requests.
+5. Handles checkout.session.completed.
+6. Handles failed payment behavior correctly.
+7. Handles subscription events where needed.
+8. Updates the correct project.
+9. Uses projectId/accessToken metadata safely.
+10. Does not unlock paid report before confirmed payment.
+11. Is safe against duplicate webhook events.
+12. Does not double-credit reports incorrectly.
+13. Logs enough to debug without logging secrets.
+14. Returns 200 only after successful handling.
+15. Returns safe errors when event is invalid.
+
+PART 6 — Database and migrations
+
+Using DATABASE_URL securely, verify database schema.
+Do not print DATABASE_URL.
+
+Confirm migrations are applied:
+
+001_add_access_token.sql
+002_add_payment_entitlement.sql
+
+Confirm database fields exist for:
+
+accessToken
+paymentStatus
+paidAt
+stripeCheckoutSessionId
+stripePaymentIntentId
+stripeCustomerId
+selectedPlan
+reportCredits
+entitlement/payment unlock state
+
+Confirm:
+
+1. New project creation works.
+2. Project accessToken is created.
+3. accessToken is unique.
+4. accessToken is required where intended.
+5. Old projects do not break.
+6. Free preview projects save correctly.
+7. Paid entitlement persists correctly.
+8. Property Pack credits work correctly if implemented.
+9. Contractor plan credits work correctly if implemented.
+10. Failed payments do not create entitlement.
+11. Duplicate webhooks do not double-credit.
+12. Database errors are handled safely.
+
+PART 7 — Paywall security
+
+Confirm unpaid users cannot access:
+
+1. Full report API data.
+2. PDF report.
+3. BOM/material details.
+4. Paid-only cost breakdowns.
+5. Paid-only battery/inverter details if gated.
+6. Contractor-only features.
+7. Admin/project list data.
+
+Test:
+
+1. Unpaid full report request returns 402 or locked response.
+2. Unpaid PDF request returns 402 or locked response.
+3. Invalid accessToken fails.
+4. Missing accessToken fails where required.
+5. Tampered accessToken fails.
+6. Paid full report works after payment.
+7. Paid PDF works after payment.
+8. Failed/canceled payment remains locked.
+9. Admin routes require ADMIN_TOKEN.
+10. Missing/invalid ADMIN_TOKEN fails.
+
+PART 8 — Frontend audit
+
+Check the full customer journey:
+
+1. Homepage loads.
+2. CTA buttons work.
+3. Address entry works.
+4. Usage input works.
+5. Free preview generates.
+6. Pricing is displayed correctly.
+7. Checkout buttons work.
+8. Success page works.
+9. Cancel page works.
+10. Project return link works.
+11. Paid report page works.
+12. PDF download button works after payment.
+13. PDF button is locked before payment.
+14. Error states are understandable.
+15. Mobile layout works.
+16. Desktop layout works.
+17. No broken links.
+18. No broken images.
+19. No dead buttons.
+20. No confusing old pricing.
+21. No mention of $299 beta or $199/year annual.
+22. Disclaimer appears where needed.
+
+Required disclaimer:
+“Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional.”
+
+PART 9 — Report and PDF audit
+
+Confirm paid report includes:
+
+address
+usage
+peak sun hours
+system size
+panel count
+production estimate
+planning assumptions
+battery sizing if included
+inverter sizing if included
+cost ranges/assumptions if included
+disclaimer
+
+Confirm PDF:
+
+1. Cannot be downloaded before payment.
+2. Downloads after payment.
+3. Opens correctly.
+4. Prints cleanly.
+5. Has professional filename.
+6. Does not contain debug data.
+7. Does not contain secrets.
+8. Does not show broken images.
+9. Has clean formatting.
+10. Includes disclaimer.
+
+PART 10 — Production payment testing
+
+Run test-mode QA first if test-mode keys are active.
+
+If live-mode keys are active, do NOT use fake cards like 4242.
+Fake cards only work in Stripe test mode.
+
+For final live-payment readiness, verify one of these:
+
+Option A:
+If Stripe is in TEST mode, run:
+
+1. Successful test checkout.
+2. Failed test checkout.
+3. Webhook 200 OK.
+4. Paid report/PDF unlock.
+5. Failed payment remains locked.
+
+Option B:
+If Stripe is in LIVE mode and owner approves:
+
+1. Run one real $19 checkout using a real card controlled by the owner.
+2. Confirm webhook 200 OK.
+3. Confirm paid report unlock.
+4. Confirm PDF download.
+5. Confirm receipt/customer experience.
+6. Refund the payment immediately if desired.
+7. Confirm refund does not break records.
+
+If no real live payment test is performed, mark:
+Safe to accept live payments: NO
+Reason: live payment not end-to-end verified.
+
+PART 11 — Failed payment testing
+
+Confirm failed payment path:
+
+1. Failed checkout does not unlock report.
+2. Failed checkout does not unlock PDF.
+3. Failed checkout does not create report credits.
+4. Failed checkout does not show success message.
+5. Customer can retry payment.
+6. Webhook failure/decline event is handled safely.
+
+PART 12 — Analytics and marketing readiness
+
+Verify these pages load:
+
+/off-grid-solar-calculator
+/solar-sizing-calculator
+/cabin-solar-calculator
+/barn-solar-calculator
+/shop-solar-calculator
+/solar-battery-bank-calculator
+/contractor-solar-estimating-tool
+
+Verify analytics events exist and fire where possible:
+
+start_estimate
+preview_generated
+pricing_viewed
+checkout_clicked
+purchase_completed
+pdf_downloaded
+contractor_beta_clicked
+
+Confirm:
+
+1. GTM or GA4 is configured if expected.
+2. Purchase event fires only after confirmed purchase.
+3. Checkout click fires when user starts checkout.
+4. PDF download event fires only after paid download.
+5. SEO pages have useful titles/descriptions.
+6. Site has no obvious duplicate/old marketing copy.
+7. Full marketing URL should be:
+   https://offgridsolarbuilders.com
+
+PART 13 — Legal/customer trust readiness
+
+Check whether the site has or needs:
+
+1. Contact/support email.
+2. Refund policy.
+3. Terms of use.
+4. Privacy policy.
+5. Payment disclaimer.
+6. Solar estimate disclaimer.
+7. “Not permit-ready engineering design” disclaimer.
+8. Clear product pricing.
+9. Clear explanation of what customer receives.
+10. Clear post-payment access path.
+
+If missing, mark as marketing blocker or recommended fix.
+
+PART 14 — Production logs and monitoring
+
+Inspect production logs.
+
+Confirm:
+
+1. No startup crashes.
+2. No missing environment variable errors.
+3. No repeated 500 errors.
+4. No Stripe signature errors after webhook secret rotation.
+5. No database connection errors.
+6. No PDF generation errors.
+7. No NREL/geocoding repeated failures.
+8. No frontend/backend CORS failures.
+9. No secrets in logs.
+10. No unhandled promise rejections.
+
+PART 15 — Run all tests/builds
+
+Run:
+
+TypeScript root check
+API TypeScript check
+Frontend TypeScript check
+Scripts TypeScript check
+PVWatts QA
+Paywall QA
+Frontend production build
+API production build
+Backend/API smoke checks
+Project create smoke test
+Preview generate smoke test
+Checkout session create smoke test
+Webhook verification smoke test
+Unpaid full report block test
+Unpaid PDF block test
+Paid entitlement unlock test
+Paid report access test
+Paid PDF access test
+Failed payment remains locked test
+Admin auth test
+
+PART 16 — Fixes
+
+If you find any blocker:
+
+1. Do not change launch-mvp directly.
+2. Create a new branch.
+3. Fix the issue.
+4. Do not commit secrets.
+5. Run all tests again.
+6. Open a PR.
+7. Tell me exactly what changed.
+
+If no blockers are found, do not make unnecessary code changes.
+
+PART 17 — Final GO / NO-GO report
+
+Give me a clear final report with:
+
+1. Production domain status: PASS/FAIL
+2. HTTPS status: PASS/FAIL
+3. Replit deployment status: PASS/FAIL
+4. Correct commit deployed: PASS/FAIL
+5. Replit Secrets status: PASS/FAIL
+6. Webhook secret rotated: PASS/FAIL
+7. Stripe checkout status: PASS/FAIL
+8. Stripe webhook status: PASS/FAIL
+9. Database migration status: PASS/FAIL
+10. Paywall security status: PASS/FAIL
+11. Paid report unlock status: PASS/FAIL
+12. Paid PDF download/print status: PASS/FAIL
+13. Failed payment remains locked: PASS/FAIL
+14. Frontend user flow: PASS/FAIL
+15. Backend/API health: PASS/FAIL
+16. Admin auth security: PASS/FAIL
+17. Analytics status: PASS/FAIL
+18. SEO/marketing pages: PASS/FAIL
+19. Legal/customer trust pages: PASS/FAIL
+20. Production logs: PASS/FAIL
+21. Tests run
+22. Test results
+23. Any blockers
+24. Any recommended improvements
+25. Safe to accept test payments: YES/NO
+26. Safe to accept live payments: YES/NO
+27. Safe to fully market: YES/NO
+
+Final decision must be one of:
+
+FULL LAUNCH GO
+or
+NO-GO — BLOCKERS REMAIN
+
+Only say FULL LAUNCH GO if:
+
+* production domain works
+* HTTPS works
+* final commit is deployed
+* secrets are present
+* webhook secret is rotated and matched
+* successful payment unlocks report/PDF
+* failed payment stays locked
+* Stripe webhook returns 200
+* PDF download/print works
+* backend logs are clean
+* legal/customer trust basics are present
+* no secrets are exposed
+* no paid data leaks before payment
+
+End with:
+Exact next step for me.
