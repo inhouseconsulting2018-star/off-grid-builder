@@ -5,6 +5,7 @@ import { CheckCircle2, Download, FileText, ArrowRight, Loader2 } from "lucide-re
 import { Link, useSearch } from "wouter";
 import { trackEvent } from "@/services/analytics";
 import { apiGet } from "@/services/apiService";
+import { addProjectToRegistry } from "@/services/projectRegistry";
 import { appEnv } from "@/config/env";
 
 type EntitlementStatus = "checking" | "unlocked" | "delayed";
@@ -16,16 +17,15 @@ export default function PaymentSuccess() {
   const accessToken = params.get("accessToken");
   const [entitlementStatus, setEntitlementStatus] = useState<EntitlementStatus>("checking");
 
-  // Persist the token in sessionStorage so the results page can pick it up
-  // even if the user navigates without it in the URL.
+  // Persist the token + register the project so the dashboard and results
+  // page can reopen this paid project later on this device.
   useEffect(() => {
     if (projectId && accessToken) {
-      try {
-        sessionStorage.setItem(`project-token-${projectId}`, accessToken);
-      } catch {
-        // ignore — private browsing may block sessionStorage
+      const numericId = Number(projectId);
+      if (Number.isFinite(numericId)) {
+        addProjectToRegistry({ id: numericId, accessToken });
       }
-      trackEvent("purchase_completed", { projectId: Number(projectId) || projectId });
+      trackEvent("purchase_completed", { projectId: numericId || projectId });
     }
   }, [projectId, accessToken]);
 

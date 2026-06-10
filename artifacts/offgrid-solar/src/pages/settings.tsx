@@ -10,7 +10,8 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Settings as SettingsIcon, Save, Lock } from "lucide-react";
+import { Settings as SettingsIcon, Save, Lock, FolderOpen, FileDown, Mail, PlusCircle, Home, LogOut, ShieldCheck } from "lucide-react";
+import { Link } from "wouter";
 import { getAdminToken, saveAdminToken, adminRequestOpts } from "@/hooks/useAdminToken";
 
 const settingsSchema = z.object({
@@ -35,23 +36,124 @@ const settingsSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsSchema>;
 
-export default function SettingsPage() {
-  const [adminToken, setAdminTokenState] = useState<string>(getAdminToken);
+// ---------------------------------------------------------------------------
+// Customer-facing settings / help — shown by default (no login required).
+// ---------------------------------------------------------------------------
+
+function CustomerSettings({ onUseAdmin }: { onUseAdmin: (token: string) => void }) {
+  const [showAdmin, setShowAdmin] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
 
+  return (
+    <AppLayout>
+      <div className="max-w-3xl mx-auto flex flex-col gap-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <SettingsIcon className="h-8 w-8" />
+            Account &amp; Settings
+          </h1>
+          <p className="text-muted-foreground mt-1">How your projects, reports, and report access work.</p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              Your account
+            </CardTitle>
+            <CardDescription>No password needed</CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground space-y-2">
+            <p>
+              OffGrid Solar Builder doesn&apos;t require an account or login. Each project you create gets its own
+              private, secure access link. Your projects are saved in this browser so you can pick up where you left off.
+            </p>
+            <p>
+              After you buy a report, we email a secure link so you can reopen your full report and download the PDF
+              from any device — keep that email for your records.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FolderOpen className="h-4 w-4 text-primary" />
+              Your projects &amp; reports
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground space-y-3">
+            <p>
+              View all your saved designs on the <Link href="/projects" className="text-primary hover:underline">My Projects</Link> page.
+              Paid projects show a “Paid” badge with a <span className="inline-flex items-center gap-1"><FileDown className="h-3.5 w-3.5" /> PDF</span> download button.
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Link href="/projects"><Button variant="outline" size="sm" className="gap-1.5"><FolderOpen className="h-3.5 w-3.5" /> My Projects</Button></Link>
+              <Link href="/wizard"><Button variant="outline" size="sm" className="gap-1.5"><PlusCircle className="h-3.5 w-3.5" /> New Project</Button></Link>
+              <Link href="/"><Button variant="outline" size="sm" className="gap-1.5"><Home className="h-3.5 w-3.5" /> Home</Button></Link>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Mail className="h-4 w-4 text-primary" />
+              Need help?
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground space-y-2">
+            <p>
+              Lost your report link, or have a question about a purchase? Reply directly to your purchase
+              confirmation email and we&apos;ll help you recover access.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Subtle admin entry for the site owner */}
+        <div className="border-t pt-4">
+          {showAdmin ? (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Lock className="h-3.5 w-3.5" /> Admin
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Input
+                  type="password"
+                  placeholder="Admin token"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && tokenInput.trim() && onUseAdmin(tokenInput.trim())}
+                  className="h-8 text-sm w-full sm:w-52"
+                />
+                <Button size="sm" onClick={() => tokenInput.trim() && onUseAdmin(tokenInput.trim())} disabled={!tokenInput.trim()}>Unlock</Button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAdmin(true)}
+              className="text-xs text-muted-foreground/60 hover:text-muted-foreground"
+            >
+              Admin access
+            </button>
+          )}
+        </div>
+      </div>
+    </AppLayout>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Admin calculation settings (admin token only).
+// ---------------------------------------------------------------------------
+
+function AdminSettings({ adminToken, onExit }: { adminToken: string; onExit: () => void }) {
   const reqOpts = adminRequestOpts(adminToken);
   const { data: settings, isLoading } = useGetSettings({ request: reqOpts });
   const updateSettings = useUpdateSettings({ request: reqOpts });
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
-  const handleSaveToken = () => {
-    const t = tokenInput.trim();
-    saveAdminToken(t);
-    setAdminTokenState(t);
-    setTokenInput("");
-    queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
-  };
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
@@ -98,42 +200,6 @@ export default function SettingsPage() {
     });
   };
 
-  if (!adminToken) {
-    return (
-      <AppLayout>
-        <div className="max-w-4xl mx-auto flex flex-col gap-6">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <SettingsIcon className="h-8 w-8" />
-              Calculation Settings
-            </h1>
-            <p className="text-muted-foreground mt-1">Configure global parameters used in solar calculations.</p>
-          </div>
-          <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/10 dark:border-orange-800">
-            <CardContent className="flex flex-col sm:flex-row items-start sm:items-center gap-3 py-5 px-5">
-              <Lock className="h-5 w-5 text-orange-500 shrink-0 mt-0.5 sm:mt-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">Admin access required</p>
-                <p className="text-xs text-muted-foreground">Enter your admin token to view and edit calculation settings.</p>
-              </div>
-              <div className="flex gap-2 w-full sm:w-auto">
-                <Input
-                  type="password"
-                  placeholder="Admin token"
-                  value={tokenInput}
-                  onChange={e => setTokenInput(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleSaveToken()}
-                  className="h-8 text-sm w-full sm:w-52"
-                />
-                <Button size="sm" onClick={handleSaveToken} disabled={!tokenInput.trim()}>Unlock</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </AppLayout>
-    );
-  }
-
   if (isLoading) {
     return (
       <AppLayout>
@@ -148,19 +214,25 @@ export default function SettingsPage() {
   return (
     <AppLayout>
       <div className="max-w-4xl mx-auto flex flex-col gap-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <SettingsIcon className="h-8 w-8" />
-            Calculation Settings
-          </h1>
-          <p className="text-muted-foreground mt-1">Configure global parameters used in solar calculations.</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+              <SettingsIcon className="h-8 w-8" />
+              Calculation Settings
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">Admin</span>
+            </h1>
+            <p className="text-muted-foreground mt-1">Configure global parameters used in solar calculations.</p>
+          </div>
+          <Button variant="outline" className="gap-2 shrink-0" onClick={onExit}>
+            <LogOut className="h-4 w-4" /> Exit admin
+          </Button>
         </div>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>System & Components</CardTitle>
+                <CardTitle>System &amp; Components</CardTitle>
                 <CardDescription>Default equipment specs and rates</CardDescription>
               </CardHeader>
               <CardContent className="grid sm:grid-cols-2 gap-4">
@@ -304,5 +376,24 @@ export default function SettingsPage() {
         </Form>
       </div>
     </AppLayout>
+  );
+}
+
+export default function SettingsPage() {
+  const [adminToken, setAdminTokenState] = useState<string>(getAdminToken);
+
+  if (adminToken) {
+    return (
+      <AdminSettings
+        adminToken={adminToken}
+        onExit={() => { saveAdminToken(""); setAdminTokenState(""); }}
+      />
+    );
+  }
+
+  return (
+    <CustomerSettings
+      onUseAdmin={(token) => { saveAdminToken(token); setAdminTokenState(token); }}
+    />
   );
 }

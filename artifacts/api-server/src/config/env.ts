@@ -14,6 +14,8 @@ export const env = {
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
   reportEmailWebhookUrl: process.env.REPORT_EMAIL_WEBHOOK_URL,
+  resendApiKey: process.env.RESEND_API_KEY,
+  reportEmailFrom: process.env.REPORT_EMAIL_FROM,
   adminToken: process.env.ADMIN_TOKEN,
   frontendUrl: process.env.FRONTEND_URL,
   replitConnectorsHostname: process.env.REPLIT_CONNECTORS_HOSTNAME,

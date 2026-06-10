@@ -216,6 +216,9 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   const L = 50;
   const R = 562;
   const W = R - L;
+  const TOP = 50;
+  // Content must stop here; the footer is drawn at y=738/750 on every page.
+  const BOTTOM = 712;
 
   const chunks: Buffer[] = [];
   const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
@@ -225,7 +228,20 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
     doc.on("error", reject);
   });
 
+  // Add a page if `h` points of content won't fit before the footer zone.
+  // Returns true if a new page was started so callers can re-draw headers.
+  function ensureSpace(h: number): boolean {
+    if (doc.y + h > BOTTOM) {
+      doc.addPage();
+      doc.y = TOP;
+      return true;
+    }
+    return false;
+  }
+
   function sectionHeader(title: string) {
+    // Reserve room for the rule, the heading, and at least one following line.
+    ensureSpace(54);
     doc.moveDown(0.5);
     doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor(ORANGE).lineWidth(1.5).stroke();
     doc.moveDown(0.3);
@@ -234,11 +250,20 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
     doc.font("Helvetica").fillColor(DARK);
   }
 
-  function row2(label: string, value: string, yPos?: number) {
-    const y = yPos ?? doc.y;
-    doc.fontSize(10).fillColor(GRAY).font("Helvetica").text(label, L, y, { width: W * 0.55 });
-    doc.fontSize(10).fillColor(DARK).font("Helvetica-Bold").text(value, L + W * 0.57, y, { width: W * 0.43, align: "right" });
-    doc.moveDown(0.4);
+  function row2(label: string, value: string) {
+    const labelW = W * 0.55;
+    const valueW = W * 0.43;
+    const valueX = L + W * 0.57;
+    doc.fontSize(10).font("Helvetica");
+    const hLabel = doc.heightOfString(label, { width: labelW });
+    doc.font("Helvetica-Bold");
+    const hValue = doc.heightOfString(value, { width: valueW });
+    const h = Math.max(hLabel, hValue);
+    ensureSpace(h + 5);
+    const y = doc.y;
+    doc.fontSize(10).fillColor(GRAY).font("Helvetica").text(label, L, y, { width: labelW });
+    doc.fontSize(10).fillColor(DARK).font("Helvetica-Bold").text(value, valueX, y, { width: valueW, align: "right" });
+    doc.y = y + h + 5;
   }
 
   function metricBox(x: number, y: number, w: number, label: string, value: string) {
@@ -249,14 +274,30 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
     doc.restore();
   }
 
+  // Paragraph helper that respects page breaks (PDFKit can auto-split, but we
+  // keep doc.y in sync and avoid drawing under the footer zone).
+  function paragraph(text: string, opts: { size?: number; color?: string; gap?: number } = {}) {
+    const size = opts.size ?? 9;
+    doc.fontSize(size).font("Helvetica");
+    const h = doc.heightOfString(text, { width: W });
+    ensureSpace(Math.min(h, BOTTOM - TOP) + 4);
+    doc.fillColor(opts.color ?? DARK).fontSize(size).font("Helvetica").text(text, L, doc.y, { width: W });
+    doc.moveDown(opts.gap ?? 0.4);
+  }
+
   function pageFooter() {
     const range = doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
+      // Zero the bottom margin while writing — otherwise PDFKit treats footer
+      // text below the bottom margin as overflow and auto-inserts a blank page.
+      const prevBottom = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
       doc.fontSize(8).fillColor(GRAY).font("Helvetica")
         .text("OffGrid Solar Builder  •  offgridsolarbuilder.com  •  Preliminary planning estimate only",
-          L, 740, { width: W, align: "center" })
-        .text(`Page ${i + 1} of ${range.count}`, L, 752, { width: W, align: "center" });
+          L, 738, { width: W, align: "center", lineBreak: false })
+        .text(`Page ${i + 1} of ${range.count}`, L, 750, { width: W, align: "center", lineBreak: false });
+      doc.page.margins.bottom = prevBottom;
     }
   }
 
@@ -282,6 +323,7 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
 
   doc.moveDown(1);
   const mw = (W - 18) / 4;
+  ensureSpace(62);
   const my = doc.y;
   metricBox(L,           my, mw, "Array Size",        `${calc.adjustedArraySizeKw.toFixed(2)} kW DC`);
   metricBox(L + mw + 6,  my, mw, "Panel Count",       `${calc.numPanels} panels`);
@@ -290,6 +332,7 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   doc.y = my + 62;
 
   if (calc.batteryUsableKwh > 0) {
+    ensureSpace(62);
     const my2 = doc.y;
     metricBox(L,           my2, mw, "Battery Usable",    `${(calc.batteryUsableKwh ?? 0).toFixed(1)} kWh`);
     metricBox(L + mw + 6,  my2, mw, "Total Bank",        `${(calc.totalBatteryBankKwh ?? 0).toFixed(1)} kWh`);
@@ -300,8 +343,8 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
 
   // Satellite map (if coordinates were available and image fetched successfully)
   if (mapImageBuffer) {
-    doc.moveDown(0.4);
     const mapH = Math.round(W * 180 / 512);
+    ensureSpace(mapH + 16);
     doc.image(mapImageBuffer, L, doc.y, { width: W, height: mapH });
     doc.y += mapH + 4;
     doc.fontSize(7).fillColor(GRAY).font("Helvetica")
@@ -360,8 +403,9 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   if (monthlyChartData && monthlyChartData.length === 12) {
     sectionHeader("Monthly Solar Production");
     const maxKwh = Math.max(...monthlyChartData.map((r) => r.kwh ?? 0), 1);
-    const chartTop = doc.y;
     const chartH = 90;
+    ensureSpace(chartH + 22 + 26);
+    const chartTop = doc.y;
     const barW = (W - 2) / 12;
     doc.rect(L, chartTop, W, chartH + 22).fillAndStroke("#f8fafc", "#e5e7eb");
     monthlyChartData.forEach((row, i) => {
@@ -385,30 +429,50 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   doc.addPage();
   sectionHeader("Equipment & Bill of Materials");
 
-  const colX  = [L, L + 140, L + 310, L + 420, L + 490];
-  const colW  = [140, 170, 110, 70, 72];
+  // Column geometry — all five columns fit inside the content width (W = 512).
+  // [Category, Model/Description, Specs, Qty, Est. Price] => 95+175+130+40+72 = 512.
+  const colW  = [95, 175, 130, 40, 72];
+  const colX  = [L, L + 95, L + 270, L + 400, L + 440];
   const heads = ["Category", "Model / Description", "Specs", "Qty", "Est. Price"];
+  const alignRight = [false, false, false, true, true];
+  const CELL_PAD = 6;
 
-  doc.rect(L, doc.y, W, 18).fill("#f1f5f9");
-  heads.forEach((h, i) => {
-    doc.fontSize(8).fillColor(GRAY).font("Helvetica-Bold")
-       .text(h, colX[i], doc.y - 14, { width: colW[i] });
-  });
-  doc.moveDown(0.1);
-  doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
-  doc.moveDown(0.3);
+  function drawBomHeader() {
+    const hy = doc.y;
+    doc.rect(L, hy, W, 16).fill("#f1f5f9");
+    heads.forEach((h, i) => {
+      doc.fontSize(8).fillColor(GRAY).font("Helvetica-Bold")
+         .text(h, colX[i] + 2, hy + 4, { width: colW[i] - 4, align: alignRight[i] ? "right" : "left" });
+    });
+    doc.y = hy + 16;
+    doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+    doc.moveDown(0.2);
+  }
+
+  function measureBomRow(cells: unknown[]): number {
+    let max = 0;
+    cells.forEach((cell, i) => {
+      doc.fontSize(8.5).font(i === 1 ? "Helvetica-Bold" : "Helvetica");
+      const h = doc.heightOfString(String(cell ?? ""), { width: colW[i] - CELL_PAD });
+      if (h > max) max = h;
+    });
+    return max + CELL_PAD;
+  }
+
+  drawBomHeader();
 
   bom.forEach((item, idx) => {
-    if (doc.y > 680) { doc.addPage(); }
-    const rowY = doc.y;
-    if (idx % 2 === 0) doc.rect(L, rowY - 2, W, 30).fill("#fafafa");
     const cells = [item.category, item.model, item.specs, item.qty, item.totalPrice];
+    const rowH = measureBomRow(cells);
+    if (ensureSpace(rowH)) drawBomHeader();
+    const rowY = doc.y;
+    if (idx % 2 === 0) doc.rect(L, rowY, W, rowH).fill("#fafafa");
     cells.forEach((cell, i) => {
       doc.fontSize(8.5).fillColor(DARK).font(i === 1 ? "Helvetica-Bold" : "Helvetica")
-         .text(String(cell ?? ""), colX[i], rowY, { width: colW[i] - 4, lineBreak: false });
+         .text(String(cell ?? ""), colX[i] + 2, rowY + 3, { width: colW[i] - CELL_PAD, align: alignRight[i] ? "right" : "left" });
     });
-    doc.moveDown(1.0);
-    doc.moveTo(L, doc.y - 2).lineTo(R, doc.y - 2).strokeColor("#f1f5f9").lineWidth(0.3).stroke();
+    doc.y = rowY + rowH;
+    doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor("#f1f5f9").lineWidth(0.3).stroke();
   });
 
   // Recommended brands
@@ -424,28 +488,30 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
     doc.addPage();
     sectionHeader("Planning Notes & Assumptions");
     (calc.notes as string[]).forEach((note) => {
+      const text = `• ${note}`;
+      doc.fontSize(9.5).font("Helvetica");
+      const h = doc.heightOfString(text, { width: W - 10 });
+      ensureSpace(h + 5);
       doc.fontSize(9.5).fillColor(DARK).font("Helvetica")
-         .text(`• ${note}`, L + 10, doc.y, { width: W - 10 });
+         .text(text, L + 10, doc.y, { width: W - 10 });
       doc.moveDown(0.4);
     });
   }
 
-  if (doc.y > 630) doc.addPage();
   sectionHeader("Disclaimers");
-  doc.fontSize(9).fillColor(DARK).font("Helvetica").text(
+  [
     "Preliminary planning estimate only. This report is intended to support early-stage feasibility analysis and project scoping. " +
     "Final system design, sizing, equipment selection, structural loading, electrical code compliance, and permitting must be verified and " +
-    "engineered by a licensed solar and electrical professional in your jurisdiction.\n\n" +
+    "engineered by a licensed solar and electrical professional in your jurisdiction.",
     "Production estimates are based on PVWatts v8 solar irradiance data (NREL) or state-average fallback values. Actual system " +
-    "performance may vary due to local shading, weather, equipment degradation, installation quality, and other factors.\n\n" +
+    "performance may vary due to local shading, weather, equipment degradation, installation quality, and other factors.",
     "Cost estimates are indicative ranges based on typical market pricing as of the report date and may vary significantly by region, " +
-    "installer, supply availability, and incentive programs. This report is not a quote, contract, or permit-ready engineering plan.\n\n" +
+    "installer, supply availability, and incentive programs. This report is not a quote, contract, or permit-ready engineering plan.",
     "Battery autonomy and backup calculations assume average daily load. Actual backup performance depends on load profile, " +
-    "temperature, battery state of health, and usage patterns.\n\n" +
+    "temperature, battery state of health, and usage patterns.",
     "Federal, state, and local incentives (ITC, SGIP, net metering, etc.) are not included in cost or payback estimates unless noted. " +
     "Consult a tax professional and your local utility regarding applicable programs.",
-    L, doc.y, { width: W }
-  );
+  ].forEach((para) => paragraph(para, { size: 9, gap: 0.6 }));
 
   pageFooter();
   doc.end();

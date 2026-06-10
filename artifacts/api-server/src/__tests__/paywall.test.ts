@@ -148,7 +148,10 @@ describe("Paywall enforcement", () => {
     assert.equal(res.status, 200, "Calculate should return 200");
     const body = await res.json() as Record<string, unknown>;
     assert.equal(body["paid"], false, "paid must be false in preview response");
-    assert.ok("arraySizeKw" in body, "arraySizeKw must be present in preview");
+    // Preview must expose only ranges, never exact sizing — exposing exact
+    // values would leak paid data and weaken the paywall.
+    assert.ok("systemSizeKwRange" in body, "systemSizeKwRange (preview range) must be present");
+    assert.equal(body["arraySizeKw"], undefined, "exact arraySizeKw must NOT leak in preview");
     assert.equal(body["estimatedYearlySavings"], undefined, "Savings must not be in preview");
   });
 

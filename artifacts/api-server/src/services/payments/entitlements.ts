@@ -83,6 +83,7 @@ export async function unlockProjectFromCheckoutSession(
 
   const [project] = await db
     .select({
+      name: projectsTable.name,
       accessToken: projectsTable.accessToken,
       stripeSessionId: projectsTable.stripeSessionId,
       selectedPlan: projectsTable.selectedPlan,
@@ -108,16 +109,34 @@ export async function unlockProjectFromCheckoutSession(
     return { projectId, selectedPlan: project.selectedPlan ?? plan.id };
   }
   const update = buildEntitlementUpdate(session, plan);
-  const baseOrigin = getFrontendOrigin(`${options.protocol}://${options.host}`);
-  const reportUrl = `${baseOrigin}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
-  const reportDeliveryStatus = update.purchaserEmail
-    ? await deliverReportEmail({ projectId, email: update.purchaserEmail, reportUrl })
-    : "not_sent";
 
+  // 1) Persist the entitlement FIRST. The paywall must unlock regardless of
+  //    whether email delivery later succeeds, fails, or is unconfigured.
+  await db
+    .update(projectsTable)
+    .set(update)
+    .where(eq(projectsTable.id, projectId));
+
+  // 2) Attempt report-ready email delivery. deliverReportEmail never throws.
+  const baseOrigin = getFrontendOrigin(`${options.protocol}://${options.host}`);
+  const token = encodeURIComponent(project.accessToken ?? "");
+  const reportUrl = `${baseOrigin}/results/${projectId}?accessToken=${token}`;
+  const pdfUrl = `${baseOrigin}/api/projects/${projectId}/report.pdf?accessToken=${token}`;
+  const reportDeliveryStatus = update.purchaserEmail
+    ? await deliverReportEmail({
+        projectId,
+        email: update.purchaserEmail,
+        reportUrl,
+        pdfUrl,
+        projectName: project.name,
+        planLabel: plan.name,
+      })
+    : "not_configured";
+
+  // 3) Record delivery status separately — best-effort, never affects the unlock.
   await db
     .update(projectsTable)
     .set({
-      ...update,
       reportDeliveryStatus,
       reportDeliveredAt: reportDeliveryStatus === "sent" ? new Date() : null,
     })

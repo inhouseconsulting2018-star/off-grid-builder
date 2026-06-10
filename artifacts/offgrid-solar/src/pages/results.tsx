@@ -17,6 +17,7 @@ import { ProjectMap } from "@/components/maps/ProjectMap";
 import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
 import { createProjectCheckoutSession } from "@/services/projectService";
+import { addProjectToRegistry } from "@/services/projectRegistry";
 import { trackEvent } from "@/services/analytics";
 import { getPaymentLinkCheckoutUrl, parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
 import {
@@ -90,6 +91,18 @@ export default function Results() {
     const url = `/api/projects/${projectId}/report.pdf?accessToken=${encodeURIComponent(token)}`;
     window.location.href = url;
   };
+
+  // Backfill the local registry so projects opened via an email/URL link
+  // (e.g. existing paid customers) show up on the dashboard on this device.
+  useEffect(() => {
+    if (project && token) {
+      addProjectToRegistry({
+        id: projectId,
+        accessToken: token,
+        name: (project as { name?: string }).name,
+      });
+    }
+  }, [project, projectId, token]);
 
   useEffect(() => {
     if (project && !project.calculationResult && !hasTriggeredCalc.current) {
