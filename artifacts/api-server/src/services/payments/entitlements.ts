@@ -84,6 +84,7 @@ export async function unlockProjectFromCheckoutSession(
   const [project] = await db
     .select({
       accessToken: projectsTable.accessToken,
+      name: projectsTable.name,
       stripeSessionId: projectsTable.stripeSessionId,
       selectedPlan: projectsTable.selectedPlan,
     })
@@ -110,18 +111,33 @@ export async function unlockProjectFromCheckoutSession(
   const update = buildEntitlementUpdate(session, plan);
   const baseOrigin = getFrontendOrigin(`${options.protocol}://${options.host}`);
   const reportUrl = `${baseOrigin}/results/${projectId}?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
-  const reportDeliveryStatus = update.purchaserEmail
-    ? await deliverReportEmail({ projectId, email: update.purchaserEmail, reportUrl })
-    : "not_sent";
+  const pdfUrl = `${baseOrigin}/api/projects/${projectId}/report.pdf?accessToken=${encodeURIComponent(project.accessToken ?? "")}`;
 
   await db
     .update(projectsTable)
     .set({
       ...update,
-      reportDeliveryStatus,
-      reportDeliveredAt: reportDeliveryStatus === "sent" ? new Date() : null,
+      reportDeliveryStatus: update.purchaserEmail ? "queued" : "not_sent",
+      reportDeliveredAt: null,
     })
     .where(eq(projectsTable.id, projectId));
+
+  if (update.purchaserEmail) {
+    const reportDeliveryStatus = await deliverReportEmail({
+      projectId,
+      email: update.purchaserEmail,
+      projectName: project.name,
+      reportUrl,
+      pdfUrl,
+    });
+    await db
+      .update(projectsTable)
+      .set({
+        reportDeliveryStatus,
+        reportDeliveredAt: reportDeliveryStatus === "sent" ? new Date() : null,
+      })
+      .where(eq(projectsTable.id, projectId));
+  }
 
   return { projectId, selectedPlan: plan.id };
 }
@@ -156,4 +172,35 @@ export async function updateProjectFromSubscription(
     .where(eq(projectsTable.id, projectId));
 
   return { projectId, selectedPlan: plan.id, paymentStatus };
+}
+
+export async function markProjectPaymentFailed(paymentIntent: {
+  id: string;
+  metadata?: Record<string, string> | null;
+}): Promise<number | null> {
+  const projectId = parseInt(paymentIntent.metadata?.projectId ?? "", 10);
+  if (!Number.isFinite(projectId)) return null;
+
+  const [project] = await db
+    .select({
+      id: projectsTable.id,
+      paidAt: projectsTable.paidAt,
+      paymentStatus: projectsTable.paymentStatus,
+    })
+    .from(projectsTable)
+    .where(eq(projectsTable.id, projectId));
+  if (!project || !canMarkProjectPaymentFailed(project)) return null;
+
+  await db
+    .update(projectsTable)
+    .set({ paymentStatus: "failed" })
+    .where(eq(projectsTable.id, projectId));
+  return projectId;
+}
+
+export function canMarkProjectPaymentFailed(project: {
+  paidAt?: Date | null;
+  paymentStatus?: string | null;
+}): boolean {
+  return !project.paidAt && project.paymentStatus !== "paid";
 }

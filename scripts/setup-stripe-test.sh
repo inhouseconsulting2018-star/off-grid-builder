@@ -10,10 +10,10 @@ set -euo pipefail
 #   3. From repo root: bash scripts/setup-stripe-test.sh
 #
 # Optional:
-#   PUBLIC_BASE_URL=https://www.offgridsolarbuilder.com bash scripts/setup-stripe-test.sh
+#   PUBLIC_BASE_URL=https://offgridsolarbuilder.com bash scripts/setup-stripe-test.sh
 
 APP_NAME="offgrid-solar-builder"
-PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://www.offgridsolarbuilder.com}"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://offgridsolarbuilder.com}"
 
 if ! command -v stripe >/dev/null 2>&1; then
   echo "Stripe CLI is not installed."

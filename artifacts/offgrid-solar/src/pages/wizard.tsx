@@ -18,7 +18,8 @@ import { geocodeAddress } from "@/services/geocodingService";
 import { appEnv } from "@/config/env";
 import { trackEvent } from "@/services/analytics";
 import { createProjectCheckoutSession } from "@/services/projectService";
-import { getCheckoutPlan, getPaymentLinkCheckoutUrl, parseCheckoutPlan } from "@/services/checkoutPlans";
+import { getCheckoutPlan, parseCheckoutPlan } from "@/services/checkoutPlans";
+import { saveCustomerProjectAccess } from "@/services/customerProjects";
 import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, CheckCircle2 } from "lucide-react";
 
 const wizardSchema = z.object({
@@ -153,7 +154,12 @@ export default function Wizard() {
       });
 
       const token = ((project as { accessToken?: string }).accessToken) ?? "";
-      try { sessionStorage.setItem(`project-token-${project.id}`, token); } catch { /* ignore */ }
+      saveCustomerProjectAccess({
+        id: project.id,
+        accessToken: token,
+        name: project.name,
+        address: [project.address, project.city, project.state].filter(Boolean).join(", "),
+      });
 
       setIsCalculating(true);
       try {
@@ -175,11 +181,6 @@ export default function Wizard() {
         trackEvent("checkout_clicked", { projectId: project.id, plan: selectedPlan });
         if (selectedPlan === "contractor_lifetime_beta") {
           trackEvent("contractor_beta_clicked", { projectId: project.id });
-        }
-        const paymentLinkUrl = getPaymentLinkCheckoutUrl(selectedPlan, project.id);
-        if (paymentLinkUrl) {
-          window.location.href = paymentLinkUrl;
-          return;
         }
         try {
           const checkout = await createProjectCheckoutSession(project.id, token, selectedPlan);
