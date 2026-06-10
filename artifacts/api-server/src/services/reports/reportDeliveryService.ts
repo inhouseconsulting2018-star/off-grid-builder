@@ -6,7 +6,7 @@ export type ReportDeliveryStatus = "sent" | "queued" | "failed" | "not_configure
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const NODEMAILER_MODULE = "nodemailer";
 const DEFAULT_FROM = "OffGrid Solar Builder <onboarding@resend.dev>";
-const SUPPORT_EMAIL = env.reportSupportEmail || env.gmailUser || "support@offgridsolarbuilder.com";
+const SUPPORT_EMAIL = env.reportSupportEmail || "support@offgridsolarbuilder.com";
 
 export interface DeliverReportEmailInput {
   projectId: number;
