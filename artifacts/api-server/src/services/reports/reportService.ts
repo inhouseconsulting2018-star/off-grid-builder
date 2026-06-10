@@ -183,13 +183,30 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
   </html>`;
 }
 
-export function renderReportPdfBuffer(report: NonNullable<ReturnType<typeof buildPaidReport>>): Promise<Buffer> {
+export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeof buildPaidReport>>): Promise<Buffer> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const _pdfMod = require("pdfkit");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const PDFDocument = (_pdfMod.default ?? _pdfMod) as any;
   const { project, calculation: calc, bom, monthlyChartData } = report;
   const annualProduction = calc.pvwattsAnnualKwh ?? calc.yearlyProductionKwh;
+
+  // Fetch satellite map image (Esri World Imagery, no API key required)
+  let mapImageBuffer: Buffer | null = null;
+  if (typeof project.lat === "number" && typeof project.lon === "number") {
+    try {
+      const pad = 0.004;
+      const bbox = `${project.lon - pad},${project.lat - pad},${project.lon + pad},${project.lat + pad}`;
+      const mapUrl =
+        `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export` +
+        `?bbox=${bbox}&bboxSR=4326&size=512,180&imageSR=4326&format=png&f=image`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const resp = await fetch(mapUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (resp.ok) mapImageBuffer = Buffer.from(await resp.arrayBuffer());
+    } catch { /* skip map if fetch fails */ }
+  }
 
   const ORANGE = "#f97316";
   const DARK   = "#172033";
@@ -279,6 +296,17 @@ export function renderReportPdfBuffer(report: NonNullable<ReturnType<typeof buil
     metricBox(L + (mw+6)*2,my2, mw, "Inverter Size",     `${calc.inverterSizeKw.toFixed(1)} kW AC`);
     metricBox(L + (mw+6)*3,my2, mw, "Autonomy Days",     calc.batteryAutonomyDays ? `${Number(calc.batteryAutonomyDays).toFixed(1)} days` : "—");
     doc.y = my2 + 62;
+  }
+
+  // Satellite map (if coordinates were available and image fetched successfully)
+  if (mapImageBuffer) {
+    doc.moveDown(0.4);
+    const mapH = Math.round(W * 180 / 512);
+    doc.image(mapImageBuffer, L, doc.y, { width: W, height: mapH });
+    doc.y += mapH + 4;
+    doc.fontSize(7).fillColor(GRAY).font("Helvetica")
+       .text("Satellite imagery © Esri, Maxar, Earthstar Geographics", L, doc.y, { width: W, align: "right" });
+    doc.moveDown(0.3);
   }
 
   sectionHeader("System Overview");

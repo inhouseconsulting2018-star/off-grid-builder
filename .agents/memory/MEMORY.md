@@ -1,4 +1,5 @@
-- [OffGrid Solar token pattern](offgrid-solar-token-pattern.md) — accessToken created at project creation, stored in sessionStorage as `project-token-${id}`, sent as `x-access-token` header
+- [OffGrid Solar token pattern](offgrid-solar-token-pattern.md) — accessToken stored in localStorage (not sessionStorage) as `project-token-${id}`, sent as `x-access-token` header
+- [OffGrid Solar admin token](offgrid-solar-admin-token.md) — admin token stored in localStorage as `offgrid-admin-token`; dashboard/settings gate on it; passed via `{ request: { headers: { x-admin-token } } }` to orval hooks
 - [OffGrid Solar hook request options](offgrid-solar-hook-reqopts.md) — orval-generated hooks accept `{ request: requestOptions }` to forward custom headers
 - [OffGrid Solar Stripe price IDs](offgrid-solar-stripe-prices.md) — 4 tiers mapped in routes/projects.ts; env vars drive all price lookups
 - [OffGrid Solar paywall tests](offgrid-solar-paywall-tests.md) — 9 node:test integration tests in api-server/src/__tests__/paywall.test.ts; all pass against live server

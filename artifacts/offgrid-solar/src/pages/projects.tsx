@@ -2,11 +2,13 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useListProjects, useGetProjectsSummary, useDeleteProject, getListProjectsQueryKey, getGetProjectsSummaryQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
-import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldCheck, ZapOff, MapPin, BarChart3, Map } from "lucide-react";
+import { PlusCircle, Search, Trash2, Edit, Eye, Zap, ShieldCheck, ZapOff, MapPin, BarChart3, Map, Lock } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useRef, useState } from "react";
+import { getAdminToken, saveAdminToken, adminRequestOpts } from "@/hooks/useAdminToken";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,13 +30,26 @@ const systemTypeBadge: Record<string, string> = {
 };
 
 export default function ProjectsDashboard() {
-  const { data: projects, isLoading: isProjectsLoading } = useListProjects();
-  const { data: summary, isLoading: isSummaryLoading } = useGetProjectsSummary();
-  const deleteProject = useDeleteProject();
+  const [adminToken, setAdminTokenState] = useState<string>(getAdminToken);
+  const [tokenInput, setTokenInput] = useState("");
+
+  const reqOpts = adminRequestOpts(adminToken);
+  const { data: projects, isLoading: isProjectsLoading } = useListProjects({ request: reqOpts });
+  const { data: summary, isLoading: isSummaryLoading } = useGetProjectsSummary({ request: reqOpts });
+  const deleteProject = useDeleteProject({ request: reqOpts });
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const mapSectionRef = useRef<HTMLDivElement>(null);
   const [mapSelectedId, setMapSelectedId] = useState<number | null>(null);
+
+  const handleSaveToken = () => {
+    const t = tokenInput.trim();
+    saveAdminToken(t);
+    setAdminTokenState(t);
+    setTokenInput("");
+    queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetProjectsSummaryQueryKey() });
+  };
 
   const handleDelete = (id: number) => {
     deleteProject.mutate({ id }, {
@@ -44,7 +59,7 @@ export default function ProjectsDashboard() {
         queryClient.invalidateQueries({ queryKey: getGetProjectsSummaryQueryKey() });
       },
       onError: () => {
-        toast({ title: "Open the project with its secure access link to delete it." });
+        toast({ title: "Delete failed.", variant: "destructive" });
       }
     });
   };
@@ -69,6 +84,30 @@ export default function ProjectsDashboard() {
             </Button>
           </Link>
         </div>
+
+        {/* Admin token setup — shown once until token is saved */}
+        {!adminToken && (
+          <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/10 dark:border-orange-800">
+            <CardContent className="flex flex-col sm:flex-row items-start sm:items-center gap-3 py-4 px-5">
+              <Lock className="h-4 w-4 text-orange-500 shrink-0 mt-0.5 sm:mt-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Admin access required to view all projects</p>
+                <p className="text-xs text-muted-foreground">Enter your admin token once — it will be saved in your browser.</p>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Input
+                  type="password"
+                  placeholder="Admin token"
+                  value={tokenInput}
+                  onChange={e => setTokenInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleSaveToken()}
+                  className="h-8 text-sm w-full sm:w-52"
+                />
+                <Button size="sm" onClick={handleSaveToken} disabled={!tokenInput.trim()}>Unlock</Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Grid — 2 cols on mobile, 4 on desktop */}
         {isSummaryLoading ? (

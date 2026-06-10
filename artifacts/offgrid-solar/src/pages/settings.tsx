@@ -9,8 +9,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { Settings as SettingsIcon, Save } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Settings as SettingsIcon, Save, Lock } from "lucide-react";
+import { getAdminToken, saveAdminToken, adminRequestOpts } from "@/hooks/useAdminToken";
 
 const settingsSchema = z.object({
   panelWattage: z.coerce.number().min(100).max(1000),
@@ -35,10 +36,22 @@ const settingsSchema = z.object({
 type SettingsFormValues = z.infer<typeof settingsSchema>;
 
 export default function SettingsPage() {
-  const { data: settings, isLoading } = useGetSettings();
-  const updateSettings = useUpdateSettings();
+  const [adminToken, setAdminTokenState] = useState<string>(getAdminToken);
+  const [tokenInput, setTokenInput] = useState("");
+
+  const reqOpts = adminRequestOpts(adminToken);
+  const { data: settings, isLoading } = useGetSettings({ request: reqOpts });
+  const updateSettings = useUpdateSettings({ request: reqOpts });
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const handleSaveToken = () => {
+    const t = tokenInput.trim();
+    saveAdminToken(t);
+    setAdminTokenState(t);
+    setTokenInput("");
+    queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+  };
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
@@ -84,6 +97,42 @@ export default function SettingsPage() {
       }
     });
   };
+
+  if (!adminToken) {
+    return (
+      <AppLayout>
+        <div className="max-w-4xl mx-auto flex flex-col gap-6">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+              <SettingsIcon className="h-8 w-8" />
+              Calculation Settings
+            </h1>
+            <p className="text-muted-foreground mt-1">Configure global parameters used in solar calculations.</p>
+          </div>
+          <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/10 dark:border-orange-800">
+            <CardContent className="flex flex-col sm:flex-row items-start sm:items-center gap-3 py-5 px-5">
+              <Lock className="h-5 w-5 text-orange-500 shrink-0 mt-0.5 sm:mt-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Admin access required</p>
+                <p className="text-xs text-muted-foreground">Enter your admin token to view and edit calculation settings.</p>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Input
+                  type="password"
+                  placeholder="Admin token"
+                  value={tokenInput}
+                  onChange={e => setTokenInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleSaveToken()}
+                  className="h-8 text-sm w-full sm:w-52"
+                />
+                <Button size="sm" onClick={handleSaveToken} disabled={!tokenInput.trim()}>Unlock</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
   if (isLoading) {
     return (

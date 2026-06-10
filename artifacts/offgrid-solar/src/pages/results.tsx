@@ -33,10 +33,10 @@ export default function Results() {
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get("accessToken") ?? "";
     if (urlToken) {
-      try { sessionStorage.setItem(`project-token-${projectId}`, urlToken); } catch { /* ignore */ }
+      try { localStorage.setItem(`project-token-${projectId}`, urlToken); } catch { /* ignore */ }
     }
     try {
-      return urlToken || sessionStorage.getItem(`project-token-${projectId}`) || "";
+      return urlToken || localStorage.getItem(`project-token-${projectId}`) || "";
     } catch {
       return urlToken;
     }
