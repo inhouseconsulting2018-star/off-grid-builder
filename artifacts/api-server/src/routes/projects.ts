@@ -542,7 +542,7 @@ router.get("/projects/:id/report.pdf", async (req, res): Promise<void> => {
 
   const report = buildPaidReport(project);
   if (!report) { res.status(500).json({ error: "Report is not available" }); return; }
-  const pdf = renderReportPdfBuffer(report);
+  const pdf = await renderReportPdfBuffer(report);
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="solar-report-${project.id}.pdf"`);
   res.send(pdf);

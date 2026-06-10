@@ -2,3 +2,7 @@
 - [OffGrid Solar hook request options](offgrid-solar-hook-reqopts.md) — orval-generated hooks accept `{ request: requestOptions }` to forward custom headers
 - [OffGrid Solar Stripe price IDs](offgrid-solar-stripe-prices.md) — 4 tiers mapped in routes/projects.ts; env vars drive all price lookups
 - [OffGrid Solar paywall tests](offgrid-solar-paywall-tests.md) — 9 node:test integration tests in api-server/src/__tests__/paywall.test.ts; all pass against live server
+- [Stripe price IDs](stripe-price-ids.md) — live price IDs were wrong; correct ones confirmed from Stripe MCP search
+- [Report API shape](report-api-shape.md) — paid report is { project, calculation, bom, bomCategories, monthlyChartData, entitlement }, not { calculationResult }
+- [Production deployment](production-deployment.md) — live at off-grid-builder-1.replit.app; custom domain DNS pending
+- [PDFKit in esbuild ESM bundle](pdfkit-esbuild.md) — pdfkit must be external in build.mjs; use "end" event (not "finish") on the Readable; require interop needs (.default ?? mod)
