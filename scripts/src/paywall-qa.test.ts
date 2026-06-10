@@ -101,9 +101,9 @@ const project = {
   updatedAt: new Date(),
 };
 
-function run(name: string, fn: () => void) {
+async function run(name: string, fn: () => void | Promise<void>) {
   try {
-    fn();
+    await fn();
     console.log(`ok - ${name}`);
   } catch (error) {
     console.error(`not ok - ${name}`);
@@ -111,7 +111,7 @@ function run(name: string, fn: () => void) {
   }
 }
 
-run("free preview returns ranges only", () => {
+await run("free preview returns ranges only", () => {
   const preview = buildPreview(project as any) as any;
   assert.equal(preview.preview.systemSizeKwRange.low < calc.adjustedArraySizeKw, true);
   assert.equal("bom" in preview, false);
@@ -119,20 +119,20 @@ run("free preview returns ranges only", () => {
   assert.equal("estimatedYearlySavings" in preview.preview, false);
 });
 
-run("full paid report contains server-side BOM", () => {
+await run("full paid report contains server-side BOM", () => {
   const report = buildPaidReport({ ...project, paidAt: new Date() } as any) as any;
   assert.ok(report.bom.length > 0);
   assert.equal(report.project.accessToken, undefined);
 });
 
-run("unpaid preview does not leak access token", () => {
+await run("unpaid preview does not leak access token", () => {
   const preview = buildPreview(project as any) as any;
   assert.equal(preview.accessToken, undefined);
   const report = buildPaidReport({ ...project, paidAt: new Date() } as any) as any;
   assert.equal(report.project.accessToken, undefined);
 });
 
-run("Stripe webhook entitlement update unlocks selected plan credits", () => {
+await run("Stripe webhook entitlement update unlocks selected plan credits", () => {
   const plan = getCheckoutPlan("contractor_lifetime_beta");
   const update = buildEntitlementUpdate({
     id: "cs_test_123",
@@ -145,20 +145,20 @@ run("Stripe webhook entitlement update unlocks selected plan credits", () => {
   assert.equal(update.reportCredits, 100);
   assert.equal(update.contractorStatus, true);
 });
-run("launch plan prices match checkout amounts", () => {
+await run("launch plan prices match checkout amounts", () => {
   assert.equal(getCheckoutPlan("homeowner_report").amountCents, 1_900);
   assert.equal(getCheckoutPlan("property_pack").amountCents, 3_900);
   assert.equal(getCheckoutPlan("contractor_annual").amountCents, 14_900);
   assert.equal(getCheckoutPlan("contractor_lifetime_beta").amountCents, 19_900);
 });
 
-run("checkout rejects missing or invalid selected plans", () => {
+await run("checkout rejects missing or invalid selected plans", () => {
   assert.equal(parseCheckoutPlan(undefined), null);
   assert.equal(parseCheckoutPlan("not-a-plan"), null);
   assert.equal(parseCheckoutPlan("homeowner_report"), "homeowner_report");
 });
 
-run("every public pricing plan links to a selected-plan checkout flow", () => {
+await run("every public pricing plan links to a selected-plan checkout flow", () => {
   assert.deepEqual(
     frontendCheckoutPlans.map((plan) => plan.id),
     ["homeowner_report", "property_pack", "contractor_annual", "contractor_lifetime_beta"],
@@ -170,7 +170,7 @@ run("every public pricing plan links to a selected-plan checkout flow", () => {
   }
 });
 
-run("payment links carry a non-secret project reference", () => {
+await run("payment links carry a non-secret project reference", () => {
   for (const planId of ["homeowner_report", "property_pack", "contractor_annual", "contractor_lifetime_beta"] as const) {
     const checkoutUrl = getPaymentLinkCheckoutUrl(planId, 42);
     assert.ok(checkoutUrl);
@@ -181,7 +181,7 @@ run("payment links carry a non-secret project reference", () => {
   }
 });
 
-run("payment link amounts map only to matching entitlements", () => {
+await run("payment link amounts map only to matching entitlements", () => {
   assert.equal(getPaymentLinkPlanId(1_900), "homeowner_report");
   assert.equal(getPaymentLinkPlanId(3_900), "property_pack");
   assert.equal(getPaymentLinkPlanId(14_900), "contractor_annual");
@@ -189,7 +189,7 @@ run("payment link amounts map only to matching entitlements", () => {
   assert.equal(getPaymentLinkPlanId(2_000), null);
 });
 
-run("annual checkout stores the subscription reference for lifecycle events", () => {
+await run("annual checkout stores the subscription reference for lifecycle events", () => {
   const plan = getCheckoutPlan("contractor_annual");
   const update = buildEntitlementUpdate({
     id: "cs_test_annual",
@@ -200,19 +200,18 @@ run("annual checkout stores the subscription reference for lifecycle events", ()
   assert.equal(update.stripeSessionId, "sub_test_annual");
 });
 
-run("annual entitlement requires an active subscription", () => {
+await run("annual entitlement requires an active subscription", () => {
   const paidAt = new Date();
   assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "active" }), true);
   assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "past_due" }), false);
   assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "contractor_annual", paymentStatus: "canceled" }), false);
   assert.equal(hasActivePaidEntitlement({ paidAt, selectedPlan: "homeowner_report", paymentStatus: "paid" }), true);
 });
-
-run("paid report PDF and printable HTML include project details and disclaimer", () => {
+await run("paid report PDF and printable HTML include project details and disclaimer", async () => {
   const report = buildPaidReport({ ...project, paidAt: new Date() } as any);
   assert.ok(report);
 
-  const pdf = renderReportPdfBuffer(report);
+  const pdf = await renderReportPdfBuffer(report);
   assert.equal(pdf.subarray(0, 8).toString(), "%PDF-1.4");
   assert.ok(pdf.includes(Buffer.from("QA Project")));
   assert.ok(pdf.includes(Buffer.from("Preliminary planning estimate only")));

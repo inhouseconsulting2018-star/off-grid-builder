@@ -607,6 +607,16 @@ export const CreateProjectCheckoutSessionBodySelectedPlan = {
 export type CreateProjectCheckoutSessionBodyProductType =
   (typeof CreateProjectCheckoutSessionBodyProductType)[keyof typeof CreateProjectCheckoutSessionBodyProductType];
 
+export type CreateProjectCheckoutSessionBodySelectedPlan =
+  (typeof CreateProjectCheckoutSessionBodySelectedPlan)[keyof typeof CreateProjectCheckoutSessionBodySelectedPlan];
+
+export const CreateProjectCheckoutSessionBodySelectedPlan = {
+  homeowner_report: "homeowner_report",
+  property_pack: "property_pack",
+  contractor_annual: "contractor_annual",
+  contractor_lifetime_beta: "contractor_lifetime_beta",
+} as const;
+
 export const CreateProjectCheckoutSessionBodyProductType = {
   homeowner: "homeowner",
   property_pack: "property_pack",
