@@ -4,6 +4,7 @@ import { logger } from "../../utils/logger";
 export type ReportDeliveryStatus = "sent" | "queued" | "failed" | "not_configured";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
+const NODEMAILER_MODULE = "nodemailer";
 const DEFAULT_FROM = "OffGrid Solar Builder <onboarding@resend.dev>";
 const SUPPORT_EMAIL = env.reportSupportEmail || env.gmailUser || "support@offgridsolarbuilder.com";
 
@@ -75,7 +76,7 @@ function escape(value: unknown): string {
     .replaceAll("'", "&#39;");
 }
 
-function buildEmailContent(input: DeliverReportEmailInput): { subject: string; html: string; text: string } {
+export function buildReportEmailContent(input: DeliverReportEmailInput): { subject: string; html: string; text: string } {
   const name = input.projectName?.trim() || `Project #${input.projectId}`;
   const plan = input.planLabel?.trim();
   const ref = `OGS-${String(input.projectId).padStart(5, "0")}`;
@@ -132,7 +133,7 @@ function buildEmailContent(input: DeliverReportEmailInput): { subject: string; h
 }
 
 async function sendViaResend(apiKey: string, input: DeliverReportEmailInput): Promise<ReportDeliveryStatus> {
-  const { subject, html, text } = buildEmailContent(input);
+  const { subject, html, text } = buildReportEmailContent(input);
   const from = env.reportEmailFrom || DEFAULT_FROM;
 
   const response = await fetch(RESEND_ENDPOINT, {
@@ -159,6 +160,7 @@ async function sendViaResend(apiKey: string, input: DeliverReportEmailInput): Pr
 }
 
 async function sendViaWebhook(webhookUrl: string, input: DeliverReportEmailInput): Promise<ReportDeliveryStatus> {
+  const { subject, html, text } = buildReportEmailContent(input);
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -170,6 +172,10 @@ async function sendViaWebhook(webhookUrl: string, input: DeliverReportEmailInput
       planLabel: input.planLabel,
       reportUrl: input.reportUrl,
       pdfUrl: input.pdfUrl,
+      subject,
+      html,
+      text,
+      supportEmail: SUPPORT_EMAIL,
     }),
     signal: AbortSignal.timeout(10_000),
   });
@@ -189,12 +195,12 @@ async function sendViaGmail(
   appPassword: string,
   input: DeliverReportEmailInput,
 ): Promise<ReportDeliveryStatus> {
-  const { subject, html, text } = buildEmailContent(input);
+  const { subject, html, text } = buildReportEmailContent(input);
   const from = env.reportEmailFrom || `OffGrid Solar Builder <${user}>`;
 
   // nodemailer is externalized from the esbuild bundle; load it lazily so it is
   // only resolved at runtime when Gmail is actually configured.
-  const mod = (await import("nodemailer")) as unknown as {
+  const mod = (await import(NODEMAILER_MODULE)) as unknown as {
     default?: { createTransport: (opts: unknown) => unknown };
     createTransport?: (opts: unknown) => unknown;
   };

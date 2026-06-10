@@ -18,7 +18,7 @@ import { geocodeAddress } from "@/services/geocodingService";
 import { appEnv } from "@/config/env";
 import { trackEvent } from "@/services/analytics";
 import { createProjectCheckoutSession } from "@/services/projectService";
-import { getCheckoutPlan, getPaymentLinkCheckoutUrl, parseCheckoutPlan } from "@/services/checkoutPlans";
+import { getCheckoutPlan, parseCheckoutPlan } from "@/services/checkoutPlans";
 import { addProjectToRegistry } from "@/services/projectRegistry";
 import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, CheckCircle2 } from "lucide-react";
 
@@ -176,11 +176,6 @@ export default function Wizard() {
         trackEvent("checkout_clicked", { projectId: project.id, plan: selectedPlan });
         if (selectedPlan === "contractor_lifetime_beta") {
           trackEvent("contractor_beta_clicked", { projectId: project.id });
-        }
-        const paymentLinkUrl = getPaymentLinkCheckoutUrl(selectedPlan, project.id);
-        if (paymentLinkUrl) {
-          window.location.href = paymentLinkUrl;
-          return;
         }
         try {
           const checkout = await createProjectCheckoutSession(project.id, token, selectedPlan);

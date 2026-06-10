@@ -10,6 +10,16 @@ import { appEnv } from "@/config/env";
 
 type EntitlementStatus = "checking" | "unlocked" | "delayed";
 
+function hasActiveEntitlement(project: {
+  paidAt?: string | Date | null;
+  selectedPlan?: string | null;
+  paymentStatus?: string | null;
+}): boolean {
+  if (!project.paidAt) return false;
+  if (project.selectedPlan !== "contractor_annual") return project.paymentStatus === "paid";
+  return ["paid", "active", "trialing"].includes(project.paymentStatus ?? "");
+}
+
 export default function PaymentSuccess() {
   const search = useSearch();
   const params = new URLSearchParams(search);
@@ -39,12 +49,22 @@ export default function PaymentSuccess() {
     const checkEntitlement = async () => {
       for (let attempt = 0; attempt < 10 && !cancelled; attempt += 1) {
         try {
-          const project = await apiGet<{ paidAt?: string | Date | null; paymentStatus?: string }>(
+          const project = await apiGet<{
+            paidAt?: string | Date | null;
+            selectedPlan?: string | null;
+            paymentStatus?: string | null;
+            name?: string;
+          }>(
             `/projects/${projectId}`,
             undefined,
             { headers: { "x-access-token": accessToken } },
           );
-          if (project.paidAt && project.paymentStatus !== "unpaid") {
+          if (hasActiveEntitlement(project)) {
+            addProjectToRegistry({
+              id: Number(projectId),
+              accessToken,
+              name: project.name,
+            });
             setEntitlementStatus("unlocked");
             return;
           }
@@ -69,6 +89,14 @@ export default function PaymentSuccess() {
     ? `${appEnv.apiBaseUrl}/projects/${projectId}/report.pdf?accessToken=${encodeURIComponent(accessToken)}`
     : null;
 
+  useEffect(() => {
+    if (entitlementStatus !== "unlocked" || !pdfHref) return;
+    const timeout = window.setTimeout(() => {
+      window.location.replace(pdfHref);
+    }, 1200);
+    return () => window.clearTimeout(timeout);
+  }, [entitlementStatus, pdfHref]);
+
   return (
     <AppLayout>
       <div className="max-w-lg mx-auto text-center py-20 flex flex-col items-center gap-6">
@@ -82,7 +110,7 @@ export default function PaymentSuccess() {
           </h1>
           <p className="text-muted-foreground text-base">
             {entitlementStatus === "unlocked"
-              ? "Your solar report is fully unlocked. You can download the PDF and view the complete equipment bill of materials."
+              ? "Your solar report is fully unlocked. Opening the detailed PDF now."
               : entitlementStatus === "checking"
               ? "Payment received. We are finishing your report unlock now."
               : "Payment received. Stripe is still confirming the report unlock; open the report and refresh in a moment if it remains locked."}

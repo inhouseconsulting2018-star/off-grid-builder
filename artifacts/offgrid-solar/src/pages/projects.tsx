@@ -53,6 +53,7 @@ type CustomerProject = {
   state?: string;
   systemType?: string;
   createdAt?: string;
+  updatedAt?: string;
   paidAt?: string | null;
   paymentStatus?: string | null;
   selectedPlan?: string | null;
@@ -79,7 +80,17 @@ async function fetchRegistryProject(entry: ProjectRegistryEntry): Promise<FetchR
 }
 
 function isPaidProject(p: CustomerProject): boolean {
-  return !!p.paidAt && p.paymentStatus !== "unpaid";
+  if (!p.paidAt) return false;
+  if (p.selectedPlan !== "contractor_annual") return p.paymentStatus === "paid";
+  return ["paid", "active", "trialing"].includes(p.paymentStatus ?? "");
+}
+
+function projectStatusLabel(p: CustomerProject): string {
+  if (isPaidProject(p)) return "Paid";
+  if (p.paymentStatus === "failed") return "Payment failed";
+  if (p.paymentStatus === "canceled") return "Checkout canceled";
+  if (p.paymentStatus === "pending") return "Payment pending";
+  return p.calculationResult ? "Preview" : "Draft";
 }
 
 function capacityLabel(p: CustomerProject): string | null {
@@ -178,6 +189,7 @@ function CustomerDashboard({ onUseAdmin }: { onUseAdmin: (token: string) => void
           <div className="grid gap-3">
             {loadedProjects.map(({ entry, project }) => {
               const paid = isPaidProject(project);
+              const statusLabel = projectStatusLabel(project);
               const name = project.name || entry.name || `Project #${entry.id}`;
               const token = entry.accessToken;
               const cap = capacityLabel(project);
@@ -197,13 +209,17 @@ function CustomerDashboard({ onUseAdmin }: { onUseAdmin: (token: string) => void
                           <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 inline-flex items-center gap-1 shrink-0">
                             <CheckCircle2 className="h-3 w-3" /> Paid
                           </span>
-                        ) : project.calculationResult ? (
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 shrink-0">
-                            Preview
-                          </span>
                         ) : (
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground shrink-0">
-                            Draft
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+                            project.paymentStatus === "failed"
+                              ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                              : project.paymentStatus === "pending"
+                                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                : project.calculationResult
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                  : "bg-secondary text-secondary-foreground"
+                          }`}>
+                            {statusLabel}
                           </span>
                         )}
                         {project.systemType && (
@@ -220,7 +236,9 @@ function CustomerDashboard({ onUseAdmin }: { onUseAdmin: (token: string) => void
                       )}
                       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                         {cap && <span className="font-medium text-foreground">{cap}</span>}
-                        {project.createdAt && <span>{format(new Date(project.createdAt), "MMM d, yyyy")}</span>}
+                        {(project.updatedAt || project.createdAt) && (
+                          <span>Updated {format(new Date(project.updatedAt ?? project.createdAt!), "MMM d, yyyy")}</span>
+                        )}
                         {paid && planLabel && <span className="text-green-700 dark:text-green-400 font-medium">{planLabel}</span>}
                         {paid && project.paidAt && <span>Purchased {format(new Date(project.paidAt), "MMM d, yyyy")}</span>}
                       </div>

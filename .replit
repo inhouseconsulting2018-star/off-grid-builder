@@ -42,7 +42,7 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.production]
-FRONTEND_URL = "https://www.offgridsolarbuilder.com"
+FRONTEND_URL = "https://offgridsolarbuilder.com"
 
 [userenv.shared]
 GMAIL_USER = "offgridsolarbuilder@gmail.com"

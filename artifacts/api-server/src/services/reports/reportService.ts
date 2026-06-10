@@ -1,8 +1,10 @@
 import type { Project } from "@workspace/db";
+import { createRequire } from "node:module";
 import { generateBom } from "./bom";
 
 type Calc = Record<string, any>;
 
+const require = createRequire(import.meta.url);
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function range(value: unknown, spreadPct: number, minSpread: number, decimals = 0) {
@@ -184,7 +186,6 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
 }
 
 export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeof buildPaidReport>>): Promise<Buffer> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const _pdfMod = require("pdfkit");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const PDFDocument = (_pdfMod.default ?? _pdfMod) as any;

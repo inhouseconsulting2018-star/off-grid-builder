@@ -101,3 +101,14 @@ export function removeProjectFromRegistry(id: number): void {
     // ignore
   }
 }
+
+/** Clear every project credential saved by this browser without deleting server data. */
+export function clearProjectRegistry(): void {
+  const entries = readRaw();
+  try {
+    localStorage.removeItem(REGISTRY_KEY);
+    entries.forEach((entry) => localStorage.removeItem(tokenKey(entry.id)));
+  } catch {
+    // ignore
+  }
+}

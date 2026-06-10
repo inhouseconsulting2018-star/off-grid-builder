@@ -176,3 +176,34 @@ export async function updateProjectFromSubscription(
 
   return { projectId, selectedPlan: plan.id, paymentStatus };
 }
+
+export async function markProjectPaymentFailed(paymentIntent: {
+  id: string;
+  metadata?: Record<string, string> | null;
+}): Promise<number | null> {
+  const projectId = parseInt(paymentIntent.metadata?.projectId ?? "", 10);
+  if (!Number.isFinite(projectId)) return null;
+
+  const [project] = await db
+    .select({
+      id: projectsTable.id,
+      paidAt: projectsTable.paidAt,
+      paymentStatus: projectsTable.paymentStatus,
+    })
+    .from(projectsTable)
+    .where(eq(projectsTable.id, projectId));
+  if (!project || !canMarkProjectPaymentFailed(project)) return null;
+
+  await db
+    .update(projectsTable)
+    .set({ paymentStatus: "failed" })
+    .where(eq(projectsTable.id, projectId));
+  return projectId;
+}
+
+export function canMarkProjectPaymentFailed(project: {
+  paidAt?: Date | null;
+  paymentStatus?: string | null;
+}): boolean {
+  return !project.paidAt && project.paymentStatus !== "paid";
+}

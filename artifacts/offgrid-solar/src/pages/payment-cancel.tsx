@@ -2,7 +2,10 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { XCircle, ArrowLeft } from "lucide-react";
 import { Link, useSearch } from "wouter";
+import { useEffect } from "react";
 import { parseCheckoutPlan } from "@/services/checkoutPlans";
+import { addProjectToRegistry } from "@/services/projectRegistry";
+import { apiPost } from "@/services/apiService";
 
 export default function PaymentCancel() {
   const search = useSearch();
@@ -17,6 +20,17 @@ export default function PaymentCancel() {
   const resultsHref = projectId
     ? `/results/${projectId}${resultsParams.size ? `?${resultsParams.toString()}` : ""}`
     : null;
+
+  useEffect(() => {
+    if (!projectId || !accessToken) return;
+    const id = Number(projectId);
+    addProjectToRegistry({ id, accessToken });
+    void apiPost(`/projects/${id}/checkout-canceled`, undefined, {
+      headers: { "x-access-token": accessToken },
+    }).catch(() => {
+      // The project remains unpaid even if status tracking is unavailable.
+    });
+  }, [accessToken, projectId]);
 
   return (
     <AppLayout>

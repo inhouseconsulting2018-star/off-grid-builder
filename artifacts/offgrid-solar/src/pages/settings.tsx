@@ -10,9 +10,10 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Settings as SettingsIcon, Save, Lock, FolderOpen, FileDown, Mail, PlusCircle, Home, LogOut, ShieldCheck } from "lucide-react";
+import { Settings as SettingsIcon, Save, Lock, FolderOpen, FileDown, Mail, PlusCircle, Home, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 import { Link } from "wouter";
 import { getAdminToken, saveAdminToken, adminRequestOpts } from "@/hooks/useAdminToken";
+import { clearProjectRegistry, getProjectRegistry } from "@/services/projectRegistry";
 
 const settingsSchema = z.object({
   panelWattage: z.coerce.number().min(100).max(1000),
@@ -43,6 +44,21 @@ type SettingsFormValues = z.infer<typeof settingsSchema>;
 function CustomerSettings({ onUseAdmin }: { onUseAdmin: (token: string) => void }) {
   const [showAdmin, setShowAdmin] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
+  const [savedProjectCount, setSavedProjectCount] = useState(() => getProjectRegistry().length);
+  const { toast } = useToast();
+
+  const clearBrowserAccess = () => {
+    const confirmed = window.confirm(
+      "Remove saved project links from this browser? Projects are not deleted, but you will need their original secure links to reopen them.",
+    );
+    if (!confirmed) return;
+    clearProjectRegistry();
+    setSavedProjectCount(0);
+    toast({
+      title: "Saved browser access cleared",
+      description: "Your projects still exist on the server.",
+    });
+  };
 
   return (
     <AppLayout>
@@ -67,6 +83,9 @@ function CustomerSettings({ onUseAdmin }: { onUseAdmin: (token: string) => void 
             <p>
               OffGrid Solar Builder doesn&apos;t require an account or login. Each project you create gets its own
               private, secure access link. Your projects are saved in this browser so you can pick up where you left off.
+            </p>
+            <p className="font-medium text-foreground">
+              {savedProjectCount} project{savedProjectCount === 1 ? "" : "s"} saved in this browser.
             </p>
             <p>
               After you buy a report, we email a secure link so you can reopen your full report and download the PDF
@@ -105,8 +124,29 @@ function CustomerSettings({ onUseAdmin }: { onUseAdmin: (token: string) => void 
           <CardContent className="text-sm text-muted-foreground space-y-2">
             <p>
               Lost your report link, or have a question about a purchase? Reply directly to your purchase
-              confirmation email and we&apos;ll help you recover access.
+              confirmation email or contact{" "}
+              <a className="text-primary hover:underline" href="mailto:support@offgridsolarbuilder.com">
+                support@offgridsolarbuilder.com
+              </a>.
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Browser access</CardTitle>
+            <CardDescription>Remove secure project links saved on this device.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              className="gap-2 text-destructive hover:text-destructive"
+              disabled={savedProjectCount === 0}
+              onClick={clearBrowserAccess}
+            >
+              <Trash2 className="h-4 w-4" />
+              Clear Saved Project Access
+            </Button>
           </CardContent>
         </Card>
 

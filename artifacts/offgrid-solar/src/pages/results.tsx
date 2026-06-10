@@ -19,7 +19,7 @@ import { generateDesignNotes } from "@/utils/design-notes";
 import { createProjectCheckoutSession } from "@/services/projectService";
 import { addProjectToRegistry } from "@/services/projectRegistry";
 import { trackEvent } from "@/services/analytics";
-import { getPaymentLinkCheckoutUrl, parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
+import { parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
 import {
   BarChart, ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   ReferenceLine, Line, Legend,
@@ -59,11 +59,6 @@ export default function Results() {
     trackEvent("checkout_clicked", { projectId, plan: selectedPlan });
     if (selectedPlan === "contractor_lifetime_beta") {
       trackEvent("contractor_beta_clicked", { projectId });
-    }
-    const paymentLinkUrl = getPaymentLinkCheckoutUrl(selectedPlan, projectId);
-    if (paymentLinkUrl) {
-      window.location.href = paymentLinkUrl;
-      return;
     }
     setIsRedirecting(true);
     createCheckoutSession.mutate(
@@ -139,7 +134,11 @@ export default function Results() {
   }
 
   // isPaid: true when the project has been unlocked via a successful Stripe payment
-  const isPaid = !!project.paidAt;
+  const isPaid = !!project.paidAt && (
+    project.selectedPlan === "contractor_annual"
+      ? ["paid", "active", "trialing"].includes(project.paymentStatus ?? "")
+      : project.paymentStatus === "paid"
+  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const calc = project.calculationResult as any;
 
