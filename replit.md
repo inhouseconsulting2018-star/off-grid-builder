@@ -11,6 +11,20 @@ A professional mobile-friendly SaaS web app for designing solar systems (off-gri
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
 
+## Backing up a version to GitHub
+
+Every major working version should be backed up to GitHub (repo: `inhouseconsulting2018-star/off-grid-builder`). The flow is **backup branch → pull request → merge into `main`**, which keeps `main` protected.
+
+Do this from Replit's **Git pane** (left sidebar, the branch icon) — no terminal needed:
+
+1. **Connect GitHub once.** In the Git pane, make sure your GitHub account is connected (Replit handles the push credentials for you — no tokens or passwords to paste). If you see a "Connect to GitHub" prompt, click it and authorize.
+2. **Create a backup branch.** Click the current branch name at the top of the Git pane and choose **Create branch**. Name it something like `backup/2026-06-12-working` (use today's date or a version label).
+3. **Commit your changes.** Type a short message (e.g. "Working version: <what's new>") and click **Commit all & push**. This pushes the backup branch to GitHub.
+4. **Open a pull request.** Go to the repo on GitHub — it will offer a "Compare & pull request" button for the branch you just pushed. Open the PR against `main`.
+5. **Merge the PR.** Review and click **Merge pull request**. Your backed-up version is now safely in `main`, and the backup branch remains as a snapshot.
+
+For a quick recoverable snapshot you can stop after step 3 — the branch on GitHub already has your code. Steps 4–5 are what land it in `main`.
+
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
