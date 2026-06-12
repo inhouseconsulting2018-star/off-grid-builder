@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft, Sun, Info, AlertTriangle, CheckCircle2, LayoutGrid } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const PANEL_W_PORTRAIT = 3.33; // ft (standard ~400W panel ≈ 40" wide)
-const PANEL_H_PORTRAIT = 5.5;  // ft (≈ 66" tall)
+const PANEL_W_PORTRAIT = 3.75; // ft (typical 440W-class panel is about 45" wide)
+const PANEL_H_PORTRAIT = 5.75; // ft (about 69" tall)
 const DIAGRAM_W = 560;
 const DIAGRAM_H = 440;
 const MARGIN = 44;

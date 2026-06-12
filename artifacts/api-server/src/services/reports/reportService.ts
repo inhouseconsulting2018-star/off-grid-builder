@@ -73,7 +73,7 @@ export function buildPaidReport(project: Project) {
     installationType: project.installationType,
     budgetTier: project.budgetTier,
     numPanels: calc.numPanels,
-    panelWattage: calc.panelWattage,
+    panelWattage: calc.panelWattage ?? 440,
     adjustedArraySizeKw: calc.adjustedArraySizeKw,
     inverterSizeKw: calc.inverterSizeKw,
     totalBatteryBankKwh: calc.totalBatteryBankKwh,
@@ -115,7 +115,7 @@ export function buildPaidReport(project: Project) {
 
 export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildPaidReport>>): string {
   const { project, calculation: calc, bom, monthlyChartData } = report;
-  const annualProduction = calc.pvwattsAnnualKwh ?? calc.yearlyProductionKwh;
+  const annualProduction = calc.yearlyProductionKwh;
   const equipmentRows = bom.slice(0, 18).map((item) => `
     <tr>
       <td>${escapeHtml(item.category)}</td>
@@ -163,10 +163,22 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
       </div>
       <div class="grid">
         <div class="metric"><span>Array</span><strong>${calc.adjustedArraySizeKw.toFixed(2)} kW DC</strong></div>
-        <div class="metric"><span>Panels</span><strong>${calc.numPanels}</strong></div>
+        <div class="metric"><span>Panels</span><strong>${calc.numPanels} × ${calc.panelWattage ?? 440}W</strong></div>
         <div class="metric"><span>Annual Production</span><strong>${Math.round(annualProduction).toLocaleString()} kWh</strong></div>
         <div class="metric"><span>Payback</span><strong>${calc.paybackYears ? `${calc.paybackYears.toFixed(1)} yrs` : "N/A"}</strong></div>
       </div>
+      <h2>Estimate Inputs and Sizing</h2>
+      <table><tbody>
+        <tr><td>Full address</td><td>${escapeHtml(project.address)}, ${escapeHtml(project.city)}, ${escapeHtml(project.state)} ${escapeHtml(project.zip)}</td></tr>
+        <tr><td>Coordinates</td><td>${typeof project.lat === "number" && typeof project.lon === "number" ? `${project.lat.toFixed(5)}, ${project.lon.toFixed(5)}` : "Unavailable"}</td></tr>
+        <tr><td>Annual usage</td><td>${project.annualKwh.toLocaleString()} kWh</td></tr>
+        <tr><td>Peak sun hours</td><td>${calc.peakSunHours.toFixed(2)} hrs/day</td></tr>
+        <tr><td>Peak sun hours source</td><td>${calc.peakSunHoursSource === "api" ? "API (NREL PVWatts)" : "Regional fallback"}</td></tr>
+        <tr><td>Required system size</td><td>${(calc.requiredSystemSizeKw ?? calc.arraySizeKw).toFixed(2)} kW</td></tr>
+        <tr><td>Final system size</td><td>${calc.adjustedArraySizeKw.toFixed(2)} kW</td></tr>
+        <tr><td>Panel count and wattage</td><td>${calc.numPanels} panels × ${calc.panelWattage ?? 440}W</td></tr>
+        <tr><td>Estimated annual production</td><td>${Math.round(annualProduction).toLocaleString()} kWh</td></tr>
+      </tbody></table>
       <h2>Monthly Production</h2>
       <div class="chart">${chartBars}</div>
       <h2>Equipment List</h2>
@@ -191,26 +203,17 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const PDFDocument = (_pdfMod.default ?? _pdfMod) as any;
   const { project, calculation: calc, bom, monthlyChartData } = report;
-  const annualProduction = calc.pvwattsAnnualKwh ?? calc.yearlyProductionKwh;
+  const annualProduction = calc.yearlyProductionKwh;
 
-  // Per-panel wattage: authoritative from the engine, else parsed from the BOM
-  // panel spec text, else derived from the array size (rounded to a real size).
-  function resolvePanelWattage(): number | null {
+  // The engine is authoritative; legacy reports fall back to the MVP default.
+  function resolvePanelWattage(): number {
     if (typeof calc.panelWattage === "number" && calc.panelWattage > 0) return Math.round(calc.panelWattage);
-    const panelItem = bom.find((b) => /panel/i.test(b.category ?? "") || /panel/i.test(b.item ?? ""));
-    if (panelItem) {
-      const m = /(\d{3})\s*W/.exec(`${panelItem.model ?? ""} ${panelItem.specs ?? ""}`);
-      if (m) return Number(m[1]);
-    }
-    if (calc.numPanels > 0 && calc.adjustedArraySizeKw > 0) {
-      return Math.round((calc.adjustedArraySizeKw * 1000) / calc.numPanels / 5) * 5;
-    }
-    return null;
+    return 440;
   }
   const panelWattage = resolvePanelWattage();
 
   function dataSourceLabel(): string {
-    return calc.pvwattsSource === "pvwatts"
+    return calc.peakSunHoursSource === "api"
       ? "Live NREL PVWatts satellite irradiance"
       : `State-average estimate (${project.state ?? "regional"})`;
   }
@@ -476,6 +479,9 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   sectionHeader("System Overview");
   row2("System type", systemLabel(project.systemType ?? ""));
   row2("Installation", mountLabel(project.installationType ?? ""));
+  row2("Full address", `${project.address}, ${project.city}, ${project.state} ${project.zip}`);
+  row2("Coordinates", typeof project.lat === "number" && typeof project.lon === "number" ? `${project.lat.toFixed(5)}, ${project.lon.toFixed(5)}` : "Unavailable");
+  row2("Required system size", `${(calc.requiredSystemSizeKw ?? calc.arraySizeKw).toFixed(2)} kW DC`);
   row2("Recommended system size", `${calc.adjustedArraySizeKw.toFixed(2)} kW DC`);
   row2("Panel count", `${calc.numPanels} panels`);
   if (panelWattage) row2("Panel wattage", `${panelWattage} W per panel`);

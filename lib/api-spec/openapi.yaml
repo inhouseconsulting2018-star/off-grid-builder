@@ -325,8 +325,10 @@ components:
           type: string
         state:
           type: string
+          pattern: "^[A-Za-z]{2}$"
         zip:
           type: string
+          pattern: "^\\d{5}$"
         installationType:
           type: string
           enum: [roof, ground, pole, carport]
@@ -472,7 +474,7 @@ components:
           enum: [off-grid, grid-tied, hybrid]
         annualKwh:
           type: number
-          minimum: 0
+          exclusiveMinimum: 0
         monthlyBill:
           type: number
           minimum: 0
@@ -553,7 +555,7 @@ components:
           enum: [off-grid, grid-tied, hybrid]
         annualKwh:
           type: number
-          minimum: 0
+          exclusiveMinimum: 0
         monthlyBill:
           type: number
           minimum: 0
@@ -617,6 +619,10 @@ components:
       required:
         - dailyKwh
         - peakSunHours
+        - peakSunHoursSource
+        - panelWattage
+        - efficiencyFactor
+        - requiredSystemSizeKw
         - arraySizeKw
         - numPanels
         - adjustedArraySizeKw
@@ -646,6 +652,16 @@ components:
         dailyKwh:
           type: number
         peakSunHours:
+          type: number
+        peakSunHoursSource:
+          type: string
+          enum: [api, fallback]
+        panelWattage:
+          type: number
+        efficiencyFactor:
+          type: number
+          enum: [0.78]
+        requiredSystemSizeKw:
           type: number
         arraySizeKw:
           type: number
@@ -835,18 +851,16 @@ components:
         monthlyKwh:
           type: number
           nullable: true
-        panelWattage:
-          type: number
-          default: 440
-        efficiencyFactor:
-          type: number
-          default: 0.78
-        includeBattery:
-          type: boolean
-          default: false
-        batteryBackupHours:
-          type: number
-          default: 8
+        lat:
+          type: ["number", "null"]
+        lon:
+          type: ["number", "null"]
+        panelType:
+          type: string
+          default: mono_perc
+        batteryType:
+          type: string
+          default: lifepo4
 
     ProposalEstimate:
       type: object
@@ -859,7 +873,8 @@ components:
         - monthlyKwhUsage
         - peakSunHours
         - peakSunHoursSource
-        - panelWattage
+        - peakSunHoursSourceDetail
+        - panel
         - efficiencyFactor
         - requiredSystemKw
         - panelCount
@@ -885,9 +900,17 @@ components:
           type: number
         peakSunHoursSource:
           type: string
-          description: "'pvwatts' | 'state' | 'default'"
-        panelWattage:
-          type: number
+          enum: [api, fallback]
+        peakSunHoursSourceDetail:
+          type: string
+          enum: [pvwatts, state, default]
+        lat:
+          type: ["number", "null"]
+        lon:
+          type: ["number", "null"]
+        panel:
+          type: object
+          additionalProperties: true
         efficiencyFactor:
           type: number
         requiredSystemKw:
@@ -907,9 +930,12 @@ components:
           items:
             type: number
           nullable: true
-        batteryRecommendedKwh:
-          type: number
-          nullable: true
+        battery:
+          type: object
+          additionalProperties: true
+        specVerification:
+          type: object
+          additionalProperties: true
         notes:
           type: array
           items:

@@ -15,6 +15,8 @@ export interface PVWattsParams {
   /** Optional: override geocoded coords with the actual array location */
   arrayLat?: number | null;
   arrayLon?: number | null;
+  propertyLat?: number | null;
+  propertyLon?: number | null;
 }
 
 export interface PVWattsResult {
@@ -109,6 +111,8 @@ export async function fetchPVWatts(params: PVWattsParams): Promise<PVWattsResult
   let coords: { lat: number; lon: number } | null =
     (typeof params.arrayLat === "number" && typeof params.arrayLon === "number")
       ? { lat: params.arrayLat, lon: params.arrayLon }
+      : (typeof params.propertyLat === "number" && typeof params.propertyLon === "number")
+      ? { lat: params.propertyLat, lon: params.propertyLon }
       : null;
   if (!coords) {
     const result = await geocodeAddress({
@@ -184,7 +188,10 @@ export async function fetchPVWatts(params: PVWattsParams): Promise<PVWattsResult
 
     if (
       !acMonthly || acMonthly.length !== 12 ||
-      acAnnual == null || solradAnnual == null || capacityFactor == null
+      acAnnual == null || !Number.isFinite(acAnnual) || acAnnual <= 0 ||
+      solradAnnual == null || !Number.isFinite(solradAnnual) || solradAnnual <= 0 ||
+      capacityFactor == null || !Number.isFinite(capacityFactor) ||
+      !acMonthly.every((value) => Number.isFinite(value) && value >= 0)
     ) {
       logger.warn({ outputs }, "PVWatts response incomplete — using fallback");
       return null;

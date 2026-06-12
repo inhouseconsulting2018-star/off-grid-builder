@@ -84,7 +84,9 @@ router.get("/geocode/suggest", async (req, res): Promise<void> => {
           s.streetAddress &&
           s.city &&
           s.state.length === 2 &&
-          /^\d{5}$/.test(s.zip),
+          /^\d{5}$/.test(s.zip) &&
+          Number.isFinite(s.lat) &&
+          Number.isFinite(s.lon),
       );
 
     res.json({ suggestions });

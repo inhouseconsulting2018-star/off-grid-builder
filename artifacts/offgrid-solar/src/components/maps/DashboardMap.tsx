@@ -101,10 +101,10 @@ async function geocodeOne(
 
   try {
     const data = await geocodeAddress(p);
-    const accuracyLabel = data.accuracy === "exact" ? "Exact street address"
-      : data.accuracy === "zip" ? "ZIP code approximation"
+    const accuracyLabel = data.accuracy === "exact_address" ? "Exact street address"
+      : data.accuracy === "approximate_zip" ? "ZIP code approximation"
       : "City/state approximation";
-    const result = { lat: data.lat, lng: data.lon, fallback: data.accuracy !== "exact", accuracyLabel };
+    const result = { lat: data.lat, lng: data.lon, fallback: data.accuracy !== "exact_address", accuracyLabel };
     writeCache(key, result);
     return result;
   } catch { /* fall through */ }

@@ -6,25 +6,20 @@ manufacturer specs, electrical one-lines, structural review, and interconnection
 
 ## Panel And Array Sizing
 
-Grid-tied and hybrid annual-offset sizing:
+All MVP proposal sizing uses the required production factor and rounds up to
+whole panels:
 
 ```text
-dailyLoadKwh = annualLoadKwh / 365
-arrayDcKwBeforeLosses = dailyLoadKwh / annualPeakSunHours
-adjustedArrayDcKw = arrayDcKwBeforeLosses / annualEnergyLossMultiplier * designFactor
-panelCount = ceil(adjustedArrayDcKw * 1000 / panelWattage)
+performanceFactor = 0.78
+defaultPanelWattage = 440
+requiredSystemKw = annualLoadKwh / peakSunHours / 365 / performanceFactor
+panelCount = ceil(requiredSystemKw * 1000 / panelWattage)
+finalSystemKw = panelCount * panelWattage / 1000
+annualProductionKwh = finalSystemKw * peakSunHours * 365 * performanceFactor
 ```
 
-Off-grid sizing uses winter design sun instead of annual-average sun:
-
-```text
-winterDesignPsh = annualPeakSunHours * 0.65
-winterDesignPshSnowCountry = annualPeakSunHours * 0.55
-arrayDcKwBeforeLosses = dailyLoadKwh / winterDesignPsh
-```
-
-This avoids the old unrealistic behavior where off-grid systems were sized from
-sunny annual averages and then given only a small oversize margin.
+Battery, inverter, cost, and site-warning calculations remain separate from this
+canonical solar array formula.
 
 ## Losses
 
@@ -62,12 +57,14 @@ global settings.
 
 ## Peak Sun Hours
 
-NREL PVWatts v8 data is preferred when `PVWATTS_API_KEY` is configured. The
-calculation engine calls PVWatts with:
+NREL PVWatts v8 data is preferred when `NREL_API_KEY` or `PVWATTS_API_KEY` is
+configured. PVWatts supplies local irradiance/peak-sun-hours and a monthly
+production profile. The canonical formula above remains the source of truth for
+final annual production.
 
 ```text
-system_capacity = adjustedArrayDcKw
-losses = shadeLossPct + wireLossPct + dirtLossPct + mismatchLossPct
+system_capacity = 1 kW reference
+losses = 22%
 array_type = roof/open-rack/tracking based on installation type
 tilt = roofPitch or named tilt default
 azimuth = roofDirection
@@ -75,18 +72,18 @@ lat/lon = array coordinates, geocoded project address, or state centroid fallbac
 timeframe = monthly
 ```
 
-PVWatts returns monthly AC production, annual AC production, monthly solar
-radiation, annual solar radiation, and capacity factor. The engine replaces the
-fallback annual production and peak sun hours with those values when the API
-succeeds.
+PVWatts returns monthly AC production, monthly solar radiation, annual solar
+radiation, and capacity factor. The engine uses annual solar radiation as peak
+sun hours, then normalizes the monthly profile to the formula-derived annual
+production.
 
 If the API key is missing, geocoding fails, or PVWatts returns an error, the
 engine keeps the state PSH production estimate and creates a conservative
 12-month seasonal production split so reports still have monthly estimates.
 
 State peak sun hours are annual average fallbacks for preliminary estimates.
-Off-grid designs convert annual PSH to a winter design basis because standalone
-systems are constrained by the weak month.
+California's required fallback is 5.5 peak sun hours. The UI and report label
+the source as API or regional fallback.
 
 ## Inverter Sizing
 
@@ -166,16 +163,14 @@ totalBatteryKwh = usableBatteryKwh / (depthOfDischargePct / 100)
 
 ## Production And Payback
 
-Fallback annual production:
+Annual production:
 
 ```text
-yearlyProductionKwh = adjustedArrayDcKw
-                    * annualPeakSunHours
+yearlyProductionKwh = finalSystemKw
+                    * peakSunHours
                     * 365
-                    * annualEnergyLossMultiplier
+                    * 0.78
 ```
-
-PVWatts production replaces the fallback when available.
 
 Fallback monthly production:
 
