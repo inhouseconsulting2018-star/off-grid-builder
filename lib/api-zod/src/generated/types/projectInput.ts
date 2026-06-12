@@ -20,7 +20,7 @@ export interface ProjectInput {
   zip: string;
   installationType: ProjectInputInstallationType;
   systemType: ProjectInputSystemType;
-  /** @minimum 0 */
+  /** @exclusiveMinimum 0 */
   annualKwh: number;
   /** @minimum 0 */
   monthlyBill: number;

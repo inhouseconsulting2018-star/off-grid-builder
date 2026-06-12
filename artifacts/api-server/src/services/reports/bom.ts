@@ -255,6 +255,7 @@ export function generateBom(p: BomInputs): BomItem[] {
   // ── 1. Solar Panels ────────────────────────────────────────────────────────
   const panelCatalog = PANELS[tier] ?? PANELS["mid-range"];
   const primaryPanel = panelCatalog[0];
+  const designPanelWattage = p.panelWattage ?? primaryPanel.wattage;
   const altPanels    = panelCatalog.slice(1).map(alt => ({
     brand: alt.brand, model: alt.model,
     specs: `${alt.wattage}W, ${alt.eff}% eff, Voc ${alt.voc}V`,
@@ -268,8 +269,8 @@ export function generateBom(p: BomInputs): BomItem[] {
     primaryPanel.brand, primaryPanel.link,
     `${p.numPanels} panels`,
     primaryPanel.priceLow, primaryPanel.priceHigh, p.numPanels,
-    `${p.numPanels} × ${primaryPanel.wattage}W = ${(p.numPanels * primaryPanel.wattage / 1000).toFixed(1)} kW DC array. ` +
-    `Covers your ${p.adjustedArraySizeKw.toFixed(2)} kW adjusted system size with standard panel-to-panel string wiring.`,
+    `Proposal sizing uses ${p.numPanels} × ${designPanelWattage}W = ${p.adjustedArraySizeKw.toFixed(2)} kW DC. ` +
+    `This catalog model is ${primaryPanel.wattage}W, so final procurement quantities must be recalculated if it replaces the ${designPanelWattage}W design basis.`,
     altPanels,
   ));
 

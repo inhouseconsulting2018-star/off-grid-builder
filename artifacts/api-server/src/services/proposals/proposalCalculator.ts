@@ -17,14 +17,14 @@
 
 // ─── Core constants ───────────────────────────────────────────────────────────
 
-export const EFFICIENCY_FACTOR = 0.86;     // AC derate: PVWatts default-style 14% total losses
+export const EFFICIENCY_FACTOR = 0.78;     // Required MVP production factor
 export const DAYS_PER_YEAR = 365;
 export const DEFAULT_PEAK_SUN_HOURS = 4.7; // national fallback when state is unknown
 
 // State-level peak sun hour estimates (annual average, optimally-tilted surface)
 // Source: NREL PVWatts state averages. Overridden at runtime by live PVWatts data.
 export const STATE_PSH: Record<string, number> = {
-  AK: 3.5, AL: 5.0, AR: 5.0, AZ: 6.5, CA: 5.8, CO: 5.7,
+  AK: 3.5, AL: 5.0, AR: 5.0, AZ: 6.5, CA: 5.5, CO: 5.7,
   CT: 4.5, DE: 4.6, FL: 5.3, GA: 5.2, HI: 5.8, IA: 4.6,
   ID: 5.0, IL: 4.5, IN: 4.5, KS: 5.0, KY: 4.5, LA: 5.2,
   MA: 4.5, MD: 4.7, ME: 4.4, MI: 4.3, MN: 4.5, MO: 4.7,
@@ -74,7 +74,7 @@ export const PANEL_CATALOG: Record<string, PanelSpec> = {
   },
   mono_perc: {
     label: "Monocrystalline PERC",
-    wattage: 415,
+    wattage: 440,
     efficiencyPct: 21.0,
     tempCoeffPct: -0.35,
     bifacial: false,
@@ -130,7 +130,7 @@ export const PANEL_CATALOG: Record<string, PanelSpec> = {
 };
 
 export const DEFAULT_PANEL_TYPE = "mono_perc";
-export const DEFAULT_PANEL_W = PANEL_CATALOG[DEFAULT_PANEL_TYPE]!.wattage; // 415W
+export const DEFAULT_PANEL_W = PANEL_CATALOG[DEFAULT_PANEL_TYPE]!.wattage; // 440W
 
 // ─── Battery Catalog ──────────────────────────────────────────────────────────
 
@@ -251,8 +251,7 @@ export const DEFAULT_BATTERY_TYPE = "lifepo4";
  * Formula:
  *   requiredDcKw = annualLoadKwh ÷ (peakSunHours × 365 × acDerate)
  *
- * acDerate defaults to 0.86, matching a common residential PVWatts-style loss
- * stack near 14% total losses (inverter, wiring, soiling, mismatch, temperature).
+ * acDerate defaults to the MVP's required 0.78 production factor.
  */
 export function calcRequiredSystemKw(
   annualKwh: number,
@@ -377,7 +376,7 @@ export function runProposalCalc(
   const requiredKwRaw = calcRequiredSystemKw(annualKwh, psh, efficiency);
   const panelCount = calcPanelCount(requiredKwRaw, panel.wattage);
   const finalSystemKw = calcFinalSystemKw(panelCount, panel.wattage);
-  const estimatedAnnualKwh = calcAnnualProduction(finalSystemKw, psh, efficiency, panel.bifacialGainPct);
+  const estimatedAnnualKwh = calcAnnualProduction(finalSystemKw, psh, efficiency);
   const estimatedMonthlyKwh = Math.round(estimatedAnnualKwh / 12);
   const offsetPct = Math.round((estimatedAnnualKwh / annualKwh) * 100);
   const battery = calcBatteryRecommendation(annualKwh, batteryTypeKey);
@@ -401,13 +400,10 @@ export function runProposalCalc(
 
 /**
  * TEST SCENARIO — run with explicit 440W/5.5PSH formula inputs.
- * Note: spec was written assuming 440W panels. None of our catalog types is 440W,
- * so verification uses the raw formula functions directly.
- *
  * Expected:
- *   Required  ≈ 6.95 kW    Panels  = 16
- *   Final     ≈ 7.04 kW    Annual  ≈ 12,154 kWh
- *   Monthly   ≈ 1,013 kWh  Offset  ≈ 101%
+ *   Required  ≈ 7.66 kW    Panels  = 18
+ *   Final     ≈ 7.92 kW    Annual  ≈ 12,402 kWh
+ *   Monthly   ≈ 1,033 kWh  Offset  ≈ 103%
  *   Battery   ≈ 16.4 kWh usable
  */
 export const TEST_SCENARIO = {
@@ -418,14 +414,14 @@ export const TEST_SCENARIO = {
   annualKwh: 12000,
   psh: 5.5,
   efficiency: EFFICIENCY_FACTOR,
-  panelW: 440, // spec value — not in catalog
+  panelW: 440,
   expected: {
-    requiredSystemKw: 6.95,
-    panelCount: 16,
-    finalSystemKw: 7.04,
-    estimatedAnnualKwh: 12154,
-    estimatedMonthlyKwh: 1013,
-    offsetPct: 101,
+    requiredSystemKw: 7.66,
+    panelCount: 18,
+    finalSystemKw: 7.92,
+    estimatedAnnualKwh: 12402,
+    estimatedMonthlyKwh: 1033,
+    offsetPct: 103,
     batteryUsableKwh: 16.4,
   },
 } as const;

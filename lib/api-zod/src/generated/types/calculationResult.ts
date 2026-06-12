@@ -5,10 +5,16 @@
  * OffGrid Solar Builder API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CalculationResultEfficiencyFactor } from "./calculationResultEfficiencyFactor";
+import type { CalculationResultPeakSunHoursSource } from "./calculationResultPeakSunHoursSource";
 
 export interface CalculationResult {
   dailyKwh: number;
   peakSunHours: number;
+  peakSunHoursSource: CalculationResultPeakSunHoursSource;
+  panelWattage: number;
+  efficiencyFactor: CalculationResultEfficiencyFactor;
+  requiredSystemSizeKw: number;
   arraySizeKw: number;
   numPanels: number;
   adjustedArraySizeKw: number;

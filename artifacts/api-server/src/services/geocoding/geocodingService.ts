@@ -20,12 +20,24 @@ export async function nominatimSearch(params: Record<string, string>): Promise<u
   url.searchParams.set("countrycodes", "us");
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
-  const res = await fetch(url.toString(), { headers: NOMINATIM_HEADERS });
-  if (!res.ok) {
-    logger.warn({ status: res.status }, "Nominatim request failed");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const res = await fetch(url.toString(), {
+      headers: NOMINATIM_HEADERS,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      logger.warn({ status: res.status }, "Nominatim request failed");
+      return [];
+    }
+    return await res.json() as unknown[];
+  } catch (err) {
+    logger.warn({ err }, "Nominatim request unavailable");
     return [];
+  } finally {
+    clearTimeout(timeout);
   }
-  return res.json() as Promise<unknown[]>;
 }
 
 export interface GeoResult {

@@ -28,58 +28,6 @@ import {
 
 const router: IRouter = Router();
 
-// ── Helper: geocode a project row and persist lat/lon/locationAccuracy ─────────
-async function geocodeAndPersist(project: {
-  id: number;
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
-  useManualCoords: boolean;
-  lat: number | null;
-  lon: number | null;
-  locationAccuracy?: string | null;
-}): Promise<void> {
-  if (project.useManualCoords) {
-    if (project.lat != null && project.lon != null && project.locationAccuracy !== "manual_coordinates") {
-      await db.update(projectsTable).set({ locationAccuracy: "manual_coordinates" }).where(eq(projectsTable.id, project.id));
-    }
-    return;
-  }
-  if (!project.city || !project.state) return;
-
-  try {
-    const result = await geocodeAddress({
-      address: project.address,
-      city: project.city,
-      state: project.state,
-      zip: project.zip,
-    });
-
-    if (result) {
-      if (
-        (project.locationAccuracy === "exact_address" || project.locationAccuracy === "exact") &&
-        project.lat != null &&
-        project.lon != null &&
-        result.accuracy !== "exact_address"
-      ) {
-        logger.info({ id: project.id, attemptedAccuracy: result.accuracy }, "Preserving existing exact geocode");
-        return;
-      }
-      await db
-        .update(projectsTable)
-        .set({ lat: result.lat, lon: result.lon, locationAccuracy: result.accuracy })
-        .where(eq(projectsTable.id, project.id));
-      logger.info({ id: project.id, accuracy: result.accuracy }, "Project geocoded");
-    } else {
-      await db.update(projectsTable).set({ locationAccuracy: "failed" }).where(eq(projectsTable.id, project.id));
-    }
-  } catch (err) {
-    await db.update(projectsTable).set({ locationAccuracy: "failed" }).where(eq(projectsTable.id, project.id));
-    logger.warn({ err, id: project.id }, "Geocode failed — project saved without coords");
-  }
-}
-
 function range(value: unknown, spreadPct: number, minSpread: number, decimals = 0) {
   const numeric = typeof value === "number" && Number.isFinite(value) ? value : 0;
   const spread = Math.max(Math.abs(numeric) * spreadPct, minSpread);
@@ -180,30 +128,79 @@ router.post("/projects", async (req, res): Promise<void> => {
     return;
   }
 
+  const input = parsed.data;
+  const address = input.address.trim();
+  const city = input.city.trim();
+  const state = input.state.trim().toUpperCase();
+  const zip = input.zip.trim();
+  if (address.length < 3 || !city || !/^[A-Z]{2}$/.test(state) || !/^\d{5}$/.test(zip)) {
+    res.status(400).json({ error: "Enter a valid street address, city, 2-letter state, and 5-digit ZIP code" });
+    return;
+  }
+  if (!Number.isFinite(input.annualKwh) || input.annualKwh <= 0) {
+    res.status(400).json({ error: "Annual kWh usage must be a positive number" });
+    return;
+  }
+
   const accessToken = randomUUID();
+  let location: {
+    lat: number | null;
+    lon: number | null;
+    locationAccuracy: string;
+  };
+
+  if (
+    input.useManualCoords &&
+    input.lat != null &&
+    input.lon != null &&
+    input.lat >= -90 &&
+    input.lat <= 90 &&
+    input.lon >= -180 &&
+    input.lon <= 180
+  ) {
+    location = {
+      lat: input.lat,
+      lon: input.lon,
+      locationAccuracy: "manual_coordinates",
+    };
+  } else if (
+    input.locationAccuracy === "exact_address" &&
+    input.lat != null &&
+    input.lon != null &&
+    input.lat >= -90 &&
+    input.lat <= 90 &&
+    input.lon >= -180 &&
+    input.lon <= 180
+  ) {
+    location = {
+      lat: input.lat,
+      lon: input.lon,
+      locationAccuracy: "exact_address",
+    };
+  } else {
+    try {
+      const result = await geocodeAddress({ address, city, state, zip });
+      location = result
+        ? { lat: result.lat, lon: result.lon, locationAccuracy: result.accuracy }
+        : { lat: null, lon: null, locationAccuracy: "failed" };
+    } catch (err) {
+      logger.warn({ err, address, city, state, zip }, "Project geocode failed during creation");
+      location = { lat: null, lon: null, locationAccuracy: "failed" };
+    }
+  }
 
   const [project] = await db
     .insert(projectsTable)
     .values({
-      ...parsed.data,
+      ...input,
+      address,
+      city,
+      state,
+      zip,
       accessToken,
-      ...(parsed.data.useManualCoords && parsed.data.lat != null && parsed.data.lon != null
-        ? { locationAccuracy: "manual_coordinates" }
-        : {}),
+      ...location,
     })
     .returning();
-
-  void geocodeAndPersist({
-    id: project.id,
-    address: project.address,
-    city: project.city,
-    state: project.state,
-    zip: project.zip,
-    useManualCoords: project.useManualCoords,
-    lat: project.lat,
-    lon: project.lon,
-    locationAccuracy: project.locationAccuracy,
-  });
 
   // Return the full row including accessToken — this is the ONLY time it is disclosed.
   res.status(201).json(project);
@@ -314,14 +311,73 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  if (
+    parsed.data.annualKwh !== undefined &&
+    (!Number.isFinite(parsed.data.annualKwh) || parsed.data.annualKwh <= 0)
+  ) {
+    res.status(400).json({ error: "Annual kWh usage must be a positive number" });
+    return;
+  }
+
+  const body = parsed.data as Record<string, unknown>;
+  const addressChanged = "address" in body || "city" in body || "state" in body || "zip" in body;
+  const manualModeChanged = "useManualCoords" in body || "lat" in body || "lon" in body;
+  const nextAddress = (parsed.data.address ?? existingProject.address).trim();
+  const nextCity = (parsed.data.city ?? existingProject.city).trim();
+  const nextState = (parsed.data.state ?? existingProject.state).trim().toUpperCase();
+  const nextZip = (parsed.data.zip ?? existingProject.zip).trim();
+  const nextManual = parsed.data.useManualCoords ?? existingProject.useManualCoords;
+  const nextLat = parsed.data.lat ?? existingProject.lat;
+  const nextLon = parsed.data.lon ?? existingProject.lon;
+  if (
+    nextManual &&
+    (
+      nextLat == null ||
+      nextLon == null ||
+      nextLat < -90 ||
+      nextLat > 90 ||
+      nextLon < -180 ||
+      nextLon > 180
+    )
+  ) {
+    res.status(400).json({ error: "Manual coordinates must include a valid latitude and longitude" });
+    return;
+  }
+
+  let locationUpdate: {
+    lat?: number | null;
+    lon?: number | null;
+    locationAccuracy?: string;
+  } = {};
+  if ((addressChanged || manualModeChanged) && nextManual && nextLat != null && nextLon != null) {
+    locationUpdate = { lat: nextLat, lon: nextLon, locationAccuracy: "manual_coordinates" };
+  } else if (addressChanged || (manualModeChanged && !nextManual)) {
+    try {
+      const result = await geocodeAddress({
+        address: nextAddress,
+        city: nextCity,
+        state: nextState,
+        zip: nextZip,
+      });
+      locationUpdate = result
+        ? { lat: result.lat, lon: result.lon, locationAccuracy: result.accuracy }
+        : { lat: null, lon: null, locationAccuracy: "failed" };
+    } catch (err) {
+      logger.warn({ err, id: existingProject.id }, "Project geocode failed during update");
+      locationUpdate = { lat: null, lon: null, locationAccuracy: "failed" };
+    }
+  }
 
   const [project] = await db
     .update(projectsTable)
     .set({
       ...parsed.data,
-      ...(parsed.data.useManualCoords && parsed.data.lat != null && parsed.data.lon != null
-        ? { locationAccuracy: "manual_coordinates" }
-        : {}),
+      ...(parsed.data.address !== undefined ? { address: nextAddress } : {}),
+      ...(parsed.data.city !== undefined ? { city: nextCity } : {}),
+      ...(parsed.data.state !== undefined ? { state: nextState } : {}),
+      ...(parsed.data.zip !== undefined ? { zip: nextZip } : {}),
+      ...locationUpdate,
+      calculationResult: null,
     })
     .where(eq(projectsTable.id, params.data.id))
     .returning();
@@ -329,23 +385,6 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
   if (!project) {
     res.status(404).json({ error: "Project not found" });
     return;
-  }
-
-  const body = parsed.data as Record<string, unknown>;
-  const addressChanged = "address" in body || "city" in body || "state" in body || "zip" in body;
-  const manualDisabled = "useManualCoords" in body && body["useManualCoords"] === false;
-  if ((addressChanged || manualDisabled) && !project.useManualCoords) {
-    void geocodeAndPersist({
-      id: project.id,
-      address: project.address,
-      city: project.city,
-      state: project.state,
-      zip: project.zip,
-      useManualCoords: project.useManualCoords,
-      lat: project.lat,
-      lon: project.lon,
-      locationAccuracy: project.locationAccuracy,
-    });
   }
 
   res.json(sanitizeProject(project));
@@ -477,6 +516,8 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
       roofDirection: project.roofDirection,
       arrayLat: project.arrayLat,
       arrayLon: project.arrayLon,
+      lat: project.lat,
+      lon: project.lon,
     },
     settingsRow,
   );

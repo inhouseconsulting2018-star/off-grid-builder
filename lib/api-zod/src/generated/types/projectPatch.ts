@@ -20,7 +20,7 @@ export interface ProjectPatch {
   zip?: string;
   installationType?: ProjectPatchInstallationType;
   systemType?: ProjectPatchSystemType;
-  /** @minimum 0 */
+  /** @exclusiveMinimum 0 */
   annualKwh?: number;
   /** @minimum 0 */
   monthlyBill?: number;

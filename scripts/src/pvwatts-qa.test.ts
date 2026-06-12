@@ -49,7 +49,7 @@ globalThis.fetch = async (input: string | URL | Request) => {
 
 const settings = {
   id: 1,
-  panelWattage: 400,
+  panelWattage: 440,
   baseSystemLossPct: 14,
   inverterLossPct: 4,
   wireLossPct: 2,
@@ -131,10 +131,17 @@ await run("California residential property uses PVWatts roof mount production", 
   const result = await runCalculationsWithPVWatts(baseProject(), settings);
 
   assert.equal(result.pvwattsSource, "pvwatts");
-  assert.equal(result.yearlyProductionKwh, 8940);
+  assert.equal(result.peakSunHoursSource, "api");
+  assert.equal(result.peakSunHours, 5.47);
+  assert.equal(result.panelWattage, 440);
+  assert.equal(result.numPanels, 17);
+  assert.equal(result.adjustedArraySizeKw, 7.48);
+  assert.equal(result.yearlyProductionKwh, 11648.67);
   assert.equal(result.pvwattsMonthlyKwh?.length, 12);
-  assert.equal(result.estimatedYearlySavings, 3129);
+  assert.equal(result.pvwattsMonthlyKwh?.reduce((sum, value) => sum + value, 0), 11649);
+  assert.equal(result.estimatedYearlySavings, 3850);
   assert.equal(lastPvwattsUrl?.searchParams.get("array_type"), "1");
+  assert.equal(lastPvwattsUrl?.searchParams.get("system_capacity"), "1.00");
   assert.equal(lastPvwattsUrl?.searchParams.get("azimuth") != null, true);
 });
 
@@ -174,7 +181,7 @@ await run("Hybrid system uses PVWatts production in savings and ROI", async () =
   );
 
   assert.equal(result.pvwattsSource, "pvwatts");
-  assert.equal(result.estimatedYearlySavings, 3129);
+  assert.equal(result.estimatedYearlySavings, 4900);
   assert.ok(result.paybackYears && result.paybackYears > 0);
 });
 
@@ -192,6 +199,7 @@ await run("Invalid geocode falls back to approximate state assumptions without c
   );
 
   assert.equal(result.pvwattsSource, "fallback");
+  assert.equal(result.peakSunHoursSource, "fallback");
   assert.ok(Array.isArray(result.notes));
 });
 

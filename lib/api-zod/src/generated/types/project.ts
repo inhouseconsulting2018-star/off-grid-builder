@@ -17,7 +17,9 @@ export interface Project {
   name: string;
   address: string;
   city: string;
+  /** @pattern ^[A-Za-z]{2}$ */
   state: string;
+  /** @pattern ^\d{5}$ */
   zip: string;
   installationType: ProjectInstallationType;
   systemType: ProjectSystemType;

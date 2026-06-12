@@ -74,7 +74,8 @@ interface EstimateInput {
   monthlyKwh?: number | null;
   panelType?: string;
   batteryType?: string;
-  efficiencyFactor?: number;
+  lat?: number | null;
+  lon?: number | null;
   // TODO: future — roofAzimuth, roofTiltDeg, shadingPct, utilityRate, financeType
 }
 
@@ -82,11 +83,11 @@ function parseInput(body: unknown): { ok: true; data: EstimateInput } | { ok: fa
   if (!body || typeof body !== "object") return { ok: false, error: "Request body required" };
   const b = body as Record<string, unknown>;
 
-  if (typeof b["address"] !== "string" || !b["address"])
+  if (typeof b["address"] !== "string" || b["address"].trim().length < 3)
     return { ok: false, error: "address is required" };
-  if (typeof b["city"] !== "string" || !b["city"])
+  if (typeof b["city"] !== "string" || !b["city"].trim())
     return { ok: false, error: "city is required" };
-  if (typeof b["state"] !== "string" || b["state"].length !== 2)
+  if (typeof b["state"] !== "string" || !/^[A-Za-z]{2}$/.test(b["state"].trim()))
     return { ok: false, error: "state must be a 2-letter code (e.g. CA)" };
   if (typeof b["zip"] !== "string" || !/^\d{5}$/.test(b["zip"]))
     return { ok: false, error: "zip must be a 5-digit ZIP code" };
@@ -105,16 +106,16 @@ function parseInput(body: unknown): { ok: true; data: EstimateInput } | { ok: fa
   return {
     ok: true,
     data: {
-      address: b["address"] as string,
-      city: b["city"] as string,
-      state: (b["state"] as string).toUpperCase(),
+      address: (b["address"] as string).trim(),
+      city: (b["city"] as string).trim(),
+      state: (b["state"] as string).trim().toUpperCase(),
       zip: b["zip"] as string,
       annualKwh: typeof b["annualKwh"] === "number" ? b["annualKwh"] : null,
       monthlyKwh: typeof b["monthlyKwh"] === "number" ? b["monthlyKwh"] : null,
       panelType: typeof b["panelType"] === "string" ? b["panelType"] : DEFAULT_PANEL_TYPE,
       batteryType: typeof b["batteryType"] === "string" ? b["batteryType"] : DEFAULT_BATTERY_TYPE,
-      efficiencyFactor:
-        typeof b["efficiencyFactor"] === "number" ? b["efficiencyFactor"] : EFFICIENCY_FACTOR,
+      lat: typeof b["lat"] === "number" && Number.isFinite(b["lat"]) ? b["lat"] : null,
+      lon: typeof b["lon"] === "number" && Number.isFinite(b["lon"]) ? b["lon"] : null,
     },
   };
 }
@@ -129,7 +130,7 @@ router.post("/proposals/estimate", requireAdminToken, async (req, res): Promise<
   }
 
   const input = parsed.data;
-  const eff = input.efficiencyFactor ?? EFFICIENCY_FACTOR;
+  const eff = EFFICIENCY_FACTOR;
   const panelType = input.panelType ?? DEFAULT_PANEL_TYPE;
   const batteryType = input.batteryType ?? DEFAULT_BATTERY_TYPE;
 
@@ -142,7 +143,7 @@ router.post("/proposals/estimate", requireAdminToken, async (req, res): Promise<
   // ── Resolve peak sun hours ──────────────────────────────────────────────
   // Priority: 1) NREL PVWatts (real TMY data)  2) State average  3) Default
   let psh = STATE_PSH[input.state] ?? DEFAULT_PEAK_SUN_HOURS;
-  let pshSource: "pvwatts" | "state" | "default" =
+  let pshSourceDetail: "pvwatts" | "state" | "default" =
     STATE_PSH[input.state] != null ? "state" : "default";
   let pvwattsMonthlyKwh: number[] | null = null;
   let pvwattsAnnualAt5kw: number | null = null;
@@ -159,10 +160,12 @@ router.post("/proposals/estimate", requireAdminToken, async (req, res): Promise<
       city: input.city,
       state: input.state,
       zip: input.zip,
+      propertyLat: input.lat,
+      propertyLon: input.lon,
     });
     if (pv) {
       psh = pv.solradAnnual;
-      pshSource = "pvwatts";
+      pshSourceDetail = "pvwatts";
       pvwattsMonthlyKwh = pv.acMonthly;
       pvwattsAnnualAt5kw = pv.acAnnual;
       logger.info({ psh, zip: input.zip, source: "pvwatts" }, "Proposal: irradiance resolved");
@@ -179,8 +182,15 @@ router.post("/proposals/estimate", requireAdminToken, async (req, res): Promise<
   // Bifacial gain is also applied to the monthly values.
   let scaledMonthlyKwh: number[] | null = null;
   if (pvwattsMonthlyKwh && pvwattsAnnualAt5kw && pvwattsAnnualAt5kw > 0) {
-    const scale = (calc.finalSystemKw / 5) * (1 + calc.panel.bifacialGainPct / 100);
-    scaledMonthlyKwh = pvwattsMonthlyKwh.map((v) => Math.round(v * scale));
+    const total = pvwattsMonthlyKwh.reduce((sum, value) => sum + Math.max(0, value), 0);
+    if (total > 0) {
+      scaledMonthlyKwh = pvwattsMonthlyKwh.map((value) =>
+        Math.round((Math.max(0, value) / total) * calc.estimatedAnnualKwh)
+      );
+      scaledMonthlyKwh[11] +=
+        calc.estimatedAnnualKwh -
+        scaledMonthlyKwh.reduce((sum, value) => sum + value, 0);
+    }
   }
 
   // ── Spec verification (5.5 PSH, 440W) for the formula-check panel ──────
@@ -198,12 +208,15 @@ router.post("/proposals/estimate", requireAdminToken, async (req, res): Promise<
     city: input.city,
     state: input.state,
     zip: input.zip,
+    lat: input.lat,
+    lon: input.lon,
     annualKwhUsage: Math.round(annualKwh),
     monthlyKwhUsage: Math.round(annualKwh / 12),
 
     // Irradiance
     peakSunHours: Math.round(psh * 100) / 100,
-    peakSunHoursSource: pshSource,
+    peakSunHoursSource: pshSourceDetail === "pvwatts" ? "api" : "fallback",
+    peakSunHoursSourceDetail: pshSourceDetail,
 
     // Panel details (from catalog)
     panel: {
@@ -258,7 +271,7 @@ router.post("/proposals/estimate", requireAdminToken, async (req, res): Promise<
       "Final design requires on-site roof measurements, shading analysis, utility bill review, and electrical panel inspection.",
       "System size may change after engineering review, local code compliance, and utility interconnection requirements.",
       "Battery sizing is based on annual usage rules. Actual backup time depends on which loads are connected.",
-      "Production assumes a south-facing roof at 20° tilt with standard losses. Results vary with roof orientation and shading.",
+      "Production uses the required 0.78 performance factor. Results vary with roof orientation, shading, weather, and installation quality.",
       calc.panel.bifacial
         ? `Bifacial gain of ${calc.panel.bifacialGainPct}% is applied. Actual gain depends on mounting height, albedo (ground reflectivity), and local conditions.`
         : null,

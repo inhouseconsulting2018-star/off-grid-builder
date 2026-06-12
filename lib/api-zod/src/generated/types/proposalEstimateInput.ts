@@ -17,8 +17,10 @@ export interface ProposalEstimateInput {
   zip: string;
   annualKwh?: number | null;
   monthlyKwh?: number | null;
-  panelWattage?: number;
-  efficiencyFactor?: number;
-  includeBattery?: boolean;
-  batteryBackupHours?: number;
+  /** @nullable */
+  lat?: number | null;
+  /** @nullable */
+  lon?: number | null;
+  panelType?: string;
+  batteryType?: string;
 }

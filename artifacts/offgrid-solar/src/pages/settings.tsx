@@ -198,7 +198,7 @@ function AdminSettings({ adminToken, onExit }: { adminToken: string; onExit: () 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
-      panelWattage: 400,
+      panelWattage: 440,
       baseSystemLossPct: 10,
       inverterLossPct: 5,
       wireLossPct: 2,

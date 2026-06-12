@@ -44,6 +44,7 @@ router.get("/geocode/suggest", async (req, res): Promise<void> => {
       town?: string;
       village?: string;
       state_code?: string;
+      "ISO3166-2-lvl4"?: string;
       postcode?: string;
     }
     interface NominatimRow {
@@ -54,15 +55,16 @@ router.get("/geocode/suggest", async (req, res): Promise<void> => {
     }
 
     const suggestions = (raw as NominatimRow[])
-      .filter((r) => r.address?.postcode && r.address?.state_code)
+      .filter((r) => r.address?.postcode && (r.address?.state_code || r.address?.["ISO3166-2-lvl4"]))
       .map((r) => {
         const a = r.address!;
+        const stateCode = a.state_code ?? a["ISO3166-2-lvl4"]?.split("-").pop() ?? "";
         const streetParts = [a.house_number, a.road].filter(Boolean);
         return {
           displayName: r.display_name ?? "",
           streetAddress: streetParts.join(" "),
           city: a.city ?? a.town ?? a.village ?? "",
-          state: (a.state_code ?? "").toUpperCase().slice(0, 2),
+          state: stateCode.toUpperCase().slice(0, 2),
           zip: (a.postcode ?? "").slice(0, 5),
           lat: parseFloat(r.lat ?? "0"),
           lon: parseFloat(r.lon ?? "0"),
@@ -73,7 +75,9 @@ router.get("/geocode/suggest", async (req, res): Promise<void> => {
           s.streetAddress &&
           s.city &&
           s.state.length === 2 &&
-          /^\d{5}$/.test(s.zip),
+          /^\d{5}$/.test(s.zip) &&
+          Number.isFinite(s.lat) &&
+          Number.isFinite(s.lon),
       );
 
     res.json({ suggestions });

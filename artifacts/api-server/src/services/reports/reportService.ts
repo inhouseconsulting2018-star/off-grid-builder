@@ -73,6 +73,7 @@ export function buildPaidReport(project: Project) {
     installationType: project.installationType,
     budgetTier: project.budgetTier,
     numPanels: calc.numPanels,
+    panelWattage: calc.panelWattage ?? 440,
     adjustedArraySizeKw: calc.adjustedArraySizeKw,
     inverterSizeKw: calc.inverterSizeKw,
     totalBatteryBankKwh: calc.totalBatteryBankKwh,
@@ -162,10 +163,22 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
       </div>
       <div class="grid">
         <div class="metric"><span>Array</span><strong>${calc.adjustedArraySizeKw.toFixed(2)} kW DC</strong></div>
-        <div class="metric"><span>Panels</span><strong>${calc.numPanels}</strong></div>
+        <div class="metric"><span>Panels</span><strong>${calc.numPanels} x ${calc.panelWattage ?? 440}W</strong></div>
         <div class="metric"><span>Annual Production</span><strong>${Math.round(annualProduction).toLocaleString()} kWh</strong></div>
         <div class="metric"><span>Payback</span><strong>${calc.paybackYears ? `${calc.paybackYears.toFixed(1)} yrs` : "N/A"}</strong></div>
       </div>
+      <h2>Estimate Inputs and Sizing</h2>
+      <table><tbody>
+        <tr><td>Full address</td><td>${escapeHtml(project.address)}, ${escapeHtml(project.city)}, ${escapeHtml(project.state)} ${escapeHtml(project.zip)}</td></tr>
+        <tr><td>Coordinates</td><td>${typeof project.lat === "number" && typeof project.lon === "number" ? `${project.lat.toFixed(5)}, ${project.lon.toFixed(5)}` : "Unavailable"}</td></tr>
+        <tr><td>Annual usage</td><td>${project.annualKwh.toLocaleString()} kWh</td></tr>
+        <tr><td>Peak sun hours</td><td>${calc.peakSunHours.toFixed(2)} hrs/day</td></tr>
+        <tr><td>Peak sun hours source</td><td>${calc.peakSunHoursSource === "api" ? "API (NREL PVWatts)" : "Regional fallback"}</td></tr>
+        <tr><td>Required system size</td><td>${(calc.requiredSystemSizeKw ?? calc.arraySizeKw).toFixed(2)} kW</td></tr>
+        <tr><td>Final system size</td><td>${calc.adjustedArraySizeKw.toFixed(2)} kW</td></tr>
+        <tr><td>Panel count and wattage</td><td>${calc.numPanels} panels x ${calc.panelWattage ?? 440}W</td></tr>
+        <tr><td>Estimated annual production</td><td>${Math.round(annualProduction).toLocaleString()} kWh</td></tr>
+      </tbody></table>
       <h2>Monthly Production</h2>
       <div class="chart">${chartBars}</div>
       <h2>Equipment List</h2>
@@ -320,7 +333,7 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   doc.fontSize(11).fillColor(GRAY).font("Helvetica")
      .text(`${project.address}, ${project.city}, ${project.state} ${project.zip}  |  ${systemLabel(project.systemType ?? "")}  |  ${mountLabel(project.installationType ?? "")}`);
   doc.fontSize(9).fillColor(GRAY)
-     .text(`Report generated: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}  •  Solar data: ${calc.pvwattsSource ?? "NREL PVWatts / state average"}`);
+     .text(`Report generated: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}  |  Solar data: ${calc.peakSunHoursSource === "api" ? "API (NREL PVWatts)" : "regional fallback"}`);
 
   doc.moveDown(1);
   const mw = (W - 18) / 4;
@@ -361,8 +374,12 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   row2("Available area",         project.availableSqft ? `${project.availableSqft.toLocaleString()} sq ft` : "—");
   row2("Array required",         calc.squareFeetRequired ? `${Math.round(calc.squareFeetRequired).toLocaleString()} sq ft` : "—");
   row2("Annual load",            project.annualKwh ? `${project.annualKwh.toLocaleString()} kWh` : "—");
+  row2("Coordinates",            typeof project.lat === "number" && typeof project.lon === "number" ? `${project.lat.toFixed(5)}, ${project.lon.toFixed(5)}` : "Unavailable");
   row2("Daily average load",     `${(calc.dailyKwh ?? 0).toFixed(1)} kWh`);
   row2("Peak sun hours",         `${(calc.peakSunHours ?? calc.designPeakSunHours ?? 0).toFixed(2)} hrs/day`);
+  row2("Sun hours source",       calc.peakSunHoursSource === "api" ? "API (NREL PVWatts)" : "Regional fallback");
+  row2("Required system size",   `${(calc.requiredSystemSizeKw ?? calc.arraySizeKw).toFixed(2)} kW DC`);
+  row2("Panel wattage",          `${calc.panelWattage ?? 440}W`);
   if (calc.batteryUsableKwh > 0) {
     row2("Backup hours target",  project.backupHours ? `${project.backupHours} hrs` : "—");
     row2("Autonomy days",        calc.batteryAutonomyDays ? `${Number(calc.batteryAutonomyDays).toFixed(1)} days` : "—");

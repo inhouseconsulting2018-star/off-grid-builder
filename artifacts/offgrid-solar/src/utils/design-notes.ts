@@ -10,6 +10,7 @@ interface NotesInputs {
   dailyKwh: number;
   adjustedArraySizeKw: number;
   numPanels: number;
+  panelWattage: number;
   peakSunHours: number;
   batteryUsableKwh: number;
   totalBatteryBankKwh: number;
@@ -38,7 +39,7 @@ export function generateDesignNotes(p: NotesInputs): DesignNote[] {
   notes.push({
     title: "Why This System Size Was Selected",
     type: "info",
-    body: `Your property uses approximately ${p.dailyKwh.toFixed(1)} kWh per day (${p.annualKwh.toLocaleString()} kWh/year). Based on ${p.peakSunHours} average peak sun hours per day for ${p.state}, a raw array of ${(p.dailyKwh / p.peakSunHours).toFixed(2)} kW is required before losses. After applying a ${p.totalSystemLossPct.toFixed(1)}% combined system loss factor, the design calls for a ${p.adjustedArraySizeKw.toFixed(2)} kW array — ${p.numPanels} panels at ~400W each — to reliably meet your annual energy needs.`,
+    body: `Your property uses approximately ${p.dailyKwh.toFixed(1)} kWh per day (${p.annualKwh.toLocaleString()} kWh/year). Using ${p.peakSunHours} peak sun hours and the required 0.78 performance factor, the design rounds up to a ${p.adjustedArraySizeKw.toFixed(2)} kW array — ${p.numPanels} panels at ${p.panelWattage}W each — to meet the preliminary annual energy target.`,
   });
 
   // 2. Battery backup explanation
@@ -75,8 +76,8 @@ export function generateDesignNotes(p: NotesInputs): DesignNote[] {
     type: "info",
     body: [
       `• Peak sun hours: ${p.peakSunHours} hrs/day (based on ${p.state} average)`,
-      `• Panel wattage: ~400W monocrystalline`,
-      `• Total system losses: ${p.totalSystemLossPct.toFixed(1)}% (inverter, wire, shade, temperature, dirt${hasBattery ? ", battery round-trip" : ""})`,
+      `• Panel wattage: ${p.panelWattage}W`,
+      `• Proposal performance factor: 0.78 (${p.totalSystemLossPct.toFixed(1)}% aggregate allowance)`,
       `• Battery depth of discharge: 80% usable capacity`,
       `• Utility rate used: $${p.utilityRatePerKwh.toFixed(3)}/kWh`,
       `• Equipment tier: ${p.budgetTier.charAt(0).toUpperCase() + p.budgetTier.slice(1)}`,

@@ -5,6 +5,11 @@
  * OffGrid Solar Builder API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProposalEstimateBattery } from "./proposalEstimateBattery";
+import type { ProposalEstimatePanel } from "./proposalEstimatePanel";
+import type { ProposalEstimatePeakSunHoursSource } from "./proposalEstimatePeakSunHoursSource";
+import type { ProposalEstimatePeakSunHoursSourceDetail } from "./proposalEstimatePeakSunHoursSourceDetail";
+import type { ProposalEstimateSpecVerification } from "./proposalEstimateSpecVerification";
 
 export interface ProposalEstimate {
   address: string;
@@ -14,9 +19,13 @@ export interface ProposalEstimate {
   annualKwhUsage: number;
   monthlyKwhUsage: number;
   peakSunHours: number;
-  /** 'pvwatts' | 'state' | 'default' */
-  peakSunHoursSource: string;
-  panelWattage: number;
+  peakSunHoursSource: ProposalEstimatePeakSunHoursSource;
+  peakSunHoursSourceDetail: ProposalEstimatePeakSunHoursSourceDetail;
+  /** @nullable */
+  lat?: number | null;
+  /** @nullable */
+  lon?: number | null;
+  panel: ProposalEstimatePanel;
   efficiencyFactor: number;
   requiredSystemKw: number;
   panelCount: number;
@@ -25,6 +34,7 @@ export interface ProposalEstimate {
   estimatedMonthlyKwh: number;
   offsetPct: number;
   monthlyProductionKwh?: number[] | null;
-  batteryRecommendedKwh?: number | null;
+  battery?: ProposalEstimateBattery;
+  specVerification?: ProposalEstimateSpecVerification;
   notes: string[];
 }

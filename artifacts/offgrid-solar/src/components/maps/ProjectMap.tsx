@@ -21,6 +21,8 @@ interface ProjectMapProps {
   city: string;
   state: string;
   zip: string;
+  lat?: number | null;
+  lon?: number | null;
   projectName: string;
   systemType: string;
   installationType?: string;
@@ -186,7 +188,7 @@ function PanelPlacementGuide({
   const winterRiseAz = Math.round(solsticeRiseAzimuth(lat, -23.45));
   const winterSetAz = 360 - winterRiseAz;
 
-  const sqFtPerPanel = 21.5; // ~400W panel footprint
+  const sqFtPerPanel = 23; // Typical 440W-class panel plus layout allowance
   const totalSqFt = numPanels ? Math.round(numPanels * sqFtPerPanel) : null;
 
   return (
@@ -302,6 +304,7 @@ const arrayIcon = L.divIcon({
 
 export function ProjectMap({
   address, city, state, zip,
+  lat, lon,
   projectName, systemType, installationType,
   arraySizeKw, numPanels, batteryUsableKwh,
   arrayLat, arrayLon, arrayLocationNote,
@@ -314,6 +317,11 @@ export function ProjectMap({
   const hasFetched = useRef(false);
 
   useEffect(() => {
+    if (typeof lat === "number" && Number.isFinite(lat) && typeof lon === "number" && Number.isFinite(lon)) {
+      setCoords({ lat, lng: lon });
+      setStatus("success");
+      return;
+    }
     if (hasFetched.current) return;
     hasFetched.current = true;
     let cancelled = false;
@@ -327,7 +335,7 @@ export function ProjectMap({
       }
     });
     return () => { cancelled = true; };
-  }, [address, city, state, zip]);
+  }, [address, city, state, zip, lat, lon]);
 
   if (status === "error") return (
     <div className="h-64 rounded-lg border bg-muted/30 flex items-center justify-center text-muted-foreground text-sm">
