@@ -620,6 +620,7 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     designPeakSunHours: round2(designPeakSunHours),
     arraySizeKw: round2(arraySizeKw),
     numPanels,
+    panelWattage: panelW,
     adjustedArraySizeKw: round2(adjustedArraySizeKw),
     inverterSizeKw: round2(inverterSizeKw),
     batteryUsableKwh: round2(batteryUsableKwh),
