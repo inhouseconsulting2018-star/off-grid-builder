@@ -7,3 +7,6 @@
 - [Report API shape](report-api-shape.md) — paid report is { project, calculation, bom, bomCategories, monthlyChartData, entitlement }, not { calculationResult }
 - [Production deployment](production-deployment.md) — live at off-grid-builder-1.replit.app; custom domain DNS pending
 - [PDFKit in esbuild ESM bundle](pdfkit-esbuild.md) — pdfkit must be external in build.mjs; use "end" event (not "finish") on the Readable; require interop needs (.default ?? mod)
+- [Nominatim state code](nominatim-state-code.md) — Nominatim has no `state_code`; use `ISO3166-2-lvl4` ("US-CA") for the 2-letter code; bad filter made autocomplete always empty
+- [PVWatts dev network](pvwatts-dev-network.md) — dev sandbox can't resolve developer.nrel.gov, so pvwattsSource is always "fallback" in dev despite a valid key; not a bug
+- [Spec vs engine](offgrid-spec-vs-engine.md) — app intentionally uses PVWatts + granular losses + CA 5.8 PSH + 400W settings, NOT the rule-of-thumb ×0.78/5.5/440W; don't simplify without asking
