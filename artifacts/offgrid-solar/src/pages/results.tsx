@@ -148,6 +148,7 @@ export default function Results() {
     installationType: project.installationType,
     budgetTier: project.budgetTier,
     numPanels: calc.numPanels,
+    panelWattage: calc.panelWattage ?? 440,
     adjustedArraySizeKw: calc.adjustedArraySizeKw,
     inverterSizeKw: calc.inverterSizeKw,
     totalBatteryBankKwh: calc.totalBatteryBankKwh,
@@ -171,6 +172,7 @@ export default function Results() {
     dailyKwh: calc.dailyKwh,
     adjustedArraySizeKw: calc.adjustedArraySizeKw,
     numPanels: calc.numPanels,
+    panelWattage: calc.panelWattage ?? 440,
     peakSunHours: calc.peakSunHours,
     batteryUsableKwh: calc.batteryUsableKwh,
     totalBatteryBankKwh: calc.totalBatteryBankKwh,
@@ -216,16 +218,27 @@ export default function Results() {
       }))
     : null;
 
-  // Loss detail is only available in the full paid report
-  const lossData = isPaid ? [
-    { name: "Inverter", value: calc.inverterLossPct, color: "#f59e0b" },
-    { name: "Wire", value: calc.wireLossPct, color: "#fb923c" },
-    { name: "Shade", value: calc.shadeLossPct, color: "#64748b" },
-    { name: "Temp", value: calc.tempLossPct, color: "#ef4444" },
-    { name: "Dirt", value: calc.dirtLossPct, color: "#a16207" },
-    { name: "Mismatch", value: calc.misMatchLossPct ?? 2, color: "#8b5cf6" },
-    ...(calc.batteryLossPct > 0 ? [{ name: "Battery", value: calc.batteryLossPct, color: "#6366f1" }] : []),
-  ].filter(d => d.value > 0) : [];
+  // Allocate the required 22% aggregate allowance across the project's loss categories.
+  const rawLossRows = isPaid ? [
+    { name: "Inverter Conversion", shortName: "Inverter", pct: calc.inverterLossPct, note: "DC to AC conversion efficiency loss", color: "#f59e0b" },
+    { name: "Wire & Connection", shortName: "Wire", pct: calc.wireLossPct, note: "Resistance losses in conductors", color: "#fb923c" },
+    { name: "Shading", shortName: "Shade", pct: calc.shadeLossPct, note: `${project.shadeLevel} shade on array`, color: "#64748b" },
+    { name: "Temperature", shortName: "Temp", pct: calc.tempLossPct, note: "Hot panels produce less power", color: "#ef4444" },
+    { name: "Dirt & Soiling", shortName: "Dirt", pct: calc.dirtLossPct, note: "Dust, bird droppings, pollen", color: "#a16207" },
+    { name: "Panel Mismatch", shortName: "Mismatch", pct: calc.misMatchLossPct ?? 2, note: "Manufacturing tolerance and string mismatch", color: "#8b5cf6" },
+  ].filter(row => row.pct > 0) : [];
+  const rawLossPct = rawLossRows.reduce((sum, row) => sum + row.pct, 0);
+  const lossRows = rawLossRows.map((row, index) => {
+    const allocatedBefore = rawLossRows.slice(0, index).reduce(
+      (sum, previous) => sum + Number((previous.pct / rawLossPct * calc.totalSystemLossPct).toFixed(1)),
+      0,
+    );
+    const pct = index === rawLossRows.length - 1
+      ? Number((calc.totalSystemLossPct - allocatedBefore).toFixed(1))
+      : Number((row.pct / rawLossPct * calc.totalSystemLossPct).toFixed(1));
+    return { ...row, pct };
+  });
+  const lossData = lossRows.map(row => ({ name: row.shortName, value: row.pct, color: row.color }));
 
   const systemTypeLabel = project.systemType.split("-").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join("-");
   const hasBattery = (calc.batteryUsableKwh ?? 0) > 0;
@@ -235,7 +248,7 @@ export default function Results() {
     return `${value.low.toLocaleString(undefined, opts)}-${value.high.toLocaleString(undefined, opts)}${unit}`;
   };
   const systemSizeLabel = isPaid ? `${calc.adjustedArraySizeKw.toFixed(2)} kW` : formatRange(calc.systemSizeKwRange, " kW", 1);
-  const panelCountLabel = isPaid ? `${calc.numPanels} panels${calc.numPanels > 0 ? ` x ~${Math.round(calc.adjustedArraySizeKw * 1000 / calc.numPanels / 5) * 5}W` : ""}` : `${formatRange(calc.panelCountRange)} panels`;
+  const panelCountLabel = isPaid ? `${calc.numPanels} panels${calc.numPanels > 0 ? ` x ${calc.panelWattage ?? Math.round(calc.adjustedArraySizeKw * 1000 / calc.numPanels)}W` : ""}` : `${formatRange(calc.panelCountRange)} panels`;
   const productionLabel = isPaid ? `${calc.yearlyProductionKwh.toLocaleString()} kWh/yr est.` : `${formatRange(calc.yearlyProductionKwhRange, " kWh/yr")} est.`;
   const batteryLabel = isPaid ? `${calc.batteryUsableKwh.toFixed(1)} kWh` : formatRange(calc.batteryUsableKwhRange, " kWh", 1);
   const inverterLabel = isPaid ? `${calc.inverterSizeKw.toFixed(1)} kW` : formatRange(calc.inverterSizeKwRange, " kW", 1);
@@ -282,7 +295,7 @@ export default function Results() {
           {pvCalc.pvwattsSource === "fallback" && (
             <div className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-700 mt-1 w-fit">
               <Info className="h-3 w-3" />
-              State estimate (no PVWatts key)
+              Regional solar fallback
             </div>
           )}
           {/* Action buttons — compact icon+label on mobile, full on desktop */}
@@ -396,10 +409,14 @@ export default function Results() {
                   <tbody className="divide-y">
                     {[
                       ["System Type", systemTypeLabel],
-                      ["Location", `${project.city}, ${project.state}`],
+                      ["Full Address", `${project.address}, ${project.city}, ${project.state} ${project.zip}`],
+                      ["Coordinates", project.lat != null && project.lon != null ? `${project.lat.toFixed(5)}, ${project.lon.toFixed(5)}` : "Unavailable"],
                       ...(isPaid ? [["Daily Usage", `${calc.dailyKwh.toFixed(1)} kWh/day`]] : []),
                       ["Annual Usage", `${project.annualKwh.toLocaleString()} kWh/yr`],
-                      ...(isPaid ? [["Peak Sun Hours", `${calc.peakSunHours} hrs/day${hasPVWatts ? " (PVWatts)" : ` (${project.state})`}`]] : []),
+                      ...(isPaid ? [
+                        ["Peak Sun Hours", `${calc.peakSunHours} hrs/day`],
+                        ["Sun Hours Source", calc.peakSunHoursSource === "api" ? "API (NREL PVWatts)" : "Regional fallback"],
+                      ] : []),
                       ["Installation", project.installationType === "carport" ? "Carport" : project.installationType.charAt(0).toUpperCase() + project.installationType.slice(1) + " Mount"],
                       ["Budget Tier", project.budgetTier.charAt(0).toUpperCase() + project.budgetTier.slice(1)],
                     ].map(([label, value]) => (
@@ -421,6 +438,12 @@ export default function Results() {
                       ...(isPaid ? [["Array Size (gross)", `${calc.arraySizeKw.toFixed(2)} kW`]] : []),
                       ["Array Size", systemSizeLabel],
                       ["Number of Panels", panelCountLabel],
+                      ...(isPaid ? [
+                        ["Panel Wattage", `${calc.panelWattage ?? 440}W`],
+                        ["Required System Size", `${(calc.requiredSystemSizeKw ?? calc.arraySizeKw).toFixed(2)} kW`],
+                        ["Final System Size", `${calc.adjustedArraySizeKw.toFixed(2)} kW`],
+                        ["Estimated Annual Production", `${calc.yearlyProductionKwh.toLocaleString()} kWh/yr`],
+                      ] : []),
                       ...(isPaid && calc.squareFeetRequired != null ? [["Panel Footprint", `~${calc.squareFeetRequired} sqft${project.availableSqft ? ` of ${project.availableSqft} sqft` : ""}`]] : []),
                       ["Inverter Size", inverterLabel],
                       ["Est. Yearly Production", productionLabel],
@@ -1116,7 +1139,8 @@ export default function Results() {
                 </span>
               </CardTitle>
               <CardDescription>
-                Every solar system loses some output to real-world factors. These losses are applied to calculate your adjusted array size.
+                The estimate uses the required 0.78 aggregate production factor. The rows allocate its 22% allowance across the selected site-loss categories.
+                {calc.batteryLossPct > 0 && ` Battery cycling is shown separately (${calc.batteryLossPct.toFixed(1)}%) and does not change the required MVP production formula.`}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -1147,15 +1171,7 @@ export default function Results() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {[
-                    { name: "Inverter Conversion", pct: calc.inverterLossPct, note: "DC→AC conversion efficiency loss" },
-                    { name: "Wire & Connection", pct: calc.wireLossPct, note: "Resistance losses in conductors" },
-                    { name: "Shading", pct: calc.shadeLossPct, note: `${project.shadeLevel} shade on array` },
-                    { name: "Temperature", pct: calc.tempLossPct, note: "Hot panels produce less power" },
-                    { name: "Dirt & Soiling", pct: calc.dirtLossPct, note: "Dust, bird droppings, pollen" },
-                    { name: "Panel Mismatch", pct: calc.misMatchLossPct ?? 2, note: "Manufacturing tolerance & string mismatch" },
-                    ...(calc.batteryLossPct > 0 ? [{ name: "Battery Round-Trip", pct: calc.batteryLossPct, note: "Charge/discharge cycle loss" }] : []),
-                  ].map(row => (
+                  {lossRows.map(row => (
                     <tr key={row.name}>
                       <td className="py-2 font-medium">{row.name}</td>
                       <td className="py-2 text-right font-mono font-semibold">{row.pct}%</td>
@@ -1460,10 +1476,12 @@ export default function Results() {
                 city={project.city}
                 state={project.state}
                 zip={project.zip}
+                lat={project.lat}
+                lon={project.lon}
                 projectName={project.name}
                 systemType={project.systemType}
                 installationType={project.installationType}
-                arraySizeKw={calc.arraySizeKw}
+                arraySizeKw={calc.adjustedArraySizeKw}
                 numPanels={calc.numPanels}
                 batteryUsableKwh={calc.batteryUsableKwh}
                 arrayLat={project.arrayLat}

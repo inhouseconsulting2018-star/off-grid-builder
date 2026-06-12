@@ -3,7 +3,7 @@ import { apiGet } from "./apiService";
 export interface GeoCoords {
   lat: number;
   lon: number;
-  accuracy?: "exact" | "zip" | "city";
+  accuracy?: "exact_address" | "approximate_zip" | "approximate_city";
 }
 
 export interface AddressSuggestion {

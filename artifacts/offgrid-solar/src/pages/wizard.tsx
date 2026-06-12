@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,7 +14,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCreateProject } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
-import { geocodeAddress } from "@/services/geocodingService";
+import { geocodeAddress, suggestAddresses, type AddressSuggestion } from "@/services/geocodingService";
 import { appEnv } from "@/config/env";
 import { trackEvent } from "@/services/analytics";
 import { createProjectCheckoutSession } from "@/services/projectService";
@@ -24,10 +24,13 @@ import { ArrowRight, ArrowLeft, Loader2, Home, Zap, Battery, Map, DollarSign, Ch
 
 const wizardSchema = z.object({
   name: z.string().min(1, "Project name is required"),
-  address: z.string().min(1, "Address is required"),
+  address: z.string().trim().min(3, "Street address is required"),
   city: z.string().min(1, "City is required"),
-  state: z.string().min(1, "State is required"),
-  zip: z.string().min(1, "ZIP code is required"),
+  state: z.string().trim().regex(/^[A-Za-z]{2}$/, "Use a 2-letter state code"),
+  zip: z.string().trim().regex(/^\d{5}$/, "Enter a 5-digit ZIP code"),
+  lat: z.number().nullable().optional(),
+  lon: z.number().nullable().optional(),
+  locationAccuracy: z.enum(["exact_address", "approximate_zip", "approximate_city"]).nullable().optional(),
   installationType: z.enum(["roof", "ground", "pole", "carport"]),
   arrayLocationNote: z.string().optional(),
   separateArrayAddress: z.boolean().default(false),
@@ -37,11 +40,13 @@ const wizardSchema = z.object({
   arrayZip: z.string().optional(),
   arrayLat: z.number().nullable().optional(),
   arrayLon: z.number().nullable().optional(),
-  annualKwh: z.coerce.number().min(0),
+  usageMode: z.enum(["monthly", "annual"]),
+  monthlyKwh: z.number().positive("Monthly kWh must be greater than 0").nullable().optional(),
+  annualKwh: z.number().positive("Annual kWh must be greater than 0").nullable().optional(),
   monthlyBill: z.coerce.number().min(0),
   utilityRatePerKwh: z.coerce.number().min(0),
   systemType: z.enum(["off-grid", "grid-tied", "hybrid"]),
-  backupHours: z.coerce.number().min(0),
+  backupHours: z.coerce.number().min(-1),
   customBackupHours: z.coerce.number().nullable().optional(),
   batteryChemistry: z.enum(["lifepo4", "agm", "lead-acid", "none"]).default("lifepo4"),
   hasGenerator: z.boolean().default(false),
@@ -55,6 +60,15 @@ const wizardSchema = z.object({
   highWindArea: z.boolean().default(false),
   budgetTier: z.enum(["economy", "mid-range", "premium", "custom"]),
   customBudget: z.coerce.number().nullable().optional(),
+}).superRefine((data, ctx) => {
+  const usage = data.usageMode === "monthly" ? data.monthlyKwh : data.annualKwh;
+  if (usage == null || !Number.isFinite(usage) || usage <= 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [data.usageMode === "monthly" ? "monthlyKwh" : "annualKwh"],
+      message: `Enter valid ${data.usageMode} kWh usage`,
+    });
+  }
 });
 
 type WizardFormValues = z.infer<typeof wizardSchema>;
@@ -69,7 +83,7 @@ const STEPS = [
 
 const STEP_FIELDS: Record<number, (keyof WizardFormValues)[]> = {
   1: ["name", "address", "city", "state", "zip", "installationType", "arrayLocationNote"],
-  2: ["annualKwh", "monthlyBill", "utilityRatePerKwh", "systemType"],
+  2: ["usageMode", "monthlyKwh", "annualKwh", "monthlyBill", "utilityRatePerKwh", "systemType"],
   3: ["backupHours"],
   4: ["shadeLevel", "roofPitch", "roofDirection", "availableSqft"],
   5: ["budgetTier"],
@@ -81,6 +95,10 @@ export default function Wizard() {
   const { toast } = useToast();
   const createProject = useCreateProject();
   const [isCalculating, setIsCalculating] = useState(false);
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [isLookingUpAddress, setIsLookingUpAddress] = useState(false);
+  const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressSuggestionsRef = useRef<HTMLDivElement>(null);
   const selectedPlan = parseCheckoutPlan(new URLSearchParams(window.location.search).get("selectedPlan"));
   const selectedPlanDetails = selectedPlan ? getCheckoutPlan(selectedPlan) : null;
 
@@ -92,6 +110,9 @@ export default function Wizard() {
       city: "",
       state: "",
       zip: "",
+      lat: null,
+      lon: null,
+      locationAccuracy: null,
       installationType: "roof",
       arrayLocationNote: "",
       separateArrayAddress: false,
@@ -101,6 +122,8 @@ export default function Wizard() {
       arrayZip: "",
       arrayLat: null,
       arrayLon: null,
+      usageMode: "annual",
+      monthlyKwh: 833,
       annualKwh: 10000,
       monthlyBill: 150,
       utilityRatePerKwh: 0.15,
@@ -123,6 +146,46 @@ export default function Wizard() {
     mode: "onChange",
   });
 
+  useEffect(() => {
+    const closeSuggestions = (event: MouseEvent) => {
+      if (
+        addressSuggestionsRef.current &&
+        !addressSuggestionsRef.current.contains(event.target as Node)
+      ) {
+        setAddressSuggestions([]);
+      }
+    };
+    document.addEventListener("mousedown", closeSuggestions);
+    return () => document.removeEventListener("mousedown", closeSuggestions);
+  }, []);
+
+  const lookupAddress = useCallback((query: string) => {
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    setAddressSuggestions([]);
+    if (query.trim().length < 5) return;
+    addressDebounceRef.current = setTimeout(async () => {
+      setIsLookingUpAddress(true);
+      try {
+        setAddressSuggestions(await suggestAddresses(query));
+      } catch {
+        setAddressSuggestions([]);
+      } finally {
+        setIsLookingUpAddress(false);
+      }
+    }, 400);
+  }, []);
+
+  const selectAddress = (suggestion: AddressSuggestion) => {
+    form.setValue("address", suggestion.streetAddress, { shouldValidate: true });
+    form.setValue("city", suggestion.city, { shouldValidate: true });
+    form.setValue("state", suggestion.state, { shouldValidate: true });
+    form.setValue("zip", suggestion.zip, { shouldValidate: true });
+    form.setValue("lat", suggestion.lat);
+    form.setValue("lon", suggestion.lon);
+    form.setValue("locationAccuracy", "exact_address");
+    setAddressSuggestions([]);
+  };
+
   const onSubmit = async (data: WizardFormValues) => {
     try {
       let arrayLat = data.arrayLat ?? null;
@@ -144,9 +207,26 @@ export default function Wizard() {
         } catch { /* ignore geocode errors — PVWatts will fall back to property address */ }
       }
 
+      const annualKwh =
+        data.usageMode === "monthly"
+          ? (data.monthlyKwh ?? 0) * 12
+          : data.annualKwh ?? 0;
+      const {
+        usageMode: _usageMode,
+        monthlyKwh: _monthlyKwh,
+        ...projectInput
+      } = data;
+      void _usageMode;
+      void _monthlyKwh;
+
       const project = await createProject.mutateAsync({
         data: {
-          ...data,
+          ...projectInput,
+          address: data.address.trim(),
+          city: data.city.trim(),
+          state: data.state.trim().toUpperCase(),
+          zip: data.zip.trim(),
+          annualKwh,
           arrayLat: arrayLat ?? undefined,
           arrayLon: arrayLon ?? undefined,
           arrayLocationNote: data.arrayLocationNote || undefined,
@@ -202,6 +282,20 @@ export default function Wizard() {
   };
 
   const nextStep = async () => {
+    if (step === 2) {
+      const usageMode = form.getValues("usageMode");
+      const usage = usageMode === "monthly"
+        ? form.getValues("monthlyKwh")
+        : form.getValues("annualKwh");
+      if (usage == null || !Number.isFinite(usage) || usage <= 0) {
+        const field = usageMode === "monthly" ? "monthlyKwh" : "annualKwh";
+        form.setError(field, {
+          type: "validate",
+          message: `Enter valid ${usageMode} kWh usage`,
+        });
+        return;
+      }
+    }
     const fields = STEP_FIELDS[step] ?? [];
     const valid = await form.trigger(fields);
     if (valid) setStep(s => Math.min(5, s + 1));
@@ -278,14 +372,59 @@ export default function Wizard() {
                       <FormItem><FormLabel>Project Name</FormLabel><FormControl><Input placeholder="e.g. Smith Residence" {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={form.control} name="address" render={({ field }) => (
-                      <FormItem><FormLabel>Street Address</FormLabel><FormControl><Input placeholder="123 Oak Lane" {...field} /></FormControl><FormMessage /></FormItem>
+                      <FormItem>
+                        <FormLabel>Street Address</FormLabel>
+                        <div className="relative" ref={addressSuggestionsRef}>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                placeholder="Start typing an address"
+                                autoComplete="off"
+                                {...field}
+                                onChange={(event) => {
+                                  field.onChange(event);
+                                  form.setValue("lat", null);
+                                  form.setValue("lon", null);
+                                  form.setValue("locationAccuracy", null);
+                                  lookupAddress(event.target.value);
+                                }}
+                              />
+                              {isLookingUpAddress && (
+                                <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                              )}
+                            </div>
+                          </FormControl>
+                          {addressSuggestions.length > 0 && (
+                            <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border bg-popover shadow-lg">
+                              {addressSuggestions.map((suggestion) => (
+                                <button
+                                  key={`${suggestion.lat}-${suggestion.lon}`}
+                                  type="button"
+                                  className="flex w-full items-start gap-2 border-b px-3 py-2.5 text-left text-sm last:border-b-0 hover:bg-muted"
+                                  onMouseDown={(event) => {
+                                    event.preventDefault();
+                                    selectAddress(suggestion);
+                                  }}
+                                >
+                                  <Map className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                                  <span>{suggestion.displayName}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <FormDescription className="text-xs">
+                          Select a match when available, or enter the address manually.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
                     )} />
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <FormField control={form.control} name="city" render={({ field }) => (
                         <FormItem className="col-span-2 sm:col-span-1"><FormLabel>City</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
                       <FormField control={form.control} name="state" render={({ field }) => (
-                        <FormItem><FormLabel>State</FormLabel><FormControl><Input placeholder="AZ" maxLength={2} {...field} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>State</FormLabel><FormControl><Input placeholder="AZ" maxLength={2} {...field} onChange={(event) => field.onChange(event.target.value.toUpperCase())} /></FormControl><FormMessage /></FormItem>
                       )} />
                       <FormField control={form.control} name="zip" render={({ field }) => (
                         <FormItem><FormLabel>ZIP Code</FormLabel><FormControl><Input placeholder="85001" {...field} /></FormControl><FormMessage /></FormItem>
@@ -384,10 +523,37 @@ export default function Wizard() {
                         <FormMessage />
                       </FormItem>
                     )} />
+                    <FormField control={form.control} name="usageMode" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Enter electricity usage as</FormLabel>
+                        <div className="flex w-fit overflow-hidden rounded-lg border">
+                          {(["annual", "monthly"] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => field.onChange(mode)}
+                              className={`px-4 py-2 text-sm font-medium ${
+                                field.value === mode
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-card text-muted-foreground hover:bg-muted"
+                              }`}
+                            >
+                              {mode === "annual" ? "Annual kWh" : "Monthly kWh"}
+                            </button>
+                          ))}
+                        </div>
+                      </FormItem>
+                    )} />
                     <div className="grid sm:grid-cols-2 gap-4">
-                      <FormField control={form.control} name="annualKwh" render={({ field }) => (
-                        <FormItem><FormLabel>Annual Usage (kWh)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormDescription className="text-xs">Check your utility bills</FormDescription><FormMessage /></FormItem>
-                      )} />
+                      {form.watch("usageMode") === "annual" ? (
+                        <FormField control={form.control} name="annualKwh" render={({ field }) => (
+                          <FormItem><FormLabel>Annual Usage (kWh)</FormLabel><FormControl><Input type="number" min="0" value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? null : Number(event.target.value))} /></FormControl><FormDescription className="text-xs">Check your utility bills</FormDescription><FormMessage /></FormItem>
+                        )} />
+                      ) : (
+                        <FormField control={form.control} name="monthlyKwh" render={({ field }) => (
+                          <FormItem><FormLabel>Average Monthly Usage (kWh)</FormLabel><FormControl><Input type="number" min="0" value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? null : Number(event.target.value))} /></FormControl><FormDescription className="text-xs">Annual total: {Math.round((field.value ?? 0) * 12).toLocaleString()} kWh</FormDescription><FormMessage /></FormItem>
+                        )} />
+                      )}
                       <FormField control={form.control} name="monthlyBill" render={({ field }) => (
                         <FormItem><FormLabel>Avg Monthly Bill ($)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
@@ -663,7 +829,7 @@ export default function Wizard() {
                           <FormControl><Input type="number" {...field} /></FormControl>
                           <FormDescription className="text-xs">
                             {isRoof
-                              ? "Usable unshaded roof area for panels. Each 400W panel needs ~22 sq ft."
+                              ? "Usable unshaded roof area for panels. Each 440W-class panel needs roughly 22–23 sq ft."
                               : isGround
                               ? "Ground area available for the array. Ground mounts need extra space between rows for maintenance access (1.5–2× panel area)."
                               : "Area available for the solar canopy."}

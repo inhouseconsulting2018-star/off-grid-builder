@@ -18,13 +18,16 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary List all solar projects
  */
+export const listProjectsResponseStateRegExp = new RegExp("^[A-Za-z]{2}$");
+export const listProjectsResponseZipRegExp = new RegExp("^\\d{5}$");
+
 export const ListProjectsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
   address: zod.string(),
   city: zod.string(),
-  state: zod.string(),
-  zip: zod.string(),
+  state: zod.string().regex(listProjectsResponseStateRegExp),
+  zip: zod.string().regex(listProjectsResponseZipRegExp),
   installationType: zod.enum(["roof", "ground", "pole", "carport"]),
   systemType: zod.enum(["off-grid", "grid-tied", "hybrid"]),
   annualKwh: zod.number(),
@@ -88,6 +91,10 @@ export const ListProjectsResponseItem = zod.object({
     .object({
       dailyKwh: zod.number(),
       peakSunHours: zod.number(),
+      peakSunHoursSource: zod.enum(["api", "fallback"]),
+      panelWattage: zod.number(),
+      efficiencyFactor: zod.literal(0.78),
+      requiredSystemSizeKw: zod.number(),
       arraySizeKw: zod.number(),
       numPanels: zod.number(),
       adjustedArraySizeKw: zod.number(),
@@ -347,7 +354,7 @@ export const ListProjectsResponse = zod.array(ListProjectsResponseItem);
  * @summary Create a new solar project
  */
 
-export const createProjectBodyAnnualKwhMin = 0;
+export const createProjectBodyAnnualKwhExclusiveMin = 0;
 
 export const createProjectBodyMonthlyBillMin = 0;
 
@@ -365,7 +372,7 @@ export const CreateProjectBody = zod.object({
   zip: zod.string(),
   installationType: zod.enum(["roof", "ground", "pole", "carport"]),
   systemType: zod.enum(["off-grid", "grid-tied", "hybrid"]),
-  annualKwh: zod.number().min(createProjectBodyAnnualKwhMin),
+  annualKwh: zod.number().gt(createProjectBodyAnnualKwhExclusiveMin),
   monthlyBill: zod.number().min(createProjectBodyMonthlyBillMin),
   utilityRatePerKwh: zod.number().min(createProjectBodyUtilityRatePerKwhMin),
   backupHours: zod.number().min(createProjectBodyBackupHoursMin),
@@ -412,13 +419,16 @@ export const GetProjectParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const getProjectResponseStateRegExp = new RegExp("^[A-Za-z]{2}$");
+export const getProjectResponseZipRegExp = new RegExp("^\\d{5}$");
+
 export const GetProjectResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   address: zod.string(),
   city: zod.string(),
-  state: zod.string(),
-  zip: zod.string(),
+  state: zod.string().regex(getProjectResponseStateRegExp),
+  zip: zod.string().regex(getProjectResponseZipRegExp),
   installationType: zod.enum(["roof", "ground", "pole", "carport"]),
   systemType: zod.enum(["off-grid", "grid-tied", "hybrid"]),
   annualKwh: zod.number(),
@@ -482,6 +492,10 @@ export const GetProjectResponse = zod.object({
     .object({
       dailyKwh: zod.number(),
       peakSunHours: zod.number(),
+      peakSunHoursSource: zod.enum(["api", "fallback"]),
+      panelWattage: zod.number(),
+      efficiencyFactor: zod.literal(0.78),
+      requiredSystemSizeKw: zod.number(),
       arraySizeKw: zod.number(),
       numPanels: zod.number(),
       adjustedArraySizeKw: zod.number(),
@@ -743,7 +757,7 @@ export const UpdateProjectParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const updateProjectBodyAnnualKwhMin = 0;
+export const updateProjectBodyAnnualKwhExclusiveMin = 0;
 
 export const updateProjectBodyMonthlyBillMin = 0;
 
@@ -761,7 +775,7 @@ export const UpdateProjectBody = zod.object({
   zip: zod.string().optional(),
   installationType: zod.enum(["roof", "ground", "pole", "carport"]).optional(),
   systemType: zod.enum(["off-grid", "grid-tied", "hybrid"]).optional(),
-  annualKwh: zod.number().min(updateProjectBodyAnnualKwhMin).optional(),
+  annualKwh: zod.number().gt(updateProjectBodyAnnualKwhExclusiveMin).optional(),
   monthlyBill: zod.number().min(updateProjectBodyMonthlyBillMin).optional(),
   utilityRatePerKwh: zod
     .number()
@@ -806,13 +820,16 @@ export const UpdateProjectBody = zod.object({
     .describe("When true the map uses lat\/lon directly without re-geocoding."),
 });
 
+export const updateProjectResponseStateRegExp = new RegExp("^[A-Za-z]{2}$");
+export const updateProjectResponseZipRegExp = new RegExp("^\\d{5}$");
+
 export const UpdateProjectResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   address: zod.string(),
   city: zod.string(),
-  state: zod.string(),
-  zip: zod.string(),
+  state: zod.string().regex(updateProjectResponseStateRegExp),
+  zip: zod.string().regex(updateProjectResponseZipRegExp),
   installationType: zod.enum(["roof", "ground", "pole", "carport"]),
   systemType: zod.enum(["off-grid", "grid-tied", "hybrid"]),
   annualKwh: zod.number(),
@@ -876,6 +893,10 @@ export const UpdateProjectResponse = zod.object({
     .object({
       dailyKwh: zod.number(),
       peakSunHours: zod.number(),
+      peakSunHoursSource: zod.enum(["api", "fallback"]),
+      panelWattage: zod.number(),
+      efficiencyFactor: zod.literal(0.78),
+      requiredSystemSizeKw: zod.number(),
       arraySizeKw: zod.number(),
       numPanels: zod.number(),
       adjustedArraySizeKw: zod.number(),
@@ -1144,13 +1165,16 @@ export const RegeocodeProjectParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const regeocodeProjectResponseStateRegExp = new RegExp("^[A-Za-z]{2}$");
+export const regeocodeProjectResponseZipRegExp = new RegExp("^\\d{5}$");
+
 export const RegeocodeProjectResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
   address: zod.string(),
   city: zod.string(),
-  state: zod.string(),
-  zip: zod.string(),
+  state: zod.string().regex(regeocodeProjectResponseStateRegExp),
+  zip: zod.string().regex(regeocodeProjectResponseZipRegExp),
   installationType: zod.enum(["roof", "ground", "pole", "carport"]),
   systemType: zod.enum(["off-grid", "grid-tied", "hybrid"]),
   annualKwh: zod.number(),
@@ -1214,6 +1238,10 @@ export const RegeocodeProjectResponse = zod.object({
     .object({
       dailyKwh: zod.number(),
       peakSunHours: zod.number(),
+      peakSunHoursSource: zod.enum(["api", "fallback"]),
+      panelWattage: zod.number(),
+      efficiencyFactor: zod.literal(0.78),
+      requiredSystemSizeKw: zod.number(),
       arraySizeKw: zod.number(),
       numPanels: zod.number(),
       adjustedArraySizeKw: zod.number(),
@@ -1478,6 +1506,10 @@ export const CalculateProjectParams = zod.object({
 export const CalculateProjectResponse = zod.object({
   dailyKwh: zod.number(),
   peakSunHours: zod.number(),
+  peakSunHoursSource: zod.enum(["api", "fallback"]),
+  panelWattage: zod.number(),
+  efficiencyFactor: zod.literal(0.78),
+  requiredSystemSizeKw: zod.number(),
   arraySizeKw: zod.number(),
   numPanels: zod.number(),
   adjustedArraySizeKw: zod.number(),
@@ -1715,10 +1747,8 @@ export const CreateProjectCheckoutSessionResponse = zod.object({
 export const createProposalEstimateBodyStateMin = 2;
 export const createProposalEstimateBodyStateMax = 2;
 
-export const createProposalEstimateBodyPanelWattageDefault = 440;
-export const createProposalEstimateBodyEfficiencyFactorDefault = 0.78;
-export const createProposalEstimateBodyIncludeBatteryDefault = false;
-export const createProposalEstimateBodyBatteryBackupHoursDefault = 8;
+export const createProposalEstimateBodyPanelTypeDefault = `mono_perc`;
+export const createProposalEstimateBodyBatteryTypeDefault = `lifepo4`;
 
 export const CreateProposalEstimateBody = zod.object({
   address: zod.string(),
@@ -1730,18 +1760,12 @@ export const CreateProposalEstimateBody = zod.object({
   zip: zod.string(),
   annualKwh: zod.number().nullish(),
   monthlyKwh: zod.number().nullish(),
-  panelWattage: zod
-    .number()
-    .default(createProposalEstimateBodyPanelWattageDefault),
-  efficiencyFactor: zod
-    .number()
-    .default(createProposalEstimateBodyEfficiencyFactorDefault),
-  includeBattery: zod
-    .boolean()
-    .default(createProposalEstimateBodyIncludeBatteryDefault),
-  batteryBackupHours: zod
-    .number()
-    .default(createProposalEstimateBodyBatteryBackupHoursDefault),
+  lat: zod.number().nullish(),
+  lon: zod.number().nullish(),
+  panelType: zod.string().default(createProposalEstimateBodyPanelTypeDefault),
+  batteryType: zod
+    .string()
+    .default(createProposalEstimateBodyBatteryTypeDefault),
 });
 
 export const CreateProposalEstimateResponse = zod.object({
@@ -1752,8 +1776,11 @@ export const CreateProposalEstimateResponse = zod.object({
   annualKwhUsage: zod.number(),
   monthlyKwhUsage: zod.number(),
   peakSunHours: zod.number(),
-  peakSunHoursSource: zod.string().describe("'pvwatts' | 'state' | 'default'"),
-  panelWattage: zod.number(),
+  peakSunHoursSource: zod.enum(["api", "fallback"]),
+  peakSunHoursSourceDetail: zod.enum(["pvwatts", "state", "default"]),
+  lat: zod.number().nullish(),
+  lon: zod.number().nullish(),
+  panel: zod.record(zod.string(), zod.unknown()),
   efficiencyFactor: zod.number(),
   requiredSystemKw: zod.number(),
   panelCount: zod.number(),
@@ -1762,13 +1789,20 @@ export const CreateProposalEstimateResponse = zod.object({
   estimatedMonthlyKwh: zod.number(),
   offsetPct: zod.number(),
   monthlyProductionKwh: zod.array(zod.number()).nullish(),
-  batteryRecommendedKwh: zod.number().nullish(),
+  battery: zod.record(zod.string(), zod.unknown()).optional(),
+  specVerification: zod.record(zod.string(), zod.unknown()).optional(),
   notes: zod.array(zod.string()),
 });
 
 /**
  * @summary Dashboard summary stats across all projects
  */
+export const getProjectsSummaryResponseRecentProjectsItemStateRegExp =
+  new RegExp("^[A-Za-z]{2}$");
+export const getProjectsSummaryResponseRecentProjectsItemZipRegExp = new RegExp(
+  "^\\d{5}$",
+);
+
 export const GetProjectsSummaryResponse = zod.object({
   totalProjects: zod.number(),
   totalSystemKw: zod.number(),
@@ -1782,8 +1816,12 @@ export const GetProjectsSummaryResponse = zod.object({
       name: zod.string(),
       address: zod.string(),
       city: zod.string(),
-      state: zod.string(),
-      zip: zod.string(),
+      state: zod
+        .string()
+        .regex(getProjectsSummaryResponseRecentProjectsItemStateRegExp),
+      zip: zod
+        .string()
+        .regex(getProjectsSummaryResponseRecentProjectsItemZipRegExp),
       installationType: zod.enum(["roof", "ground", "pole", "carport"]),
       systemType: zod.enum(["off-grid", "grid-tied", "hybrid"]),
       annualKwh: zod.number(),
@@ -1849,6 +1887,10 @@ export const GetProjectsSummaryResponse = zod.object({
         .object({
           dailyKwh: zod.number(),
           peakSunHours: zod.number(),
+          peakSunHoursSource: zod.enum(["api", "fallback"]),
+          panelWattage: zod.number(),
+          efficiencyFactor: zod.literal(0.78),
+          requiredSystemSizeKw: zod.number(),
           arraySizeKw: zod.number(),
           numPanels: zod.number(),
           adjustedArraySizeKw: zod.number(),

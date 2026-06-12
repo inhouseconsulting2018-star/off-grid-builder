@@ -7,6 +7,8 @@
  */
 
 export * from "./calculationResult";
+export * from "./calculationResultEfficiencyFactor";
+export * from "./calculationResultPeakSunHoursSource";
 export * from "./checkoutSessionResult";
 export type {
   CreateProjectCheckoutSessionBody as CreateProjectCheckoutSessionBodyType,
@@ -34,6 +36,11 @@ export * from "./projectShadeLevel";
 export * from "./projectsSummary";
 export * from "./projectSystemType";
 export * from "./proposalEstimate";
+export * from "./proposalEstimateBattery";
 export * from "./proposalEstimateInput";
+export * from "./proposalEstimatePanel";
+export * from "./proposalEstimatePeakSunHoursSource";
+export * from "./proposalEstimatePeakSunHoursSourceDetail";
+export * from "./proposalEstimateSpecVerification";
 export * from "./settings";
 export * from "./settingsPatch";

@@ -58,9 +58,28 @@ export const ProjectBudgetTier = {
   custom: "custom",
 } as const;
 
+export type CalculationResultPeakSunHoursSource =
+  (typeof CalculationResultPeakSunHoursSource)[keyof typeof CalculationResultPeakSunHoursSource];
+
+export const CalculationResultPeakSunHoursSource = {
+  api: "api",
+  fallback: "fallback",
+} as const;
+
+export type CalculationResultEfficiencyFactor =
+  (typeof CalculationResultEfficiencyFactor)[keyof typeof CalculationResultEfficiencyFactor];
+
+export const CalculationResultEfficiencyFactor = {
+  "078": 0.78,
+} as const;
+
 export interface CalculationResult {
   dailyKwh: number;
   peakSunHours: number;
+  peakSunHoursSource: CalculationResultPeakSunHoursSource;
+  panelWattage: number;
+  efficiencyFactor: CalculationResultEfficiencyFactor;
+  requiredSystemSizeKw: number;
   arraySizeKw: number;
   numPanels: number;
   adjustedArraySizeKw: number;
@@ -176,7 +195,9 @@ export interface Project {
   name: string;
   address: string;
   city: string;
+  /** @pattern ^[A-Za-z]{2}$ */
   state: string;
+  /** @pattern ^\d{5}$ */
   zip: string;
   installationType: ProjectInstallationType;
   systemType: ProjectSystemType;
@@ -336,7 +357,7 @@ export interface ProjectInput {
   zip: string;
   installationType: ProjectInputInstallationType;
   systemType: ProjectInputSystemType;
-  /** @minimum 0 */
+  /** @exclusiveMinimum 0 */
   annualKwh: number;
   /** @minimum 0 */
   monthlyBill: number;
@@ -444,7 +465,7 @@ export interface ProjectPatch {
   zip?: string;
   installationType?: ProjectPatchInstallationType;
   systemType?: ProjectPatchSystemType;
-  /** @minimum 0 */
+  /** @exclusiveMinimum 0 */
   annualKwh?: number;
   /** @minimum 0 */
   monthlyBill?: number;
@@ -510,11 +531,36 @@ export interface ProposalEstimateInput {
   zip: string;
   annualKwh?: number | null;
   monthlyKwh?: number | null;
-  panelWattage?: number;
-  efficiencyFactor?: number;
-  includeBattery?: boolean;
-  batteryBackupHours?: number;
+  /** @nullable */
+  lat?: number | null;
+  /** @nullable */
+  lon?: number | null;
+  panelType?: string;
+  batteryType?: string;
 }
+
+export type ProposalEstimatePeakSunHoursSource =
+  (typeof ProposalEstimatePeakSunHoursSource)[keyof typeof ProposalEstimatePeakSunHoursSource];
+
+export const ProposalEstimatePeakSunHoursSource = {
+  api: "api",
+  fallback: "fallback",
+} as const;
+
+export type ProposalEstimatePeakSunHoursSourceDetail =
+  (typeof ProposalEstimatePeakSunHoursSourceDetail)[keyof typeof ProposalEstimatePeakSunHoursSourceDetail];
+
+export const ProposalEstimatePeakSunHoursSourceDetail = {
+  pvwatts: "pvwatts",
+  state: "state",
+  default: "default",
+} as const;
+
+export type ProposalEstimatePanel = { [key: string]: unknown };
+
+export type ProposalEstimateBattery = { [key: string]: unknown };
+
+export type ProposalEstimateSpecVerification = { [key: string]: unknown };
 
 export interface ProposalEstimate {
   address: string;
@@ -524,9 +570,13 @@ export interface ProposalEstimate {
   annualKwhUsage: number;
   monthlyKwhUsage: number;
   peakSunHours: number;
-  /** 'pvwatts' | 'state' | 'default' */
-  peakSunHoursSource: string;
-  panelWattage: number;
+  peakSunHoursSource: ProposalEstimatePeakSunHoursSource;
+  peakSunHoursSourceDetail: ProposalEstimatePeakSunHoursSourceDetail;
+  /** @nullable */
+  lat?: number | null;
+  /** @nullable */
+  lon?: number | null;
+  panel: ProposalEstimatePanel;
   efficiencyFactor: number;
   requiredSystemKw: number;
   panelCount: number;
@@ -535,7 +585,8 @@ export interface ProposalEstimate {
   estimatedMonthlyKwh: number;
   offsetPct: number;
   monthlyProductionKwh?: number[] | null;
-  batteryRecommendedKwh?: number | null;
+  battery?: ProposalEstimateBattery;
+  specVerification?: ProposalEstimateSpecVerification;
   notes: string[];
 }
 
@@ -594,6 +645,9 @@ export interface SettingsPatch {
   mountingCostPerPanel?: number;
 }
 
+export type CreateProjectCheckoutSessionBodySelectedPlan =
+  (typeof CreateProjectCheckoutSessionBodySelectedPlan)[keyof typeof CreateProjectCheckoutSessionBodySelectedPlan];
+
 export const CreateProjectCheckoutSessionBodySelectedPlan = {
   homeowner_report: "homeowner_report",
   property_pack: "property_pack",
@@ -601,8 +655,8 @@ export const CreateProjectCheckoutSessionBodySelectedPlan = {
   contractor_lifetime_beta: "contractor_lifetime_beta",
 } as const;
 
-export type CreateProjectCheckoutSessionBodySelectedPlan =
-  (typeof CreateProjectCheckoutSessionBodySelectedPlan)[keyof typeof CreateProjectCheckoutSessionBodySelectedPlan];
+export type CreateProjectCheckoutSessionBodyProductType =
+  (typeof CreateProjectCheckoutSessionBodyProductType)[keyof typeof CreateProjectCheckoutSessionBodyProductType];
 
 export const CreateProjectCheckoutSessionBodyProductType = {
   homeowner: "homeowner",
@@ -610,9 +664,6 @@ export const CreateProjectCheckoutSessionBodyProductType = {
   contractor_annual: "contractor_annual",
   contractor_lifetime: "contractor_lifetime",
 } as const;
-
-export type CreateProjectCheckoutSessionBodyProductType =
-  (typeof CreateProjectCheckoutSessionBodyProductType)[keyof typeof CreateProjectCheckoutSessionBodyProductType];
 
 export type CreateProjectCheckoutSessionBody = {
   selectedPlan: CreateProjectCheckoutSessionBodySelectedPlan;

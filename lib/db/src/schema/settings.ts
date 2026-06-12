@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 
 export const settingsTable = pgTable("settings", {
   id: serial("id").primaryKey(),
-  panelWattage: real("panel_wattage").notNull().default(400),
+  panelWattage: real("panel_wattage").notNull().default(440),
   baseSystemLossPct: real("base_system_loss_pct").notNull().default(14),
   inverterLossPct: real("inverter_loss_pct").notNull().default(4),
   wireLossPct: real("wire_loss_pct").notNull().default(2),

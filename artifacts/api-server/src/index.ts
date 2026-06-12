@@ -31,6 +31,11 @@ async function seedSettings() {
     if (!existing) {
       await db.insert(settingsTable).values({});
       logger.info("Settings row seeded with defaults");
+    } else if (existing.panelWattage === 400) {
+      await db
+        .update(settingsTable)
+        .set({ panelWattage: 440 });
+      logger.info("Legacy default panel wattage updated from 400W to 440W");
     }
   } catch (error: unknown) {
     logger.warn({ err: error }, "Settings seed skipped");

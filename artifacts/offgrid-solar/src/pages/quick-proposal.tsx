@@ -121,7 +121,10 @@ interface ProposalEstimate {
   annualKwhUsage: number;
   monthlyKwhUsage: number;
   peakSunHours: number;
-  peakSunHoursSource: "pvwatts" | "state" | "default";
+  peakSunHoursSource: "api" | "fallback";
+  peakSunHoursSourceDetail: "pvwatts" | "state" | "default";
+  lat: number | null;
+  lon: number | null;
   panel: ProposalPanel;
   efficiencyFactor: number;
   requiredSystemKw: number;
@@ -161,13 +164,16 @@ const usageSchema = z.object({
   annualKwh: z.coerce.number().min(0, "Usage cannot be negative").nullable().optional(),
   panelType: z.string().default("mono_perc"),
   batteryType: z.string().default("lifepo4"),
-}).refine(
-  (d) => {
-    if (d.usageMode === "monthly") return (d.monthlyKwh ?? 0) > 0;
-    return (d.annualKwh ?? 0) > 0;
-  },
-  { message: "Enter your energy usage (must be greater than 0)", path: ["monthlyKwh"] }
-);
+}).superRefine((data, ctx) => {
+  const usage = data.usageMode === "monthly" ? data.monthlyKwh : data.annualKwh;
+  if (usage == null || !Number.isFinite(usage) || usage <= 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Enter your energy usage (must be greater than 0)",
+      path: [data.usageMode === "monthly" ? "monthlyKwh" : "annualKwh"],
+    });
+  }
+});
 
 type AddressValues = z.infer<typeof addressSchema>;
 type UsageValues = z.infer<typeof usageSchema>;
@@ -470,7 +476,8 @@ export default function QuickProposal() {
         monthlyKwh: values.usageMode === "monthly" ? (values.monthlyKwh ?? null) : null,
         panelType: values.panelType,
         batteryType: values.batteryType,
-        efficiencyFactor: 0.86,
+        lat: selectedLatLon?.lat ?? null,
+        lon: selectedLatLon?.lon ?? null,
       };
       setEstimate(await createProposalEstimate<ProposalEstimate>(body, adminToken));
       setStep(3);
@@ -826,13 +833,13 @@ export default function QuickProposal() {
                 <p className="text-sm text-muted-foreground">{estimate.city}, {estimate.state} {estimate.zip}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {estimate.peakSunHoursSource === "pvwatts" && (
+                {estimate.peakSunHoursSource === "api" && (
                   <Badge className="bg-green-50 text-green-700 border-green-300 font-semibold dark:bg-green-950 dark:text-green-300 dark:border-green-800">
                     <Sun className="h-3 w-3 mr-1" /> NREL PVWatts
                   </Badge>
                 )}
-                {estimate.peakSunHoursSource === "state" && (
-                  <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 dark:text-amber-300">State Avg PSH</Badge>
+                {estimate.peakSunHoursSource === "fallback" && (
+                  <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 dark:text-amber-300">Regional Fallback PSH</Badge>
                 )}
                 <Button size="sm" variant="outline" onClick={() => window.print()}>
                   <Download className="h-3.5 w-3.5 mr-1.5" /> Print / PDF
@@ -846,7 +853,7 @@ export default function QuickProposal() {
             {/* Key stat cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <StatCard label="System Size" value={`${estimate.finalSystemKw.toFixed(2)} kW`} sub={`${estimate.panelCount} × ${estimate.panel.wattage}W panels`} highlight />
-              <StatCard label="Annual Production" value={`${estimate.estimatedAnnualKwh.toLocaleString()} kWh`} sub={estimate.panel.bifacial ? `incl. ${estimate.panel.bifacialGainPct}% bifacial gain` : "estimated"} />
+              <StatCard label="Annual Production" value={`${estimate.estimatedAnnualKwh.toLocaleString()} kWh`} sub="estimated with 0.78 factor" />
               <StatCard label="Monthly Production" value={`${estimate.estimatedMonthlyKwh.toLocaleString()} kWh`} sub="avg per month" />
               <StatCard label="Offset" value={`${estimate.offsetPct}%`} sub={`of ${estimate.annualKwhUsage.toLocaleString()} kWh usage`} highlight={estimate.offsetPct >= 100} />
             </div>
@@ -862,9 +869,11 @@ export default function QuickProposal() {
                     <tbody className="divide-y">
                       {[
                         ["Property", `${estimate.address}, ${estimate.city}, ${estimate.state} ${estimate.zip}`],
+                        ["Coordinates", estimate.lat != null && estimate.lon != null ? `${estimate.lat.toFixed(5)}, ${estimate.lon.toFixed(5)}` : "Unavailable"],
                         ["Annual Usage", `${estimate.annualKwhUsage.toLocaleString()} kWh/yr`],
                         ["Monthly Usage", `${estimate.monthlyKwhUsage.toLocaleString()} kWh/mo`],
-                        ["Peak Sun Hours", `${estimate.peakSunHours} hrs/day${estimate.peakSunHoursSource === "pvwatts" ? " (NREL)" : " (state avg)"}`],
+                        ["Peak Sun Hours", `${estimate.peakSunHours} hrs/day`],
+                        ["Sun Hours Source", estimate.peakSunHoursSource === "api" ? "API (NREL PVWatts)" : "Regional fallback"],
                         ["System Efficiency", `${(estimate.efficiencyFactor * 100).toFixed(0)}%`],
                       ].map(([l, v]) => (
                         <tr key={l}>
@@ -982,12 +991,12 @@ export default function QuickProposal() {
               </CardHeader>
               <CardContent className="space-y-3 text-xs text-muted-foreground font-mono">
                 <div className="space-y-1.5 rounded-md bg-muted px-4 py-3 border">
-                  <p><span className="text-foreground font-semibold">Required Size</span> = Usage ÷ (PSH × 365 × 0.86)</p>
-                  <p className="pl-4 text-foreground">= {estimate.annualKwhUsage.toLocaleString()} ÷ ({estimate.peakSunHours} × 365 × 0.86) = <strong>{estimate.requiredSystemKw.toFixed(2)} kW</strong></p>
+                  <p><span className="text-foreground font-semibold">Required Size</span> = Usage ÷ (PSH × 365 × 0.78)</p>
+                  <p className="pl-4 text-foreground">= {estimate.annualKwhUsage.toLocaleString()} ÷ ({estimate.peakSunHours} × 365 × 0.78) = <strong>{estimate.requiredSystemKw.toFixed(2)} kW</strong></p>
                   <p><span className="text-foreground font-semibold">Panel Count</span> = ceil(Required kW × 1000 ÷ {estimate.panel.wattage}W)</p>
                   <p className="pl-4 text-foreground">= ceil({estimate.requiredSystemKw.toFixed(2)} × 1000 ÷ {estimate.panel.wattage}) = <strong>{estimate.panelCount} panels</strong></p>
                   <p><span className="text-foreground font-semibold">Final Size</span> = {estimate.panelCount} × {estimate.panel.wattage}W ÷ 1000 = <strong>{estimate.finalSystemKw.toFixed(2)} kW</strong></p>
-                  <p><span className="text-foreground font-semibold">Annual Production</span> = {estimate.finalSystemKw.toFixed(2)} × {estimate.peakSunHours} × 365 × 0.86{estimate.panel.bifacial ? ` × ${(1 + estimate.panel.bifacialGainPct / 100).toFixed(2)} (bifacial)` : ""} = <strong>{estimate.estimatedAnnualKwh.toLocaleString()} kWh</strong></p>
+                  <p><span className="text-foreground font-semibold">Annual Production</span> = {estimate.finalSystemKw.toFixed(2)} × {estimate.peakSunHours} × 365 × 0.78 = <strong>{estimate.estimatedAnnualKwh.toLocaleString()} kWh</strong></p>
                   <p><span className="text-foreground font-semibold">Battery Total</span> = {estimate.battery.usableKwh} kWh usable ÷ {estimate.battery.dodPct}% DoD = <strong>{estimate.battery.totalKwh} kWh rated</strong></p>
                 </div>
               </CardContent>
@@ -1014,7 +1023,7 @@ export default function QuickProposal() {
                   <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted rounded-md px-3 py-2">
                     <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     <span>
-                      The spec defines expected outputs using 5.5 PSH and 440W panels. Your proposal uses {estimate.peakSunHoursSource === "pvwatts" ? "real NREL PVWatts data" : "a state-average estimate"} ({estimate.peakSunHours} PSH) and {estimate.panel.wattage}W {estimate.panel.label} panels. The table below checks the spec's math at the spec's original assumptions.
+                      The formula check uses 5.5 PSH, 440W panels, and the required 0.78 performance factor. Your proposal uses {estimate.peakSunHoursSource === "api" ? "NREL PVWatts data" : "a regional fallback"} ({estimate.peakSunHours} PSH) and {estimate.panel.wattage}W {estimate.panel.label} panels.
                     </span>
                   </div>
                   <table className="w-full text-sm">
@@ -1028,11 +1037,11 @@ export default function QuickProposal() {
                     </thead>
                     <tbody className="divide-y text-xs">
                       {[
-                        ["Required size", "≈ 6.95 kW", `${estimate.specVerification.requiredSystemKw.toFixed(2)} kW`, Math.abs(estimate.specVerification.requiredSystemKw - 6.95) < 0.05],
+                        ["Required size", "≈ 7.66 kW", `${estimate.specVerification.requiredSystemKw.toFixed(2)} kW`, Math.abs(estimate.specVerification.requiredSystemKw - 7.66) < 0.05],
                         ["Panel count (440W)", "18", `${estimate.specVerification.panelCount}`, estimate.specVerification.panelCount === 18],
                         ["Final system size", "≈ 7.92 kW", `${estimate.specVerification.finalSystemKw.toFixed(2)} kW`, Math.abs(estimate.specVerification.finalSystemKw - 7.92) < 0.05],
-                        ["Annual production", "≈ 12,154 kWh", `${estimate.specVerification.estimatedAnnualKwh.toLocaleString()} kWh`, Math.abs(estimate.specVerification.estimatedAnnualKwh - 12154) < 50],
-                        ["Monthly production", "≈ 1,034 kWh", `${estimate.specVerification.estimatedMonthlyKwh.toLocaleString()} kWh`, Math.abs(estimate.specVerification.estimatedMonthlyKwh - 1034) < 5],
+                        ["Annual production", "≈ 12,402 kWh", `${estimate.specVerification.estimatedAnnualKwh.toLocaleString()} kWh`, Math.abs(estimate.specVerification.estimatedAnnualKwh - 12402) < 50],
+                        ["Monthly production", "≈ 1,033 kWh", `${estimate.specVerification.estimatedMonthlyKwh.toLocaleString()} kWh`, Math.abs(estimate.specVerification.estimatedMonthlyKwh - 1033) < 5],
                         ["Offset", "≈ 103%", `${estimate.specVerification.offsetPct}%`, estimate.specVerification.offsetPct >= 102 && estimate.specVerification.offsetPct <= 104],
                         ["Battery (usable)", "20 kWh", `${estimate.specVerification.batteryUsableKwh} kWh`, estimate.specVerification.batteryUsableKwh === 20],
                         ["Battery (total LiFePO4)", "25 kWh", `${estimate.specVerification.batteryTotalKwh} kWh`, estimate.specVerification.batteryTotalKwh === 25],

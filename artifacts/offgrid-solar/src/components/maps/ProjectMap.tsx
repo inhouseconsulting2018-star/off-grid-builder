@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
+import { Maximize2 } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { geocodeAddress as fetchGeocodeAddress } from "@/services/geocodingService";
 
 const iconUrl = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png";
@@ -21,6 +23,8 @@ interface ProjectMapProps {
   city: string;
   state: string;
   zip: string;
+  lat?: number | null;
+  lon?: number | null;
   projectName: string;
   systemType: string;
   installationType?: string;
@@ -186,7 +190,7 @@ function PanelPlacementGuide({
   const winterRiseAz = Math.round(solsticeRiseAzimuth(lat, -23.45));
   const winterSetAz = 360 - winterRiseAz;
 
-  const sqFtPerPanel = 21.5; // ~400W panel footprint
+  const sqFtPerPanel = 23; // Typical 440W-class panel plus layout allowance
   const totalSqFt = numPanels ? Math.round(numPanels * sqFtPerPanel) : null;
 
   return (
@@ -300,8 +304,20 @@ const arrayIcon = L.divIcon({
   className: "",
 });
 
+/** Force Leaflet to recompute its size after mount/layout — prevents gray
+ *  tiles when the map renders inside an animated dialog or a resized panel. */
+function InvalidateSize() {
+  const map = useMap();
+  useEffect(() => {
+    const timers = [80, 250, 600].map((ms) => window.setTimeout(() => map.invalidateSize(), ms));
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [map]);
+  return null;
+}
+
 export function ProjectMap({
   address, city, state, zip,
+  lat, lon,
   projectName, systemType, installationType,
   arraySizeKw, numPanels, batteryUsableKwh,
   arrayLat, arrayLon, arrayLocationNote,
@@ -311,9 +327,15 @@ export function ProjectMap({
   const [satellite, setSatellite] = useState(false);
   const [showSunPath, setShowSunPath] = useState(true);
   const [showPlacement, setShowPlacement] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const hasFetched = useRef(false);
 
   useEffect(() => {
+    if (typeof lat === "number" && Number.isFinite(lat) && typeof lon === "number" && Number.isFinite(lon)) {
+      setCoords({ lat, lng: lon });
+      setStatus("success");
+      return;
+    }
     if (hasFetched.current) return;
     hasFetched.current = true;
     let cancelled = false;
@@ -327,7 +349,7 @@ export function ProjectMap({
       }
     });
     return () => { cancelled = true; };
-  }, [address, city, state, zip]);
+  }, [address, city, state, zip, lat, lon]);
 
   if (status === "error") return (
     <div className="h-64 rounded-lg border bg-muted/30 flex items-center justify-center text-muted-foreground text-sm">
@@ -388,6 +410,13 @@ export function ProjectMap({
             Approximate {city}, {state} location
           </span>
         )}
+        <button
+          onClick={() => setExpanded(true)}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium bg-background text-foreground hover:bg-muted transition-colors"
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+          Expand Map
+        </button>
       </div>
 
       {/* Map */}
@@ -401,6 +430,7 @@ export function ProjectMap({
           <ActiveTileLayer satellite={satellite} />
           <RecenterMap coords={coords} zoom={defaultZoom} />
           <SunPathOverlay coords={coords} visible={showSunPath} />
+          <InvalidateSize />
           <Marker position={[coords.lat, coords.lng]}>
             <Popup>
               <div style={{ lineHeight: 1.6, minWidth: 180 }} dangerouslySetInnerHTML={{ __html: popupLines }} />
@@ -450,6 +480,70 @@ export function ProjectMap({
           numPanels={numPanels}
         />
       )}
+
+      {/* Expanded fullscreen map */}
+      <Dialog open={expanded} onOpenChange={setExpanded}>
+        <DialogContent className="max-w-[96vw] w-[96vw] h-[92vh] p-0 gap-0 flex flex-col overflow-hidden">
+          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3 pr-12">
+            <DialogTitle className="text-sm font-semibold mr-1">{projectName} — Property Map</DialogTitle>
+            <DialogDescription className="sr-only">
+              Interactive satellite and street map of {address}, {city}, {state} {zip} with sun-path overlay.
+            </DialogDescription>
+            <div className="flex rounded-md border overflow-hidden text-xs font-medium">
+              <button
+                onClick={() => setSatellite(false)}
+                className={`px-3 py-1.5 transition-colors ${!satellite ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+              >
+                Street
+              </button>
+              <button
+                onClick={() => setSatellite(true)}
+                className={`px-3 py-1.5 transition-colors ${satellite ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+              >
+                Satellite
+              </button>
+            </div>
+            <button
+              onClick={() => setShowSunPath(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${showSunPath ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-background text-muted-foreground hover:bg-muted"}`}
+            >
+              <span>☀</span>
+              {showSunPath ? "Hide Sun Paths" : "Show Sun Paths"}
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 relative">
+            {expanded && (
+              <MapContainer
+                center={[coords.lat, coords.lng]}
+                zoom={defaultZoom}
+                style={{ height: "100%", width: "100%" }}
+                scrollWheelZoom
+              >
+                <ActiveTileLayer satellite={satellite} />
+                <RecenterMap coords={coords} zoom={defaultZoom} />
+                <SunPathOverlay coords={coords} visible={showSunPath} />
+                <InvalidateSize />
+                <Marker position={[coords.lat, coords.lng]}>
+                  <Popup>
+                    <div style={{ lineHeight: 1.6, minWidth: 180 }} dangerouslySetInnerHTML={{ __html: popupLines }} />
+                  </Popup>
+                </Marker>
+                {typeof arrayLat === "number" && typeof arrayLon === "number" && (
+                  <Marker position={[arrayLat, arrayLon]} icon={arrayIcon}>
+                    <Popup>
+                      <div style={{ lineHeight: 1.6, minWidth: 160 }}>
+                        <strong>☀ Solar Array Location</strong><br />
+                        {arrayLocationNote || "Separate array site"}<br />
+                        {arraySizeKw ? `${arraySizeKw.toFixed(2)} kW` : ""}
+                      </div>
+                    </Popup>
+                  </Marker>
+                )}
+              </MapContainer>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <style>{`
         .sun-path-label {

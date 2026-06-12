@@ -1,0 +1,104 @@
+I need you to stop making small random patches and do a complete audit, duplicate/replicate the working app safely, identify every broken or incomplete part, and fix the full system so it works end-to-end.
+
+Before changing anything:
+
+1. Create a safe duplicate/backup of the current project/app/codebase.
+2. Do not delete working features.
+3. Do not change the core business logic unless it is wrong.
+4. Do not add unnecessary new features.
+5. Focus on making the existing app work correctly and consistently.
+
+This is a residential solar estimating MVP. The core required workflow is:
+
+1. Address Lookup
+
+* User enters a property address.
+* Address should resolve accurately.
+* Store/display:
+
+  * full address
+  * city
+  * state
+  * ZIP
+  * latitude
+  * longitude
+* Use the connected API for address lookup, geocoding, and solar/location data when available.
+* If autocomplete is available, use it.
+* If API data is missing, show a clean fallback instead of breaking.
+
+2. Utility Usage Input
+
+* User can enter either monthly kWh values or annual kWh.
+* If monthly values are entered, automatically total annual kWh.
+* Validate that values are numeric.
+* Prevent blank, negative, or invalid numbers from breaking the app.
+
+3. Solar Irradiance / Peak Sun Hours
+
+* Use API solar/location data when available.
+* If the API does not return usable irradiance or peak sun hour data, use regional fallback assumptions.
+* California default fallback = 5.5 peak sun hours.
+* Clearly show whether the value came from API data or fallback data.
+
+4. Production Formula
+   Use this formula exactly:
+
+Annual Production = System Size kW × Peak Sun Hours × 365 × 0.78
+
+Required System Size = Annual Usage kWh ÷ Peak Sun Hours ÷ 365 ÷ 0.78
+
+5. Panel Recommendation Engine
+
+* Default panel wattage = 440W.
+* Panel Count = Required System Size kW × 1000 ÷ 440
+* Round panel count up to the nearest whole panel.
+* Final System Size = Panel Count × 440 ÷ 1000
+
+6. Proposal Output
+   The final output must clearly show:
+
+* address
+* annual kWh usage
+* peak sun hours
+* whether peak sun hours came from API or fallback
+* recommended system size
+* panel count
+* panel wattage
+* estimated annual production
+
+Now do a full inspection of the app and codebase.
+
+Check for:
+
+* broken buttons
+* broken forms
+* broken address lookup
+* inaccurate location/geocoding
+* API failures
+* missing fallback logic
+* bad calculations
+* incorrect rounding
+* bad state handling
+* broken proposal output
+* console errors
+* environment variable problems
+* API key/config problems
+* mobile layout problems
+* desktop layout problems
+* fields not saving correctly
+* data not passing between pages/components
+* confusing UI flow
+* anything hardcoded incorrectly
+
+After the audit:
+
+1. Give me a clear list of what is broken.
+2. Explain the root cause of each problem.
+3. Fix the problems directly.
+4. Test the full user flow from start to finish.
+5. Use at least one real California address test and one manual kWh test.
+6. Confirm the numbers match the formulas above.
+7. Do not mark the task complete until the app works end-to-end.
+
+Important:
+I do not want another partial patch. I want the full app reviewed, corrected, tested, and made stable. If something cannot be fixed because an API key, permission, or setting is missing, tell me exactly what is missing and where I need to add it.
