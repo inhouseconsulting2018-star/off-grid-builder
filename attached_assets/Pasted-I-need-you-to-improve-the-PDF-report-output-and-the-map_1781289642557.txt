@@ -1,0 +1,84 @@
+I need you to improve the PDF/report output and the map functionality in this app. The current PDF/report looks cheap, incomplete, and not professional. I paid for a higher-level PDF package/solution, so I want the final exported PDF to look polished, professional, and complete.
+
+Do a full review of the current PDF generation and map implementation, then fix the following:
+
+PDF / REPORT IMPROVEMENTS
+
+1. Make the PDF output look professional
+- The PDF must look clean, polished, and client-facing.
+- It should not look cheap, basic, chintzy, or unfinished.
+- Use a consistent layout, spacing, typography, section structure, and visual hierarchy.
+- The final PDF should feel like a real solar proposal/report.
+
+2. Include all pages/sections that are supposed to be in the report
+- Review the software/app and compare what is shown on-screen versus what is included in the exported PDF.
+- If sections exist in the software but are missing from the PDF, add them.
+- Make sure the PDF includes all intended report pages, not just a partial export.
+
+3. Include the map in the PDF
+- Add the property/location map shown in the software into the PDF/report.
+- The map should appear clearly and in the correct place in the report layout.
+- Make sure the map is rendered at good quality in the PDF and not blurry, cropped incorrectly, or too small.
+
+4. Make the PDF layout polished and complete
+At minimum, the PDF/report should clearly and professionally present:
+- report title / proposal title
+- property address
+- customer/project information if available
+- map image
+- annual usage
+- peak sun hours
+- source of solar data (API or fallback if applicable)
+- recommended system size
+- panel count
+- panel wattage
+- estimated annual production
+- any key assumptions
+- clean section breaks and professional formatting
+
+5. Make the PDF export reliable
+- Fix any missing pages
+- Fix bad page breaks
+- Fix clipped text
+- Fix overlapping elements
+- Fix sizing/scaling issues
+- Make sure images, charts, and map content render correctly
+- Make sure the PDF works on export every time
+
+MAP IMPROVEMENTS
+
+6. Add a button/control to fully expand the map
+- In the software/app, I want the user to be able to click a button and fully expand the map.
+- The expanded map should open in a larger view/modal/fullscreen view so the user can see everything clearly.
+- The expanded map view should be easy to close and return from.
+
+7. Improve map usability
+- The map should be clearly visible in the normal view.
+- The expanded map should show more detail and a better layout.
+- Make sure the map container is sized correctly and not cut off.
+- Make sure the map loads reliably and displays the correct property/location.
+
+8. Layout review
+- Review how the map is currently laid out in the software.
+- Fix the layout so it looks intentional, clean, and usable.
+- The map section should feel like part of a professional tool, not squeezed in or broken.
+
+WORKFLOW / PROCESS
+
+Before changing things:
+- Inspect the current PDF export implementation
+- Inspect the current map implementation
+- Identify why the PDF looks low quality or incomplete
+- Identify why all pages are not being included
+- Identify why the map cannot currently be fully expanded
+
+Then:
+1. Explain what is wrong
+2. Fix the problems
+3. Test the PDF output
+4. Test the map expand feature
+5. Confirm that the PDF now includes the map and all intended pages
+6. Confirm that the report looks professional and client-ready
+
+Important:
+I do not want a basic export. I want a polished, professional, complete PDF/report that looks like a real paid solar proposal. I also want the map in the software to have a button that opens it in a fully expanded view.

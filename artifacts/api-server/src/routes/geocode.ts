@@ -43,9 +43,10 @@ router.get("/geocode/suggest", async (req, res): Promise<void> => {
       city?: string;
       town?: string;
       village?: string;
+      state?: string;
       state_code?: string;
-      "ISO3166-2-lvl4"?: string;
       postcode?: string;
+      "ISO3166-2-lvl4"?: string;
     }
     interface NominatimRow {
       display_name?: string;
@@ -54,17 +55,25 @@ router.get("/geocode/suggest", async (req, res): Promise<void> => {
       address?: NominatimAddr;
     }
 
+    // Nominatim returns the US state as a full name ("California") plus an ISO
+    // code ("ISO3166-2-lvl4": "US-CA"); it does NOT return a `state_code` field.
+    // Derive the 2-letter code from the ISO field (with state_code as a fallback).
+    const stateCodeOf = (a: NominatimAddr): string => {
+      const iso = a["ISO3166-2-lvl4"];
+      const fromIso = iso ? (iso.split("-").pop() ?? "") : "";
+      return (a.state_code ?? fromIso).toUpperCase().slice(0, 2);
+    };
+
     const suggestions = (raw as NominatimRow[])
-      .filter((r) => r.address?.postcode && (r.address?.state_code || r.address?.["ISO3166-2-lvl4"]))
+      .filter((r) => r.address?.postcode && stateCodeOf(r.address).length === 2)
       .map((r) => {
         const a = r.address!;
-        const stateCode = a.state_code ?? a["ISO3166-2-lvl4"]?.split("-").pop() ?? "";
         const streetParts = [a.house_number, a.road].filter(Boolean);
         return {
           displayName: r.display_name ?? "",
           streetAddress: streetParts.join(" "),
           city: a.city ?? a.town ?? a.village ?? "",
-          state: stateCode.toUpperCase().slice(0, 2),
+          state: stateCodeOf(a),
           zip: (a.postcode ?? "").slice(0, 5),
           lat: parseFloat(r.lat ?? "0"),
           lon: parseFloat(r.lon ?? "0"),
