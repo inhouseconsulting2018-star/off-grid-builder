@@ -210,9 +210,20 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   const panelWattage = resolvePanelWattage();
 
   function dataSourceLabel(): string {
-    return calc.pvwattsSource === "pvwatts"
-      ? "Live NREL PVWatts satellite irradiance"
-      : `State-average estimate (${project.state ?? "regional"})`;
+    // Prefer the authoritative engine field (solarDataSource: "api" | "fallback");
+    // fall back to the legacy pvwattsSource flag for older calc payloads.
+    const isApi =
+      calc.solarDataSource != null
+        ? calc.solarDataSource === "api"
+        : calc.pvwattsSource === "pvwatts";
+    if (isApi) {
+      return "Live NREL PVWatts API (location-specific satellite irradiance)";
+    }
+    const region =
+      typeof calc.pshSourceLabel === "string" && calc.pshSourceLabel
+        ? calc.pshSourceLabel
+        : `${project.state ?? "regional"} average`;
+    return `State-average estimate — no live API data (${region})`;
   }
 
   // Fetch a high-resolution satellite image centered on the property. The bbox
@@ -513,6 +524,7 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
 
   sectionHeader("Key Assumptions");
   bullet(`Production modeled from ${dataSourceLabel().toLowerCase()} at ${(calc.peakSunHours ?? calc.designPeakSunHours ?? 0).toFixed(2)} peak sun hours/day.`);
+  bullet(`Annual production estimated with the rule-of-thumb formula: array size (kW) × peak sun hours × 365 × ${(calc.derateFactor ?? 0.78)} performance ratio.`);
   bullet(`${panelWattage ? `${panelWattage}W panels` : "Panels"} with ${(calc.totalSystemLossPct ?? 0).toFixed(1)}% total modeled system losses applied to gross production.`);
   bullet(`Costs use a $${(project.utilityRatePerKwh ?? 0).toFixed(3)}/kWh utility rate and 2024/2025 US market equipment pricing.`);
   bullet("Incentives (federal ITC, state rebates, net metering) are not included unless explicitly noted.");

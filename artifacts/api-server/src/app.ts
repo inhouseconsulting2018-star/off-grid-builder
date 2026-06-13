@@ -30,6 +30,13 @@ const allowedOrigins = new Set(
   ].filter((origin): origin is string => Boolean(origin)),
 );
 
+// In development, the workspace preview and testing harness are served from
+// Replit preview domains (*.replit.dev / *.worf.replit.dev / *.replit.app /
+// *.repl.co) and the proxy forwards that browser Origin to this API. Allow
+// those origins in development only — production keeps the strict allowlist.
+const isDevReplitOrigin = (origin: string): boolean =>
+  env.nodeEnv === "development" && /\.(replit\.(dev|app)|repl\.co)$/i.test(origin);
+
 // Trust the first proxy hop so req.protocol correctly returns "https" in production
 // (Replit's load balancer terminates TLS and forwards X-Forwarded-Proto)
 app.set("trust proxy", 1);
@@ -135,7 +142,7 @@ app.use(
 );
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.has(origin)) {
+    if (!origin || allowedOrigins.has(origin) || isDevReplitOrigin(origin)) {
       callback(null, true);
       return;
     }

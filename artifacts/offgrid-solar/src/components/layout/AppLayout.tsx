@@ -8,6 +8,7 @@ import {
   PlusCircle,
   FileText,
   ShoppingBag,
+  Ticket,
   Menu,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const navigation = [
   { name: "New Design", href: "/wizard", icon: PlusCircle },
   { name: "AI Assistant", href: "/ai-assistant", icon: MessageSquare },
   { name: "Purchases", href: "/purchases", icon: ShoppingBag },
+  { name: "Promo Codes", href: "/promo-codes", icon: Ticket },
   { name: "Settings", href: "/settings", icon: SettingsIcon },
 ];
 

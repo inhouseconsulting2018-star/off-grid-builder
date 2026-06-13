@@ -7,8 +7,11 @@
 - [Report API shape](report-api-shape.md) — paid report is { project, calculation, bom, bomCategories, monthlyChartData, entitlement }, not { calculationResult }
 - [Production deployment](production-deployment.md) — live at off-grid-builder-1.replit.app; custom domain DNS pending
 - [PDFKit in esbuild ESM bundle](pdfkit-esbuild.md) — pdfkit must be external in build.mjs; use "end" event (not "finish") on the Readable; require interop needs (.default ?? mod)
+- [Drizzle unique-violation detection](drizzle-unique-violation.md) — pg 23505 error is on `_DrizzleQueryError.cause`, not top-level; walk the cause chain to classify duplicates as `used` not 500
+- [api-server node:test bundling](api-server-test-bundling.md) — esbuild bundle into pkg dir + createRequire banner; import DB via `@workspace/db` pool (pg isn't a direct dep); hits live :8080
 - [OffGrid PDF report gotchas](offgrid-report-gotchas.md) — calc.dailyKwh is daily LOAD not output; no forced page breaks (sectionHeader minFollow prevents orphans); verify by rendering every page to PNG
 - [Leaflet map in animated dialog](leaflet-dialog-resize.md) — mount-guard {open && <MapContainer>} + invalidateSize at 80/250/600ms or tiles render gray
 - [Nominatim state code](nominatim-state-code.md) — Nominatim has no `state_code`; use `ISO3166-2-lvl4` ("US-CA") for the 2-letter code; bad filter made autocomplete always empty
 - [PVWatts dev network](pvwatts-dev-network.md) — dev sandbox can't resolve developer.nrel.gov, so pvwattsSource is always "fallback" in dev despite a valid key; not a bug
-- [Spec vs engine](offgrid-spec-vs-engine.md) — app intentionally uses PVWatts + granular losses + CA 5.8 PSH + 400W settings, NOT the rule-of-thumb ×0.78/5.5/440W; don't simplify without asking
+- [Calc engine: rule-of-thumb](offgrid-spec-vs-engine.md) — hard-launch switched to exact rule-of-thumb: flat 0.78 derate, 440W default, PSH=API-else-state-fallback(CA 5.5); off-grid winter advisory only. Supersedes old PVWatts/granular/CA-5.8/400W
+- [OffGrid dev CORS](offgrid-dev-cors.md) — dev must allow *.replit.dev preview origins (proxy forwards them); strict prod allowlist unchanged; "Blocked CORS origin" in dev is this, not a product bug

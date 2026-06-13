@@ -4,10 +4,11 @@ import { useGetProject, useCalculateProject, getGetProjectQueryKey } from "@work
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Loader2, Download, PlusCircle, AlertTriangle, Zap, Battery,
   DollarSign, Settings2, Edit, MapPin, Sun, FileText,
-  Info, Lightbulb, CheckCircle2, ClipboardList, LayoutGrid, Lock
+  Info, Lightbulb, CheckCircle2, ClipboardList, LayoutGrid, Lock, Ticket
 } from "lucide-react";
 import { useEffect, useRef, Fragment, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ProjectMap } from "@/components/maps/ProjectMap";
 import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
-import { createProjectCheckoutSession } from "@/services/projectService";
+import { createProjectCheckoutSession, redeemProjectCode } from "@/services/projectService";
 import { addProjectToRegistry } from "@/services/projectRegistry";
 import { trackEvent } from "@/services/analytics";
 import { parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
@@ -54,6 +55,35 @@ export default function Results() {
   const { toast } = useToast();
   const hasTriggeredCalc = useRef(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
+
+  // Promo / trial code redemption (unlocks the report without Stripe)
+  const [promoCode, setPromoCode] = useState("");
+  const [promoEmail, setPromoEmail] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemMsg, setRedeemMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleRedeemCode = async () => {
+    const code = promoCode.trim();
+    const email = promoEmail.trim();
+    if (!code || !email) return;
+    setRedeeming(true);
+    setRedeemMsg(null);
+    try {
+      const result = await redeemProjectCode(projectId, token, code, email);
+      if (result.unlocked) {
+        trackEvent("promo_redeemed", { projectId });
+        setRedeemMsg({ ok: true, text: result.message || "Report unlocked!" });
+        setPromoCode("");
+        await queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+      } else {
+        setRedeemMsg({ ok: false, text: result.message || "That code could not be applied." });
+      }
+    } catch (e: unknown) {
+      setRedeemMsg({ ok: false, text: e instanceof Error ? e.message : "Failed to apply that code." });
+    } finally {
+      setRedeeming(false);
+    }
+  };
 
   const handleUnlockReport = (selectedPlan: CheckoutPlanId = selectedPlanFromUrl ?? "homeowner_report") => {
     trackEvent("checkout_clicked", { projectId, plan: selectedPlan });
@@ -1292,6 +1322,44 @@ export default function Results() {
                 <p className="text-xs text-muted-foreground">
                   Secure payment via Stripe · instant access
                 </p>
+
+                {/* Promo / trial code */}
+                <div className="w-full max-w-md border-t border-amber-200 dark:border-amber-900 pt-5 mt-1">
+                  <div className="flex items-center justify-center gap-2 text-sm font-medium mb-3">
+                    <Ticket className="h-4 w-4 text-amber-600" />
+                    Have a promo or trial code?
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Input
+                      type="email"
+                      placeholder="Email address"
+                      value={promoEmail}
+                      onChange={(e) => { setPromoEmail(e.target.value); setRedeemMsg(null); }}
+                      disabled={redeeming}
+                    />
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Promo code"
+                        value={promoCode}
+                        onChange={(e) => { setPromoCode(e.target.value); setRedeemMsg(null); }}
+                        onKeyDown={(e) => e.key === "Enter" && handleRedeemCode()}
+                        disabled={redeeming}
+                        className="font-mono"
+                      />
+                      <Button
+                        onClick={handleRedeemCode}
+                        disabled={redeeming || !promoCode.trim() || !promoEmail.trim()}
+                      >
+                        {redeeming ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
+                      </Button>
+                    </div>
+                    {redeemMsg && (
+                      <p className={`text-sm text-left ${redeemMsg.ok ? "text-green-600" : "text-destructive"}`}>
+                        {redeemMsg.text}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}

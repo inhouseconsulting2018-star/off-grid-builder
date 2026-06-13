@@ -1,27 +1,30 @@
 ---
-name: OffGrid simplified spec vs the real calculation engine
-description: The deliberate gap between the rule-of-thumb spec and the production solar engine
+name: OffGrid calc engine — rule-of-thumb (hard-launch decision)
+description: Which solar sizing formula the app uses and why; supersedes the older PVWatts/granular-losses approach.
 ---
 
-A simplified residential-PV spec exists (Annual Production = kW × PSH × 365 × 0.78;
-Required Size = AnnualUsage ÷ PSH ÷ 365 ÷ 0.78; CA fallback PSH 5.5; 440W panels;
-panel count = ceil(reqW/440)). The **live paid engine deliberately differs**:
+# Calc engine: exact rule-of-thumb (current, post hard-launch)
 
-- Production/sizing use a **granular per-loss model** (inverter + wire + shade + temp
-  + dirt + mismatch), not a flat ×0.78 derate, and prefer **real NREL PVWatts** output
-  when reachable.
-- CA fallback PSH is **5.8**, not 5.5.
-- Default panel wattage is **400W** (from the settings table, admin-configurable),
-  not 440W.
-- Panel count uses `Math.ceil` in both (this part already matches).
+The hard-launch pass switched the calculation engine to the **exact rule-of-thumb
+formula** for all system types:
 
-Net effect example (12,000 kWh/yr, CA, grid-tied): engine ≈ 6.6 kW / ~17 panels;
-rule-of-thumb spec ≈ 7.66 kW / 18 panels (~16% larger system).
+- Flat **0.78** system derate (single factor, not granular per-loss stacking).
+- Panel wattage from `settings.panelWattage`, **default 440W** (was 400W).
+- Peak sun hours (PSH) = **NREL PVWatts API when reachable, else a state fallback**
+  (California = **5.5**). The engine emits `solarDataSource` ("api" | "fallback")
+  and `pshSourceLabel` so the PDF/report can disclose the source.
+- Off-grid winter-sizing logic is now **advisory only** (a note/field), it no
+  longer changes array sizing.
 
-**Why:** the engine is more accurate and is what paying customers' numbers are based
-on. The public **wizard** takes annual kWh only; monthly→annual auto-totaling lives
-only in the admin-gated **quick-proposal** flow.
+**Why:** product owner's hard-launch spec wanted simple, defensible,
+transparent numbers a homeowner/contractor can sanity-check by hand, with honest
+"estimate / not an engineered design" disclosure.
 
-**How to apply:** treat the engine constants as intentional. Do NOT rewrite them to
-the rule-of-thumb to "make numbers match the formula" without explicit user sign-off —
-it changes every customer-facing number on a deployed paid product.
+**How to apply:** Do NOT reintroduce granular per-loss stacking, the old 400W
+default, or CA 5.8 PSH. This entry supersedes the previous "intentionally uses
+PVWatts + granular losses + CA 5.8 + 400W" note. The 440W default is backfilled
+in prod via `lib/db/migrations/003_add_promo_codes.sql`
+(`UPDATE settings SET panel_wattage = 440 WHERE panel_wattage = 400`).
+
+Note: in the dev sandbox NREL is unreachable (see pvwatts-dev-network.md), so
+`solarDataSource` is always "fallback" in dev — expected, not a bug.

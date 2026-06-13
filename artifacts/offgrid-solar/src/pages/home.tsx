@@ -16,6 +16,7 @@ import {
 import { useEffect } from "react";
 import { trackEvent } from "@/services/analytics";
 import { checkoutPlans, getPlanWizardHref, type CheckoutPlanId } from "@/services/checkoutPlans";
+import { SiteFooter } from "@/components/layout/SiteFooter";
 
 export default function Home() {
   useEffect(() => {
@@ -243,9 +244,7 @@ export default function Home() {
         </div>
       </main>
 
-      <footer className="py-6 text-center text-muted-foreground text-sm border-t">
-        <p>&copy; {new Date().getFullYear()} OffGrid Solar Builder. All rights reserved.</p>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { fetchPVWatts } from "./pvwattsService";
 // ─── State peak sun hours (annual average, optimally-tilted surface) ──────────
 // Source: NREL PVWatts state-level averages. PVWatts overrides these at runtime.
 const STATE_PEAK_SUN_HOURS: Record<string, number> = {
-  AZ: 6.5, CA: 5.8, NV: 6.4, NM: 6.3, TX: 5.5, FL: 5.3, CO: 5.7,
+  AZ: 6.5, CA: 5.5, NV: 6.4, NM: 6.3, TX: 5.5, FL: 5.3, CO: 5.7,
   UT: 5.6, HI: 5.8, GA: 5.2, SC: 5.1, NC: 5.0, VA: 4.8, MD: 4.7,
   DE: 4.6, NJ: 4.6, NY: 4.5, CT: 4.5, MA: 4.5, RI: 4.5, NH: 4.5,
   VT: 4.4, ME: 4.4, PA: 4.6, OH: 4.4, IN: 4.5, IL: 4.5, MI: 4.3,
@@ -14,6 +14,22 @@ const STATE_PEAK_SUN_HOURS: Record<string, number> = {
   WV: 4.5,
 };
 const DEFAULT_PEAK_SUN_HOURS = 4.7;
+
+/**
+ * Flat performance derate (a.k.a. performance ratio) applied to all system
+ * types under the standard rule-of-thumb sizing model:
+ *   RequiredSizeKW   = AnnualUsage ÷ PSH ÷ 365 ÷ 0.78
+ *   PanelCount       = ceil(RequiredSizeKW × 1000 ÷ panelWattage)
+ *   FinalSizeKW      = PanelCount × panelWattage ÷ 1000
+ *   EstAnnualProdKWh = FinalSizeKW × PSH × 365 × 0.78
+ * 0.78 bundles inverter, wiring, soiling, temperature, shading and mismatch
+ * losses into a single industry-standard factor.
+ */
+const PERFORMANCE_DERATE = 0.78;
+
+/** Default panel wattage when settings has none configured. */
+const DEFAULT_PANEL_WATTAGE = 440;
+
 const MONTHLY_PRODUCTION_WEIGHTS = [
   0.055, 0.065, 0.085, 0.095, 0.105, 0.11,
   0.11, 0.105, 0.09, 0.075, 0.055, 0.05,
@@ -144,8 +160,12 @@ export type CalculationResult = ReturnType<typeof runCalculations>;
 
 // ─── Main calculation function ────────────────────────────────────────────────
 
-export function runCalculations(project: ProjectData, settings: Settings) {
-  const panelW = settings.panelWattage;
+export function runCalculations(
+  project: ProjectData,
+  settings: Settings,
+  apiPeakSunHours?: number | null,
+) {
+  const panelW = settings.panelWattage || DEFAULT_PANEL_WATTAGE;
 
   // ── Shade losses (% production reduction) ───────────────────────────────
   // Calibrated to NREL SolarAnywhere shading study categories.
@@ -161,8 +181,20 @@ export function runCalculations(project: ProjectData, settings: Settings) {
   };
   const shadeLossPct = shadeMap[project.shadeLevel] ?? 0;
 
-  // ── Peak sun hours (state estimate; PVWatts overrides at route level) ────
-  const peakSunHours = STATE_PEAK_SUN_HOURS[project.state?.toUpperCase()] ?? DEFAULT_PEAK_SUN_HOURS;
+  // ── Peak sun hours ───────────────────────────────────────────────────────
+  // Prefer location-specific data from NREL PVWatts (passed in by the route
+  // handler as the array-plane annual solar resource). Fall back to the state
+  // regional average when the API is unavailable.
+  const stateCode = project.state?.toUpperCase() || "";
+  const fallbackPeakSunHours =
+    STATE_PEAK_SUN_HOURS[stateCode] ?? DEFAULT_PEAK_SUN_HOURS;
+  const usingApiPsh =
+    typeof apiPeakSunHours === "number" && apiPeakSunHours > 0;
+  const peakSunHours = usingApiPsh ? (apiPeakSunHours as number) : fallbackPeakSunHours;
+  const solarDataSource: "api" | "fallback" = usingApiPsh ? "api" : "fallback";
+  const pshSourceLabel = usingApiPsh
+    ? "NREL PVWatts (location-specific)"
+    : `${stateCode || "US"} regional average`;
 
   // ── Battery configuration ─────────────────────────────────────────────────
   // backupHours === 0 → no battery
@@ -220,44 +252,45 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     settings.dirtLossPct +       // Soiling — dust, pollen, bird droppings
     MISMATCH_LOSS_PCT;           // String mismatch and manufacturing tolerance
 
-  const totalSystemLossPct = pvProductionLossPct + batteryLossPct;
-  const pvLossMultiplier = toMultiplier(pvProductionLossPct);
-  const storageLossMultiplier = toMultiplier(batteryLossPct);
-  const annualEnergyLossMultiplier = pvLossMultiplier * storageLossMultiplier;
+  // Headline system loss is the flat performance derate (0.78 ⇒ 22%). The
+  // individual loss percentages above are retained for the report's detailed
+  // assumptions breakdown; they are considered encompassed by the derate factor.
+  const totalSystemLossPct = round2((1 - PERFORMANCE_DERATE) * 100);
 
   // ── Daily demand ────────────────────────────────────────────────────────
   const dailyKwh = project.annualKwh / 365;
 
-  // ── Array sizing ─────────────────────────────────────────────────────────
-  // Grid-tied/hybrid annual bill offset uses annual-average PSH.
-  // Off-grid uses winter design PSH because it has no utility to cover the weak
-  // month. This usually produces a much larger and more realistic off-grid array.
+  // ── Array sizing (standard rule-of-thumb formula) ─────────────────────────
+  // Canonical sizing model for ALL system types:
+  //   RequiredSizeKW = AnnualUsage ÷ PSH ÷ 365 ÷ 0.78
+  //   PanelCount     = ceil(RequiredSizeKW × 1000 ÷ panelWattage)
+  //   FinalSizeKW    = PanelCount × panelWattage ÷ 1000
+  const requiredArraySizeKw =
+    project.annualKwh / peakSunHours / 365 / PERFORMANCE_DERATE;
+  const numPanels = Math.max(
+    1,
+    Math.ceil((requiredArraySizeKw * 1000) / panelW),
+  );
+  const finalArraySizeKw = (numPanels * panelW) / 1000;
+
+  // Downstream battery/inverter/cost logic uses the final (whole-panel) size.
+  const arraySizeKw = requiredArraySizeKw;
+  const adjustedArraySizeKw = finalArraySizeKw;
+  const designFactor = 1.0;
+  const designPeakSunHours = peakSunHours;
+  const squareFeetRequired = numPanels * SQFT_PER_PANEL;
+
+  // ── Off-grid winter design (advisory only) ────────────────────────────────
+  // Off-grid sites must survive the weak winter month. We surface a recommended
+  // winter-sized array as guidance WITHOUT changing the canonical sizing above,
+  // so paid reports always reflect the exact rule-of-thumb formula.
   const winterPshFactor =
     project.snowArea ? OFF_GRID_SNOW_WINTER_PSH_FACTOR : OFF_GRID_WINTER_PSH_FACTOR;
-  const designPeakSunHours =
+  const offGridWinterPsh = Math.max(2.0, peakSunHours * winterPshFactor);
+  const offGridWinterRecommendedArrayKw =
     project.systemType === "off-grid"
-      ? Math.max(2.0, peakSunHours * winterPshFactor)
-      : peakSunHours;
-
-  // Gross array: DC kW required before losses at the design PSH.
-  const arraySizeKw = dailyKwh / designPeakSunHours;
-
-  // Design factor:
-  //   Off-grid  — winter PSH already handles seasonal energy shortfall.
-  //   Hybrid    — modest oversize for self-consumption and resilience.
-  //   Grid-tied — no intentional oversize beyond rounding to whole panels.
-  const designFactor =
-    project.systemType === "hybrid"
-      ? HYBRID_DESIGN_FACTOR
-      : 1.0;
-
-  // Adjusted array: oversized to compensate for production and storage losses.
-  const adjustedArraySizeKw =
-    (arraySizeKw / annualEnergyLossMultiplier) * designFactor;
-
-  // ── Panel count and footprint ────────────────────────────────────────────
-  const numPanels = Math.ceil((adjustedArraySizeKw * 1000) / panelW);
-  const squareFeetRequired = numPanels * SQFT_PER_PANEL;
+      ? round2(project.annualKwh / offGridWinterPsh / 365 / PERFORMANCE_DERATE)
+      : null;
 
   // ── Inverter sizing ───────────────────────────────────────────────────────
   // Grid-tied: AC inverter can be smaller than DC array. Residential DC:AC
@@ -340,15 +373,12 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     totalBatteryBankKwh *= COLD_BATTERY_DERATING;
   }
 
-  // ── Annual production estimate (state-based fallback) ───────────────────
-  // PVWatts replaces this in the route handler with real TMY-simulated data.
-  // Math:
-  //   adjustedArraySizeKw × annualAveragePSH × 365 × annualEnergyLossMultiplier
-  //
-  // Off-grid systems may produce more than annual load in sunny months because
-  // they are sized from winter PSH. Payback uses bill-offset savings only.
+  // ── Annual production estimate (canonical formula) ─────────────────────────
+  //   EstAnnualProdKWh = FinalSizeKW × PSH × 365 × 0.78
+  // When PVWatts data is available, PSH is the location-specific value; otherwise
+  // it is the state regional average. Payback uses bill-offset savings only.
   const yearlyProductionKwh =
-    adjustedArraySizeKw * peakSunHours * 365 * annualEnergyLossMultiplier;
+    adjustedArraySizeKw * peakSunHours * 365 * PERFORMANCE_DERATE;
 
   // ── Financial estimates ───────────────────────────────────────────────────
   const utilityRate =
@@ -607,10 +637,13 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     );
   }
 
-  // Off-grid design margin note
+  // Off-grid winter design advisory (does NOT change the array sizing above)
   if (project.systemType === "off-grid") {
+    const winterNote = offGridWinterRecommendedArrayKw
+      ? ` To reliably carry loads through the weakest winter month (~${offGridWinterPsh.toFixed(1)} winter PSH, ${Math.round(winterPshFactor * 100)}% of annual average), consider upsizing the array toward ~${offGridWinterRecommendedArrayKw} kW and adding 2–3 days of battery autonomy plus a backup generator.`
+      : "";
     notes.push(
-      `Off-grid array sized from winter design sun (${designPeakSunHours.toFixed(1)} PSH, ${Math.round(winterPshFactor * 100)}% of annual average) rather than annual-average sun. This is more realistic for year-round standalone operation.`
+      `This off-grid array is sized with the standard annual rule-of-thumb formula (${peakSunHours.toFixed(1)} PSH × 365 × ${PERFORMANCE_DERATE} performance ratio).${winterNote}`
     );
   }
 
@@ -627,6 +660,14 @@ export function runCalculations(project: ProjectData, settings: Settings) {
     totalBatteryBankKwh: round2(totalBatteryBankKwh),
     yearlyProductionKwh: round2(yearlyProductionKwh),
     totalSystemLossPct: round2(totalSystemLossPct),
+    derateFactor: PERFORMANCE_DERATE,
+    performanceRatio: PERFORMANCE_DERATE,
+    solarDataSource,
+    pshSourceLabel,
+    requiredArraySizeKw: round2(requiredArraySizeKw),
+    finalArraySizeKw: round2(finalArraySizeKw),
+    offGridWinterPsh: round2(offGridWinterPsh),
+    offGridWinterRecommendedArrayKw,
     pvProductionLossPct: round2(pvProductionLossPct),
     inverterLossPct: settings.inverterLossPct,
     wireLossPct: settings.wireLossPct,
@@ -718,30 +759,33 @@ function withFallbackPvwattsFields(calcResult: CalculationResult) {
 
 function withPvwattsResult(
   calcResult: CalculationResult,
-  project: ProjectData,
-  settings: Settings,
   pvwatts: NonNullable<Awaited<ReturnType<typeof fetchPVWatts>>>,
 ) {
-  const utilityRate =
-    project.utilityRatePerKwh > 0 ? project.utilityRatePerKwh : settings.defaultUtilityRate;
-  const estimatedYearlySavings =
-    round2(Math.min(pvwatts.acAnnual, project.annualKwh) * utilityRate);
-  const averageInstalledCost =
-    (calcResult.installedCostLow + calcResult.installedCostHigh) / 2;
-  const paybackYears =
-    project.systemType !== "off-grid" && estimatedYearlySavings > 0
-      ? round2(averageInstalledCost / estimatedYearlySavings)
-      : null;
+  // Distribute the formula-based annual production across the API's monthly
+  // solar-resource shape so the chart reflects real seasonal variation while
+  // the annual total stays exactly on the rule-of-thumb formula.
+  const solrad = pvwatts.solradMonthly;
+  const solradTotal = solrad.reduce((sum, value) => sum + value, 0);
+  let monthly: number[];
+  if (solrad.length === 12 && solradTotal > 0) {
+    monthly = solrad.map((value) =>
+      Math.round((value / solradTotal) * calcResult.yearlyProductionKwh),
+    );
+  } else {
+    monthly = MONTHLY_PRODUCTION_WEIGHTS.map((weight) =>
+      Math.round(calcResult.yearlyProductionKwh * weight),
+    );
+  }
+  const monthlyTotal = monthly.reduce((sum, value) => sum + value, 0);
+  if (monthly.length === 12 && monthlyTotal !== calcResult.yearlyProductionKwh) {
+    monthly[11] += Math.round(calcResult.yearlyProductionKwh - monthlyTotal);
+  }
 
   return {
     ...calcResult,
-    yearlyProductionKwh: pvwatts.acAnnual,
-    peakSunHours: pvwatts.solradAnnual,
-    estimatedYearlySavings,
-    paybackYears,
-    pvwattsMonthlyKwh: pvwatts.acMonthly,
+    pvwattsMonthlyKwh: monthly,
     pvwattsSolradMonthly: pvwatts.solradMonthly,
-    pvwattsAnnualKwh: pvwatts.acAnnual,
+    pvwattsAnnualKwh: calcResult.yearlyProductionKwh,
     pvwattsSolradAnnual: pvwatts.solradAnnual,
     pvwattsCapacityFactor: pvwatts.capacityFactor,
     pvwattsSource: pvwatts.source,
@@ -752,10 +796,12 @@ export async function runCalculationsWithPVWatts(
   project: ProjectData,
   settings: Settings,
 ) {
-  const calcResult = runCalculations(project, settings);
+  // Provisional sizing with the state fallback PSH gives a system capacity for
+  // the PVWatts request (the call returns location solar resource regardless).
+  const provisional = runCalculations(project, settings);
   const pvwatts = await fetchPVWatts({
-    systemCapacityKw: calcResult.adjustedArraySizeKw,
-    losses: pvWattsLosses(calcResult),
+    systemCapacityKw: provisional.adjustedArraySizeKw,
+    losses: pvWattsLosses(provisional),
     installationType: project.installationType,
     roofPitch: project.roofPitch ?? "20",
     roofDirection: project.roofDirection ?? "South",
@@ -767,7 +813,12 @@ export async function runCalculationsWithPVWatts(
     arrayLon: project.arrayLon,
   });
 
-  return pvwatts
-    ? withPvwattsResult(calcResult, project, settings, pvwatts)
-    : withFallbackPvwattsFields(calcResult);
+  if (!pvwatts) {
+    return withFallbackPvwattsFields(provisional);
+  }
+
+  // Re-run the canonical formula using the API's location-specific peak sun
+  // hours, then attach the API monthly shape for the production chart.
+  const finalCalc = runCalculations(project, settings, pvwatts.solradAnnual);
+  return withPvwattsResult(finalCalc, pvwatts);
 }

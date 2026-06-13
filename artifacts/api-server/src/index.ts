@@ -3,6 +3,7 @@ import app from "./app";
 import { env, requireEnv } from "./config/env";
 import { logger } from "./utils/logger";
 import { db, settingsTable } from "@workspace/db";
+import { seedDefaultPromoCode } from "./services/promo/promoService";
 
 /**
  * Attempt to create the stripe.* schema tables via stripe-replit-sync.
@@ -54,6 +55,9 @@ initStripeSchema().catch(() => {});
 
 // Seed default settings row if the table is empty (non-blocking)
 seedSettings().catch(() => {});
+
+// Ensure the default trial promo code exists (non-blocking)
+seedDefaultPromoCode().catch(() => {});
 
 app.listen(port, (err) => {
   if (err) {

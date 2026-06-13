@@ -1,0 +1,300 @@
+This is the final hard-launch prompt for my residential solar estimating software. I need you to complete a full production-readiness audit, fix all remaining issues, add a trial/promo code system, test everything end-to-end, commit the finished version, and push it to GitHub.
+
+PROJECT PURPOSE
+
+This app is a residential solar estimating software tool. Users enter a property address and utility usage, then the software generates a solar estimate and professional PDF report with system size, panel count, estimated annual production, property details, assumptions, and map/location information.
+
+This app is intended to be sold as software access, digital solar estimate reports, and related consulting/report services. It does not sell solar panels, batteries, financing, loans, insurance, investment products, or engineering/permit plans.
+
+IMPORTANT REQUIREMENTS
+
+Before making changes:
+
+1. Confirm this Replit project is connected to the correct GitHub repository.
+2. Check current Git status.
+3. Commit and push the current working version before making major changes.
+4. Do not delete working features.
+5. Do not hardcode API keys or secrets.
+6. Do not break the existing Stripe, address lookup, map, PDF, or proposal functionality.
+7. Do not claim the app is production-ready until the full user flow is tested.
+
+CORE APP WORKFLOW
+
+The finished app must allow a user to:
+
+1. Enter a property address.
+2. Resolve the address accurately.
+3. Store/display:
+
+   * full address
+   * city
+   * state
+   * ZIP
+   * latitude
+   * longitude
+4. Enter monthly kWh or annual kWh.
+5. If monthly kWh is entered, automatically calculate annual kWh.
+6. Use API solar/location data when available.
+7. If API solar data is unavailable, use fallback assumptions.
+8. California fallback peak sun hours = 5.5.
+9. Calculate solar system size using the correct formula.
+10. Recommend panel count.
+11. Show results on screen.
+12. Generate a professional PDF report.
+13. Include the property map in the PDF.
+14. Allow the map to expand/open in a larger full-view/modal.
+15. Allow paid users or approved trial-code users to download/generate the report.
+
+CALCULATION REQUIREMENTS
+
+Use these formulas exactly:
+
+Annual Production = System Size kW × Peak Sun Hours × 365 × 0.78
+
+Required System Size = Annual Usage kWh ÷ Peak Sun Hours ÷ 365 ÷ 0.78
+
+Default panel wattage = 440W
+
+Panel Count = Required System Size kW × 1000 ÷ 440
+
+Round panel count up to the nearest whole panel.
+
+Final System Size = Panel Count × 440 ÷ 1000
+
+Estimated Annual Production = Final System Size × Peak Sun Hours × 365 × 0.78
+
+TRIAL / PROMO CODE SYSTEM
+
+Add a system that lets me create and give people a code so they can try the software and generate a report.
+
+The trial/promo code system must support:
+
+1. A promo/trial code input field.
+2. Code validation before allowing free report generation.
+3. Codes that can unlock one free professional PDF report.
+4. Codes that can have usage limits.
+5. Codes that can expire.
+6. Codes that can be marked active or inactive.
+7. Codes that track when they were redeemed.
+8. Codes that track the user/email that redeemed them, if user login or email capture exists.
+9. Prevent the same person from abusing one code repeatedly.
+10. Show clear messages:
+
+* valid code
+* expired code
+* already used code
+* invalid code
+* code usage limit reached
+
+Create this default trial code:
+
+Code: SOLARTRIAL
+Purpose: Allows a test user to generate one free report.
+Limit: One report per user/email.
+Expiration: Set it so I can easily edit the expiration date.
+Status: Active.
+
+If the app already has a database, store promo codes and redemptions in the existing database.
+
+If the app does not have a database, create the simplest reliable persistence method appropriate for the current app stack, but do not use insecure client-only logic for anything important.
+
+The promo code should not simply hide payment on the front end. It must be validated in a backend/server-side or secure controlled process where possible.
+
+PAYMENT / STRIPE REQUIREMENTS
+
+Review the current Stripe/payment flow.
+
+The app must support:
+
+1. Paid report generation or paid software access.
+2. Trial-code report generation.
+3. Paid users should not need a promo code.
+4. Trial-code users should be able to generate only what the code allows.
+5. Failed payments should not unlock reports.
+6. Invalid trial codes should not unlock reports.
+7. Payment and promo-code logic should be clean and not conflict.
+
+If Stripe is currently in test mode, clearly tell me what needs to be changed before live launch.
+
+PDF REPORT REQUIREMENTS
+
+The PDF report must look professional, polished, and client-facing.
+
+It must not look cheap, basic, chintzy, unfinished, or incomplete.
+
+The PDF must include:
+
+1. Cover/title section.
+2. Property address.
+3. Property/location map.
+4. Annual kWh usage.
+5. Peak sun hours.
+6. Whether solar data came from API or fallback.
+7. Recommended system size.
+8. Panel count.
+9. Panel wattage.
+10. Estimated annual production.
+11. Key assumptions.
+12. Disclaimer that this is an estimate, not a final engineering design, permit plan, utility approval, tax advice, financing offer, or guaranteed installation quote.
+13. Clean formatting, spacing, and page breaks.
+14. No clipped text.
+15. No overlapping elements.
+16. No missing report pages.
+17. No blurry or badly cropped map.
+
+MAP REQUIREMENTS
+
+The map must:
+
+1. Display the correct property/location.
+2. Be visible in the main app.
+3. Have a button to expand/open the map in a larger view.
+4. Use a modal, fullscreen view, or large expanded panel.
+5. Be easy to close.
+6. Not be cut off.
+7. Load reliably.
+8. Export clearly into the PDF report.
+
+USER EXPERIENCE REQUIREMENTS
+
+Make the app feel ready for paying customers.
+
+Fix:
+
+1. Broken buttons.
+2. Broken forms.
+3. Broken navigation.
+4. Confusing layout.
+5. Bad spacing.
+6. Mobile layout issues.
+7. Desktop layout issues.
+8. Bad error messages.
+9. Missing loading states.
+10. Missing success messages.
+11. Inputs that accept bad data.
+12. Any console errors.
+13. Any broken deployment issues.
+
+LEGAL / CUSTOMER-FACING PAGE REQUIREMENTS
+
+Add or confirm these pages/sections exist:
+
+1. Terms of Service.
+2. Privacy Policy.
+3. Refund Policy.
+4. Report Disclaimer.
+
+The disclaimer must make clear:
+
+* The software provides preliminary solar estimates only.
+* Results are based on user-provided information, API data, and assumptions.
+* The report is not a final engineering design.
+* The report is not a permit plan.
+* The report is not utility approval.
+* The report is not tax, legal, or financial advice.
+* The report is not a guaranteed installation quote.
+* A licensed solar contractor, engineer, or authority having jurisdiction should verify final system design and code compliance.
+
+ADMIN / OWNER NEEDS
+
+I need a simple way to manage trial codes.
+
+Add one of these depending on what fits the current app best:
+
+Option A: Admin page
+
+* View promo codes.
+* Create new promo codes.
+* Activate/deactivate codes.
+* Set usage limits.
+* Set expiration dates.
+* See redemptions.
+
+Option B: Config/admin seed file
+
+* Create/edit promo codes safely.
+* Clear instructions on where to update code names, expiration dates, usage limits, and status.
+
+Choose the best option for the current app structure.
+
+HARD-LAUNCH FINAL TESTING
+
+After all fixes are complete, test the full app flow:
+
+Test 1: Paid user flow
+
+* Enter address.
+* Enter usage.
+* Generate estimate.
+* Complete or simulate payment.
+* Generate professional PDF report.
+* Confirm PDF includes map and all report sections.
+
+Test 2: Trial code flow
+
+* Enter address.
+* Enter usage.
+* Enter code SOLARTRIAL.
+* Confirm one free report is allowed.
+* Generate PDF.
+* Confirm the same user/email cannot abuse the code beyond the limit.
+
+Test 3: Invalid code flow
+
+* Enter invalid promo code.
+* Confirm the report is not unlocked.
+* Show a clean error message.
+
+Test 4: Expired/used code flow
+
+* Confirm expired or already-used codes are blocked.
+
+Test 5: Address/API fallback flow
+
+* Test a real California address.
+* Confirm API data is used if available.
+* Confirm fallback peak sun hours = 5.5 if solar data is missing.
+
+Test 6: Formula verification
+
+* Confirm the formula outputs are correct.
+* Confirm panel count rounds up.
+* Confirm final system size and estimated annual production are correct.
+
+Test 7: PDF quality
+
+* Confirm the report looks professional.
+* Confirm all pages/sections are included.
+* Confirm map is included.
+* Confirm no text is clipped.
+* Confirm no layout looks cheap or unfinished.
+
+Test 8: Mobile/desktop layout
+
+* Confirm the app works on desktop.
+* Confirm the app works on mobile.
+* Confirm PDF/report buttons work.
+
+GITHUB REQUIREMENTS
+
+When finished:
+
+1. Commit all final changes.
+2. Push everything to GitHub.
+3. Confirm there are no uncommitted changes left.
+4. Give me the final commit message.
+5. Tell me exactly what was changed.
+6. Tell me what was tested.
+7. Tell me what still needs my attention before hard launch, such as live Stripe keys, domain, environment variables, or API permissions.
+
+FINAL GOAL
+
+The final result should be a hard-launch-ready MVP where:
+
+* Users can pay or use an approved promo/trial code.
+* Users can enter address and usage.
+* Users get accurate estimate calculations.
+* Users can generate a professional PDF report.
+* The map appears in the app and PDF.
+* The app is clean, reliable, and ready to show real customers.
+* All final code is committed and pushed to GitHub.

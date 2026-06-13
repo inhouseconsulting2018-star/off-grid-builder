@@ -17,6 +17,8 @@ import QuickProposal from "@/pages/quick-proposal";
 import PaymentSuccess from "@/pages/payment-success";
 import PaymentCancel from "@/pages/payment-cancel";
 import PurchasesPage from "@/pages/purchases";
+import AdminPromosPage from "@/pages/admin-promos";
+import { TermsPage, PrivacyPage, RefundPage, DisclaimerPage } from "@/pages/legal";
 import SeoCalculatorPage, { type SeoCalculatorConfig } from "@/pages/seo-calculator";
 
 const queryClient = new QueryClient();
@@ -90,6 +92,12 @@ function Router() {
       <Route path="/payment-cancel" component={PaymentCancel} />
       <Route path="/purchases" component={PurchasesPage} />
       <Route path="/admin/purchases" component={PurchasesPage} />
+      <Route path="/promo-codes" component={AdminPromosPage} />
+      <Route path="/admin/promo-codes" component={AdminPromosPage} />
+      <Route path="/terms" component={TermsPage} />
+      <Route path="/privacy" component={PrivacyPage} />
+      <Route path="/refunds" component={RefundPage} />
+      <Route path="/disclaimer" component={DisclaimerPage} />
       <Route component={NotFound} />
     </Switch>
   );

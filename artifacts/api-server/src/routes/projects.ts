@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db, projectsTable, settingsTable } from "@workspace/db";
@@ -18,6 +18,7 @@ import { getUncachableStripeClient } from "../services/payments/stripeClient";
 import { buildPaidReport, renderReportPdfBuffer, renderReportPdfHtml } from "../services/reports/reportService";
 import { getCheckoutPlan, parseCheckoutPlan } from "../services/payments/plans";
 import { hasActivePaidEntitlement } from "../services/payments/entitlements";
+import { redeemPromoCode } from "../services/promo/promoService";
 import {
   requireAdminToken,
   extractAccessToken,
@@ -503,6 +504,48 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
   }
 
   res.json(finalResult);
+});
+
+// ── POST /projects/:id/redeem-code ─────────────────────────────────────────────
+// Token-gated. Applies a promo/trial code to unlock the full report without
+// Stripe. Returns a typed state so the UI can show a precise message.
+router.post("/projects/:id/redeem-code", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(raw, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid project ID" }); return; }
+
+  const project = await resolveProjectByToken(req, id);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  // Already unlocked (Stripe or a prior promo) — nothing to do.
+  if (hasActivePaidEntitlement(project)) {
+    res.json({ state: "valid", message: "Your report is already unlocked.", unlocked: true });
+    return;
+  }
+
+  const body = (req.body ?? {}) as { code?: unknown; email?: unknown };
+  const code = typeof body.code === "string" ? body.code : "";
+  const email = typeof body.email === "string" ? body.email : "";
+  if (!code || !email) {
+    res.status(400).json({ state: "invalid", message: "A promo code and email are required.", unlocked: false });
+    return;
+  }
+
+  const forwarded = req.headers["x-forwarded-for"];
+  const ip = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0]?.trim() || req.ip || "";
+  const ipHash = ip ? createHash("sha256").update(ip).digest("hex") : null;
+
+  try {
+    const result = await redeemPromoCode({ projectId: id, rawCode: code, rawEmail: email, ipHash });
+    const unlocked = result.state === "valid";
+    res.status(unlocked ? 200 : 422).json({ ...result, unlocked });
+  } catch (error: unknown) {
+    logger.error({ err: error, projectId: id }, "Promo redemption failed");
+    res.status(500).json({ state: "error", message: "Something went wrong applying that code. Please try again.", unlocked: false });
+  }
 });
 
 // ── GET /projects/:id/report ───────────────────────────────────────────────────

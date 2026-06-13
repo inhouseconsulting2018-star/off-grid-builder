@@ -5,7 +5,8 @@ export type AnalyticsEvent =
   | "checkout_clicked"
   | "purchase_completed"
   | "pdf_downloaded"
-  | "contractor_beta_clicked";
+  | "contractor_beta_clicked"
+  | "promo_redeemed";
 
 type EventProperties = Record<string, string | number | boolean | null | undefined>;
 

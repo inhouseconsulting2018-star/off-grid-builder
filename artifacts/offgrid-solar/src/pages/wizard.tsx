@@ -77,6 +77,7 @@ const STEP_FIELDS: Record<number, (keyof WizardFormValues)[]> = {
 
 export default function Wizard() {
   const [step, setStep] = useState(1);
+  const [kwhMode, setKwhMode] = useState<"annual" | "monthly">("annual");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createProject = useCreateProject();
@@ -385,9 +386,54 @@ export default function Wizard() {
                       </FormItem>
                     )} />
                     <div className="grid sm:grid-cols-2 gap-4">
-                      <FormField control={form.control} name="annualKwh" render={({ field }) => (
-                        <FormItem><FormLabel>Annual Usage (kWh)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormDescription className="text-xs">Check your utility bills</FormDescription><FormMessage /></FormItem>
-                      )} />
+                      <FormField control={form.control} name="annualKwh" render={({ field }) => {
+                        const annual = Number(field.value) || 0;
+                        const monthlyDisplay = annual ? Math.round(annual / 12) : 0;
+                        return (
+                          <FormItem>
+                            <div className="flex items-center justify-between gap-2">
+                              <FormLabel>Energy Usage (kWh)</FormLabel>
+                              <div className="inline-flex rounded-md border p-0.5 text-xs shrink-0">
+                                <button
+                                  type="button"
+                                  className={`px-2 py-0.5 rounded transition-colors ${kwhMode === "annual" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                                  onClick={() => setKwhMode("annual")}
+                                >
+                                  Annual
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`px-2 py-0.5 rounded transition-colors ${kwhMode === "monthly" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+                                  onClick={() => setKwhMode("monthly")}
+                                >
+                                  Monthly
+                                </button>
+                              </div>
+                            </div>
+                            <FormControl>
+                              {kwhMode === "annual" ? (
+                                <Input type="number" {...field} />
+                              ) : (
+                                <Input
+                                  type="number"
+                                  {...field}
+                                  value={monthlyDisplay || ""}
+                                  onChange={(e) => {
+                                    const m = parseFloat(e.target.value);
+                                    field.onChange(Number.isFinite(m) ? Math.round(m * 12) : 0);
+                                  }}
+                                />
+                              )}
+                            </FormControl>
+                            <FormDescription className="text-xs">
+                              {kwhMode === "annual"
+                                ? "Total kWh per year — check your utility bills"
+                                : `Avg kWh per month — equals ${annual.toLocaleString()} kWh/year`}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }} />
                       <FormField control={form.control} name="monthlyBill" render={({ field }) => (
                         <FormItem><FormLabel>Avg Monthly Bill ($)</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
