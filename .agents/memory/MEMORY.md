@@ -5,7 +5,7 @@
 - [OffGrid Solar paywall tests](offgrid-solar-paywall-tests.md) — 9 node:test integration tests in api-server/src/__tests__/paywall.test.ts; all pass against live server
 - [Stripe price IDs](stripe-price-ids.md) — live price IDs were wrong; correct ones confirmed from Stripe MCP search
 - [Report API shape](report-api-shape.md) — paid report is { project, calculation, bom, bomCategories, monthlyChartData, entitlement }, not { calculationResult }
-- [Production deployment](production-deployment.md) — live at off-grid-builder-1.replit.app; custom domain DNS pending
+- [Production deployment](production-deployment.md) — live domain, Stripe LIVE (verify via checkout cs_live_ prefix), publish auto-applies dev→prod schema diff but NOT data (panel_wattage 400→440 manual post-publish)
 - [PDFKit in esbuild ESM bundle](pdfkit-esbuild.md) — pdfkit must be external in build.mjs; use "end" event (not "finish") on the Readable; require interop needs (.default ?? mod)
 - [Drizzle unique-violation detection](drizzle-unique-violation.md) — pg 23505 error is on `_DrizzleQueryError.cause`, not top-level; walk the cause chain to classify duplicates as `used` not 500
 - [api-server node:test bundling](api-server-test-bundling.md) — esbuild bundle into pkg dir + createRequire banner; import DB via `@workspace/db` pool (pg isn't a direct dep); hits live :8080

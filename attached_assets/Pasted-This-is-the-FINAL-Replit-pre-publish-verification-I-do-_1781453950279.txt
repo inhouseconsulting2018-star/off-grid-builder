@@ -1,0 +1,156 @@
+This is the FINAL Replit pre-publish verification. I do not want to republish again unless this version is truly ready. Do not make random changes. Verify the full app, confirm GitHub is updated, and only prepare for publish after all checks pass.
+
+IMPORTANT:
+
+* Do not republish automatically unless I confirm.
+* Do not delete working features.
+* Do not skip testing.
+* Do not say “done” unless the full app works end-to-end.
+* If anything is missing, broken, or still in test mode, clearly tell me before I republish.
+
+STEP 1 — GITHUB SAFETY CHECK
+
+Before changing anything:
+
+1. Confirm this Replit project is connected to the correct GitHub repository.
+2. Check Git status.
+3. Commit and push the current version before making changes.
+4. Create a clear backup commit message:
+   “Backup before final hard launch verification”
+5. Confirm there are no important uncommitted changes before continuing.
+
+STEP 2 — FULL APP VERIFICATION
+
+Verify the complete app workflow:
+
+1. User can enter a property address.
+2. Address resolves accurately.
+3. App stores/displays:
+
+   * full address
+   * city
+   * state
+   * ZIP
+   * latitude
+   * longitude
+4. User can enter monthly kWh or annual kWh.
+5. Monthly kWh totals annual kWh correctly.
+6. Invalid usage inputs are blocked.
+7. Peak sun hours come from API when available.
+8. Fallback works if API data is missing.
+9. California fallback peak sun hours = 5.5.
+10. Solar estimate formulas are correct.
+11. Panel count rounds up.
+12. Final system size is correct.
+13. Estimated annual production is correct.
+14. Results display clearly on screen.
+15. Map shows the correct property.
+16. Map can expand/open in larger view.
+17. Expanded map closes properly.
+18. PDF report generates successfully.
+19. PDF looks professional and client-ready.
+20. PDF includes the map.
+21. PDF includes all required report sections.
+22. PDF has no missing pages, bad spacing, clipped text, or overlapping sections.
+
+STEP 3 — CALCULATION CHECK
+
+Verify these formulas exactly:
+
+Required System Size = Annual Usage kWh ÷ Peak Sun Hours ÷ 365 ÷ 0.78
+
+Annual Production = System Size kW × Peak Sun Hours × 365 × 0.78
+
+Default panel wattage = 440W
+
+Panel Count = Required System Size kW × 1000 ÷ 440
+
+Panel count must round up.
+
+Final System Size = Panel Count × 440 ÷ 1000
+
+Estimated Annual Production = Final System Size × Peak Sun Hours × 365 × 0.78
+
+STEP 4 — TRIAL CODE CHECK
+
+Verify the trial/promo code system.
+
+Default trial code:
+SOLARTRIAL
+
+Requirements:
+
+1. Code unlocks one free professional report.
+2. Invalid codes are blocked.
+3. Expired codes are blocked.
+4. Already-used codes are blocked.
+5. Usage-limit reached codes are blocked.
+6. Trial code does not bypass payment security incorrectly.
+7. Paid users do not need a trial code.
+8. Failed payments do not unlock reports.
+9. Trial-code users can only generate what the code allows.
+
+STEP 5 — STRIPE CHECK
+
+Verify Stripe/payment setup:
+
+1. Payment flow works.
+2. Paid report/software access works.
+3. Failed payment does not unlock report.
+4. Stripe mode is clearly identified as test or live.
+5. Required Stripe environment variables are present.
+6. No secret keys are exposed on the front end.
+7. If Stripe is still in test mode, tell me exactly what must be changed before launch.
+
+STEP 6 — CUSTOMER-FACING LEGAL CHECK
+
+Confirm these exist and are accessible:
+
+1. Terms of Service.
+2. Privacy Policy.
+3. Refund Policy.
+4. Report Disclaimer.
+
+Disclaimer must clearly say:
+This is a preliminary solar estimate only. It is not a final engineering design, permit plan, utility approval, tax advice, legal advice, financial advice, financing offer, or guaranteed installation quote. Final system design and code compliance must be verified by the proper licensed professionals, utility, and/or authority having jurisdiction.
+
+STEP 7 — MOBILE / DESKTOP CHECK
+
+Verify:
+
+1. Desktop layout works.
+2. Mobile layout works.
+3. Buttons are usable.
+4. Forms are usable.
+5. PDF/report buttons work.
+6. Map does not get cut off.
+7. No broken navigation.
+8. No major console errors.
+
+STEP 8 — FINAL GITHUB PUSH
+
+After everything is fixed and verified:
+
+1. Commit all final changes.
+2. Push final changes to GitHub.
+3. Confirm there are no uncommitted changes left.
+4. Use a final commit message:
+   “Final hard launch verification: reports, map, Stripe, trial code, and solar estimates”
+5. Confirm GitHub has the latest version.
+
+STEP 9 — REPUBLISH DECISION
+
+Before I republish, give me a final launch report with:
+
+1. Passed items.
+2. Failed items, if any.
+3. Anything still needing my action.
+4. Whether Stripe is test or live.
+5. Whether API keys/environment variables are missing.
+6. Whether the PDF report is professional and complete.
+7. Whether trial code SOLARTRIAL works.
+8. Whether map expansion works.
+9. Whether paid user flow works.
+10. Whether you recommend republishing now.
+
+Do not recommend republishing unless the full customer flow works from start to finish.
