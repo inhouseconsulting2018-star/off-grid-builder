@@ -2,7 +2,8 @@ import { runMigrations } from "stripe-replit-sync";
 import app from "./app";
 import { env, requireEnv } from "./config/env";
 import { logger } from "./utils/logger";
-import { db, settingsTable } from "@workspace/db";
+import { db, promoCodesTable, settingsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 /**
  * Attempt to create the stripe.* schema tables via stripe-replit-sync.
@@ -42,6 +43,37 @@ async function seedSettings() {
   }
 }
 
+async function seedDefaultPromoCode() {
+  try {
+    const code = "SOLARTRIAL";
+    const [existing] = await db
+      .select({ id: promoCodesTable.id })
+      .from(promoCodesTable)
+      .where(eq(promoCodesTable.code, code))
+      .limit(1);
+    if (existing) return;
+
+    const configuredExpiration = env.solarTrialExpiresAt
+      ? new Date(env.solarTrialExpiresAt)
+      : new Date("2026-12-31T23:59:59-08:00");
+    if (Number.isNaN(configuredExpiration.getTime())) {
+      throw new Error("SOLARTRIAL_EXPIRES_AT must be a valid ISO date");
+    }
+
+    await db.insert(promoCodesTable).values({
+      code,
+      purpose: "Allows one free professional report per user email",
+      active: true,
+      maxRedemptions: null,
+      maxRedemptionsPerEmail: 1,
+      expiresAt: configuredExpiration,
+    });
+    logger.info({ expiresAt: configuredExpiration }, "Default SOLARTRIAL promo code seeded");
+  } catch (error: unknown) {
+    logger.warn({ err: error }, "Default promo code seed skipped");
+  }
+}
+
 // Fail fast on startup if critical env vars are absent.
 // Better to crash immediately with a clear message than to boot and fail on the first request.
 requireEnv("databaseUrl");
@@ -59,6 +91,7 @@ initStripeSchema().catch(() => {});
 
 // Seed default settings row if the table is empty (non-blocking)
 seedSettings().catch(() => {});
+seedDefaultPromoCode().catch(() => {});
 
 app.listen(port, (err) => {
   if (err) {

@@ -52,11 +52,11 @@ export default function Home() {
             <Clock className="h-3 w-3" /> Takes about 3 minutes
           </div>
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.08]">
-            Know Exactly What Solar{" "}
+            Know What Solar{" "}
             <span className="text-primary">Your Home Needs</span>
           </h1>
           <p className="mt-5 text-lg text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Answer a few questions about your home and we'll calculate the exact panels, battery bank, and inverter you need — with a professional report you can hand straight to a contractor.
+            Answer a few questions about your home and receive a preliminary panel, battery, inverter, and production estimate with a professional report for contractor review.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link href="/wizard" onClick={trackStart}>
@@ -73,7 +73,7 @@ export default function Home() {
         <div className="w-full pb-16 sm:pb-20">
           <div className="text-center mb-10">
             <h2 className="text-2xl sm:text-3xl font-bold">What you get in your report</h2>
-            <p className="mt-2 text-muted-foreground">A full engineering-grade design — not a rough estimate</p>
+            <p className="mt-2 text-muted-foreground">A professional preliminary estimate for planning and contractor review</p>
           </div>
           <div className="grid sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
             {[
@@ -159,7 +159,7 @@ export default function Home() {
         {/* Features Grid */}
         <div className="pb-16 sm:pb-20 w-full">
           <div className="text-center mb-10">
-            <h2 className="text-2xl sm:text-3xl font-bold">Built for accuracy, not guesswork</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold">Built for transparent preliminary planning</h2>
             <p className="mt-2 text-muted-foreground">The same calculations solar installers use, available to homeowners</p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
@@ -167,7 +167,7 @@ export default function Home() {
               {
                 icon: Zap,
                 title: "Complete System Sizing",
-                desc: "Precisely calculates array size, inverter rating, and battery bank based on your usage, location, and goals.",
+                desc: "Estimates array size, inverter rating, and battery bank from your usage, location, and goals using documented assumptions.",
               },
               {
                 icon: TrendingDown,
@@ -215,7 +215,7 @@ export default function Home() {
                 <h3 className="font-semibold">For homeowners going solar</h3>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Stop relying on installer quotes you can't verify. Know exactly what system you need before anyone sets foot on your roof — so you can compare bids confidently.
+                Build an independent preliminary estimate before anyone sets foot on your roof, then compare bids and assumptions more confidently.
               </p>
             </div>
             <div className="p-6 rounded-xl border bg-card">
@@ -245,6 +245,12 @@ export default function Home() {
 
       <footer className="py-6 text-center text-muted-foreground text-sm border-t">
         <p>&copy; {new Date().getFullYear()} OffGrid Solar Builder. All rights reserved.</p>
+        <div className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs">
+          <Link href="/terms">Terms</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/refund-policy">Refund Policy</Link>
+          <Link href="/report-disclaimer">Report Disclaimer</Link>
+        </div>
       </footer>
     </div>
   );

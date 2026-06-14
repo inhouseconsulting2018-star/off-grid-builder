@@ -106,7 +106,7 @@ export function buildReportEmailContent(input: DeliverReportEmailInput): { subje
         <p style="margin:0 0 8px;font-size:13px;color:#475569">Bookmark the "Open my report" link — you can reopen your saved project and download the PDF any time from that page.</p>
         <p style="margin:0 0 8px;font-size:13px;color:#475569">Need help? Contact <a href="mailto:${SUPPORT_EMAIL}" style="color:#0f766e">${SUPPORT_EMAIL}</a>.</p>
         <hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">
-        <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.5">This report is a preliminary planning estimate, not a quote or permit-ready engineering plan. Final system design, sizing, code compliance, and permitting must be verified by a licensed solar and electrical professional in your jurisdiction.</p>
+        <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.5">This is a preliminary solar estimate only. It is not a final engineering design, permit plan, utility approval, tax advice, legal advice, financial advice, financing offer, or guaranteed installation quote. Final system design and code compliance must be verified by the proper licensed professionals, utility, and/or authority having jurisdiction.</p>
       </div>
     </div>
   </div>
@@ -124,7 +124,7 @@ export function buildReportEmailContent(input: DeliverReportEmailInput): { subje
     `Bookmark the report link — you can reopen your saved project and download the PDF any time from that page.`,
     `Need help? Contact ${SUPPORT_EMAIL}.`,
     ``,
-    `This report is a preliminary planning estimate, not a quote or permit-ready engineering plan. Final system design, sizing, code compliance, and permitting must be verified by a licensed solar and electrical professional in your jurisdiction.`,
+    `This is a preliminary solar estimate only. It is not a final engineering design, permit plan, utility approval, tax advice, legal advice, financial advice, financing offer, or guaranteed installation quote. Final system design and code compliance must be verified by the proper licensed professionals, utility, and/or authority having jurisdiction.`,
   ]
     .filter((line) => line !== "")
     .join("\n");

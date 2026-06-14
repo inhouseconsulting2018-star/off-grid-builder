@@ -4,6 +4,7 @@ import { useGetProject, useCalculateProject, getGetProjectQueryKey } from "@work
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Loader2, Download, PlusCircle, AlertTriangle, Zap, Battery,
   DollarSign, Settings2, Edit, MapPin, Sun, FileText,
@@ -16,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ProjectMap } from "@/components/maps/ProjectMap";
 import { generateBom } from "@/utils/bom";
 import { generateDesignNotes } from "@/utils/design-notes";
-import { createProjectCheckoutSession } from "@/services/projectService";
+import { createProjectCheckoutSession, redeemProjectPromo } from "@/services/projectService";
 import { addProjectToRegistry } from "@/services/projectRegistry";
 import { trackEvent } from "@/services/analytics";
 import { parseCheckoutPlan, type CheckoutPlanId } from "@/services/checkoutPlans";
@@ -54,6 +55,23 @@ export default function Results() {
   const { toast } = useToast();
   const hasTriggeredCalc = useRef(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+  const [promoEmail, setPromoEmail] = useState("");
+  const redeemPromo = useMutation({
+    mutationFn: () => redeemProjectPromo(projectId, token, promoCode, promoEmail),
+    onSuccess: (data) => {
+      toast({ title: "Professional report unlocked", description: data.message });
+      setPromoCode("");
+      queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+    },
+    onError: (promoError) => {
+      toast({
+        title: "Trial code not accepted",
+        description: promoError instanceof Error ? promoError.message : "Unable to redeem this code.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleUnlockReport = (selectedPlan: CheckoutPlanId = selectedPlanFromUrl ?? "homeowner_report") => {
     trackEvent("checkout_clicked", { projectId, plan: selectedPlan });
@@ -133,9 +151,13 @@ export default function Results() {
     );
   }
 
-  // isPaid: true when the project has been unlocked via a successful Stripe payment
+  // Full report access comes only from a verified Stripe payment or server-side promo redemption.
   const isPaid = !!project.paidAt && (
-    project.selectedPlan === "contractor_annual"
+    project.paymentStatus === "trial" &&
+    project.selectedPlan === "trial_report" &&
+    project.entitlementType?.startsWith("promo:")
+      ? true
+      : project.selectedPlan === "contractor_annual"
       ? ["paid", "active", "trialing"].includes(project.paymentStatus ?? "")
       : project.paymentStatus === "paid"
   );
@@ -1308,6 +1330,41 @@ export default function Results() {
                 <p className="text-xs text-muted-foreground">
                   Secure payment via Stripe · instant access
                 </p>
+
+                <div className="w-full max-w-xl border-t pt-5 space-y-3">
+                  <div>
+                    <h4 className="font-semibold text-sm">Have a trial or promo code?</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      A valid code unlocks one professional report. An email is required to enforce code limits.
+                    </p>
+                  </div>
+                  <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2">
+                    <Input
+                      type="email"
+                      autoComplete="email"
+                      placeholder="Email address"
+                      value={promoEmail}
+                      onChange={(event) => setPromoEmail(event.target.value)}
+                      aria-label="Promo redemption email"
+                    />
+                    <Input
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      placeholder="Trial or promo code"
+                      value={promoCode}
+                      onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
+                      aria-label="Trial or promo code"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!promoEmail.trim() || !promoCode.trim() || redeemPromo.isPending}
+                      onClick={() => redeemPromo.mutate()}
+                    >
+                      {redeemPromo.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply Code"}
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -1546,7 +1603,7 @@ export default function Results() {
         <section>
           <div className="text-xs text-muted-foreground text-center p-5 border rounded-lg bg-muted/20 leading-relaxed">
             <strong className="block mb-1 text-foreground">Important Disclaimer</strong>
-            Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional. This report is not a permit-ready engineering plan. Equipment quantities, wire sizing, protection device ratings, and structural requirements are preliminary and subject to change. Always obtain proper permits before installation.
+            This is a preliminary solar estimate only. It is not a final engineering design, permit plan, utility approval, tax advice, legal advice, financial advice, financing offer, or guaranteed installation quote. Final system design and code compliance must be verified by the proper licensed professionals, utility, and/or authority having jurisdiction.
           </div>
         </section>
 

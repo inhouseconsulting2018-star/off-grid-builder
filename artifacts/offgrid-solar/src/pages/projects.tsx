@@ -57,6 +57,7 @@ type CustomerProject = {
   paidAt?: string | null;
   paymentStatus?: string | null;
   selectedPlan?: string | null;
+  entitlementType?: string | null;
   calculationResult?: {
     preview?: boolean;
     adjustedArraySizeKw?: number;
@@ -81,11 +82,13 @@ async function fetchRegistryProject(entry: ProjectRegistryEntry): Promise<FetchR
 
 function isPaidProject(p: CustomerProject): boolean {
   if (!p.paidAt) return false;
+  if (p.paymentStatus === "trial" && p.selectedPlan === "trial_report" && p.entitlementType?.startsWith("promo:")) return true;
   if (p.selectedPlan !== "contractor_annual") return p.paymentStatus === "paid";
   return ["paid", "active", "trialing"].includes(p.paymentStatus ?? "");
 }
 
 function projectStatusLabel(p: CustomerProject): string {
+  if (p.paymentStatus === "trial") return "Trial report";
   if (isPaidProject(p)) return "Paid";
   if (p.paymentStatus === "failed") return "Payment failed";
   if (p.paymentStatus === "canceled") return "Checkout canceled";

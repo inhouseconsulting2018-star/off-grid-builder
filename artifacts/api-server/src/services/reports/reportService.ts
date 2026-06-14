@@ -116,6 +116,10 @@ export function buildPaidReport(project: Project) {
 export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildPaidReport>>): string {
   const { project, calculation: calc, bom, monthlyChartData } = report;
   const annualProduction = calc.yearlyProductionKwh;
+  const requiredSystemSizeKw =
+    calc.requiredSystemSizeKw ??
+    calc.arraySizeKw ??
+    calc.adjustedArraySizeKw;
   const equipmentRows = bom.slice(0, 18).map((item) => `
     <tr>
       <td>${escapeHtml(item.category)}</td>
@@ -174,7 +178,7 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
         <tr><td>Annual usage</td><td>${project.annualKwh.toLocaleString()} kWh</td></tr>
         <tr><td>Peak sun hours</td><td>${calc.peakSunHours.toFixed(2)} hrs/day</td></tr>
         <tr><td>Peak sun hours source</td><td>${calc.peakSunHoursSource === "api" ? "API (NREL PVWatts)" : "Regional fallback"}</td></tr>
-        <tr><td>Required system size</td><td>${(calc.requiredSystemSizeKw ?? calc.arraySizeKw).toFixed(2)} kW</td></tr>
+        <tr><td>Required system size</td><td>${requiredSystemSizeKw.toFixed(2)} kW</td></tr>
         <tr><td>Final system size</td><td>${calc.adjustedArraySizeKw.toFixed(2)} kW</td></tr>
         <tr><td>Panel count and wattage</td><td>${calc.numPanels} panels × ${calc.panelWattage ?? 440}W</td></tr>
         <tr><td>Estimated annual production</td><td>${Math.round(annualProduction).toLocaleString()} kWh</td></tr>
@@ -193,7 +197,7 @@ export function renderReportPdfHtml(report: NonNullable<ReturnType<typeof buildP
         <tr><td>Annual savings</td><td>$${Math.round(calc.estimatedYearlySavings).toLocaleString()}</td></tr>
       </tbody></table>
       <h2>Assumptions and Disclaimers</h2>
-      <p class="disclaimer">Preliminary planning estimate only. Final design should be verified by a licensed solar/electrical professional. This report is not a permit-ready engineering plan. Production, savings, equipment availability, incentives, and code requirements may vary.</p>
+      <p class="disclaimer">This is a preliminary solar estimate only. It is not a final engineering design, permit plan, utility approval, tax advice, legal advice, financial advice, financing offer, or guaranteed installation quote. Final system design and code compliance must be verified by the proper licensed professionals, utility, and/or authority having jurisdiction.</p>
     </body>
   </html>`;
 }
@@ -204,6 +208,10 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   const PDFDocument = (_pdfMod.default ?? _pdfMod) as any;
   const { project, calculation: calc, bom, monthlyChartData } = report;
   const annualProduction = calc.yearlyProductionKwh;
+  const requiredSystemSizeKw =
+    calc.requiredSystemSizeKw ??
+    calc.arraySizeKw ??
+    calc.adjustedArraySizeKw;
 
   // The engine is authoritative; legacy reports fall back to the MVP default.
   function resolvePanelWattage(): number {
@@ -481,7 +489,7 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   row2("Installation", mountLabel(project.installationType ?? ""));
   row2("Full address", `${project.address}, ${project.city}, ${project.state} ${project.zip}`);
   row2("Coordinates", typeof project.lat === "number" && typeof project.lon === "number" ? `${project.lat.toFixed(5)}, ${project.lon.toFixed(5)}` : "Unavailable");
-  row2("Required system size", `${(calc.requiredSystemSizeKw ?? calc.arraySizeKw).toFixed(2)} kW DC`);
+  row2("Required system size", `${requiredSystemSizeKw.toFixed(2)} kW DC`);
   row2("Recommended system size", `${calc.adjustedArraySizeKw.toFixed(2)} kW DC`);
   row2("Panel count", `${calc.numPanels} panels`);
   if (panelWattage) row2("Panel wattage", `${panelWattage} W per panel`);
@@ -523,9 +531,9 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
   bullet(`Costs use a $${(project.utilityRatePerKwh ?? 0).toFixed(3)}/kWh utility rate and 2024/2025 US market equipment pricing.`);
   bullet("Incentives (federal ITC, state rebates, net metering) are not included unless explicitly noted.");
 
-  // ══ PAGE 3: PERFORMANCE (LOSSES + MONTHLY) ═════════════════════════════════
-  newContentPage();
-
+  // ══ PERFORMANCE (LOSSES + MONTHLY) ═════════════════════════════════════════
+  // Continue after assumptions when space allows. sectionHeader/row2 handle
+  // pagination, avoiding a mostly empty assumptions-only page.
   sectionHeader("System Loss Breakdown");
   row2("Total modeled losses",          `${(calc.totalSystemLossPct ?? 0).toFixed(1)}%`);
   row2("Shade loss",                    `${(calc.shadeLossPct ?? 0).toFixed(1)}%`);
@@ -631,6 +639,7 @@ export async function renderReportPdfBuffer(report: NonNullable<ReturnType<typeo
 
   sectionHeader("Disclaimers", 90);
   [
+    "This is a preliminary solar estimate only. It is not a final engineering design, permit plan, utility approval, tax advice, legal advice, financial advice, financing offer, or guaranteed installation quote. Final system design and code compliance must be verified by the proper licensed professionals, utility, and/or authority having jurisdiction.",
     "Preliminary planning estimate only. This report is intended to support early-stage feasibility analysis and project scoping. " +
     "Final system design, sizing, equipment selection, structural loading, electrical code compliance, and permitting must be verified and " +
     "engineered by a licensed solar and electrical professional in your jurisdiction.",

@@ -10,10 +10,11 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Settings as SettingsIcon, Save, Lock, FolderOpen, FileDown, Mail, PlusCircle, Home, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+import { Settings as SettingsIcon, Save, Lock, FolderOpen, FileDown, Mail, PlusCircle, Home, LogOut, ShieldCheck, Trash2, TicketCheck } from "lucide-react";
 import { Link } from "wouter";
 import { getAdminToken, saveAdminToken, adminRequestOpts } from "@/hooks/useAdminToken";
 import { clearProjectRegistry, getProjectRegistry } from "@/services/projectRegistry";
+import { apiGet } from "@/services/apiService";
 
 const settingsSchema = z.object({
   panelWattage: z.coerce.number().min(100).max(1000),
@@ -194,6 +195,22 @@ function AdminSettings({ adminToken, onExit }: { adminToken: string; onExit: () 
   const updateSettings = useUpdateSettings({ request: reqOpts });
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [launchStatus, setLaunchStatus] = useState<{
+    stripe: {
+      mode: "live" | "test" | "unknown";
+      reachable: boolean;
+      webhookSecretConfigured: boolean;
+      plans: Array<{ id: string; configured: boolean }>;
+      error: string | null;
+    };
+    environment: {
+      databaseConfigured: boolean;
+      adminTokenConfigured: boolean;
+      solarApiConfigured: boolean;
+      frontendUrl: string | null;
+      replitDeployment: boolean;
+    };
+  } | null>(null);
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsSchema),
@@ -227,6 +244,12 @@ function AdminSettings({ adminToken, onExit }: { adminToken: string; onExit: () 
       });
     }
   }, [settings, form]);
+
+  useEffect(() => {
+    apiGet<typeof launchStatus>("/launch-status", undefined, {
+      headers: { "x-admin-token": adminToken },
+    }).then(setLaunchStatus).catch(() => setLaunchStatus(null));
+  }, [adminToken]);
 
   const onSubmit = (data: SettingsFormValues) => {
     updateSettings.mutate({ data }, {
@@ -266,10 +289,32 @@ function AdminSettings({ adminToken, onExit }: { adminToken: string; onExit: () 
           <Button variant="outline" className="gap-2 shrink-0" onClick={onExit}>
             <LogOut className="h-4 w-4" /> Exit admin
           </Button>
+          <Link href="/admin/promo-codes">
+            <Button variant="outline" className="gap-2 shrink-0">
+              <TicketCheck className="h-4 w-4" /> Promo Codes
+            </Button>
+          </Link>
         </div>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Launch Configuration</CardTitle>
+                <CardDescription>Server-side status only. Secret values are never returned.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid sm:grid-cols-2 gap-3 text-sm">
+                <div>Stripe mode: <strong>{launchStatus?.stripe.mode ?? "Checking..."}</strong></div>
+                <div>Stripe API: <strong>{launchStatus?.stripe.reachable ? "Connected" : "Not verified"}</strong></div>
+                <div>Webhook signing secret: <strong>{launchStatus?.stripe.webhookSecretConfigured ? "Configured" : "Missing"}</strong></div>
+                <div>Solar API key: <strong>{launchStatus?.environment.solarApiConfigured ? "Configured" : "Fallback only"}</strong></div>
+                <div>Database: <strong>{launchStatus?.environment.databaseConfigured ? "Configured" : "Missing"}</strong></div>
+                <div>Production URL: <strong>{launchStatus?.environment.frontendUrl ?? "Missing"}</strong></div>
+                {launchStatus?.stripe.error && (
+                  <div className="sm:col-span-2 text-amber-700">{launchStatus.stripe.error}</div>
+                )}
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader>
                 <CardTitle>System &amp; Components</CardTitle>

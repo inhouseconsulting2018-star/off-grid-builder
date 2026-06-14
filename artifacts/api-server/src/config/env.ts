@@ -20,6 +20,7 @@ export const env = {
   gmailUser: process.env.GMAIL_USER,
   gmailAppPassword: process.env.GMAIL_APP_PASSWORD,
   adminToken: process.env.ADMIN_TOKEN,
+  solarTrialExpiresAt: process.env.SOLARTRIAL_EXPIRES_AT,
   frontendUrl: process.env.FRONTEND_URL,
   replitConnectorsHostname: process.env.REPLIT_CONNECTORS_HOSTNAME,
   replitIdentity: process.env.REPL_IDENTITY,

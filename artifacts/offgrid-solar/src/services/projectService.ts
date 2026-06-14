@@ -30,3 +30,16 @@ export function createProjectCheckoutSession(
     selectedPlan,
   });
 }
+
+export function redeemProjectPromo(
+  projectId: number,
+  accessToken: string,
+  code: string,
+  email: string,
+) {
+  return apiPost<{ unlocked: boolean; message: string }>(
+    `/projects/${projectId}/redeem-promo`,
+    { code, email },
+    { headers: { "x-access-token": accessToken } },
+  );
+}

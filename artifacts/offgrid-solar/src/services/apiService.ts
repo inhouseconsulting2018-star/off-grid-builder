@@ -55,3 +55,12 @@ export function apiPost<T>(path: string, body?: unknown, extra?: ApiRequestOptio
     body: body == null ? undefined : JSON.stringify(body),
   });
 }
+
+export function apiPatch<T>(path: string, body: unknown, extra?: ApiRequestOptions): Promise<T> {
+  const headers = { "Content-Type": "application/json", ...(extra?.headers ?? {}) };
+  return apiRequest<T>(path, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(body),
+  });
+}

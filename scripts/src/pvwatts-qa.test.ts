@@ -79,7 +79,7 @@ const exactCaliforniaRows = [
       road: "Main St",
       city: "Los Angeles",
       state: "California",
-      state_code: "CA",
+      "ISO3166-2-lvl4": "US-CA",
       postcode: "90012",
     },
   },
@@ -234,4 +234,77 @@ await run("Street-level geocode matching rejects city-only rows as exact", async
   });
 
   assert.equal(result?.accuracy, "approximate_zip");
+});
+
+await run("Exact geocode rejects a street match in the wrong state and ZIP", async () => {
+  scenario = {
+    name: "wrong-state-street",
+    geocodeRows: [
+      {
+        lat: "38.930733",
+        lon: "-119.646570",
+        importance: 1,
+        address: {
+          house_number: "2365",
+          road: "Myers Drive",
+          city: "Minden",
+          state: "Nevada",
+          "ISO3166-2-lvl4": "US-NV",
+          postcode: "89423",
+        },
+      },
+    ],
+  };
+
+  const result = await geocodeAddress({
+    address: "2365 Myers Dr",
+    city: "Santa Rosa",
+    state: "CA",
+    zip: "95403",
+  });
+
+  assert.equal(result, null);
+});
+
+await run("Exact geocode scans candidates and selects the matching address context", async () => {
+  scenario = {
+    name: "matching-candidate",
+    geocodeRows: [
+      {
+        lat: "38.930733",
+        lon: "-119.646570",
+        address: {
+          house_number: "2365",
+          road: "Myers Drive",
+          city: "Minden",
+          "ISO3166-2-lvl4": "US-NV",
+          postcode: "89423",
+        },
+      },
+      {
+        lat: "38.460000",
+        lon: "-122.730000",
+        address: {
+          house_number: "2365",
+          road: "Myers Drive",
+          city: "Santa Rosa",
+          "ISO3166-2-lvl4": "US-CA",
+          postcode: "95403",
+        },
+      },
+    ],
+  };
+
+  const result = await geocodeAddress({
+    address: "2365 Myers Dr",
+    city: "Santa Rosa",
+    state: "CA",
+    zip: "95403",
+  });
+
+  assert.deepEqual(result, {
+    lat: 38.46,
+    lon: -122.73,
+    accuracy: "exact_address",
+  });
 });

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
 
 process.env.LOG_LEVEL = "silent";
 process.env.ADMIN_TOKEN = "admin-test-token";
+process.env.DATABASE_URL ??= "postgresql://localhost/paywall_qa";
 
 const {
   buildPreview,
@@ -13,7 +15,9 @@ const {
   buildEntitlementUpdate,
   canMarkProjectPaymentFailed,
   getPaymentLinkPlanId,
+  hasActiveReportEntitlement,
   hasActivePaidEntitlement,
+  hasProjectAccessToken,
 } = await import("../../artifacts/api-server/src/services/payments/entitlements");
 const {
   getCheckoutPlan,
@@ -29,8 +33,13 @@ const {
 } = await import("../../artifacts/api-server/src/services/reports/reportDeliveryService");
 
 const calc = {
+  requiredSystemSizeKw: 7.02,
+  arraySizeKw: 7.02,
   adjustedArraySizeKw: 8.2,
   numPanels: 20,
+  panelWattage: 440,
+  peakSunHours: 5.5,
+  peakSunHoursSource: "fallback",
   yearlyProductionKwh: 12_345,
   installedCostLow: 24_000,
   installedCostHigh: 31_000,
@@ -203,6 +212,41 @@ await run("annual entitlement requires an active subscription", () => {
   assert.equal(hasActivePaidEntitlement({ paidAt: null, selectedPlan: "homeowner_report", paymentStatus: "pending" }), false);
 });
 
+await run("valid promo entitlement unlocks only its redeemed report", () => {
+  const paidAt = new Date();
+  assert.equal(hasActiveReportEntitlement({
+    paidAt,
+    selectedPlan: "trial_report",
+    paymentStatus: "trial",
+    entitlementType: "promo:SOLARTRIAL",
+  }), true);
+  assert.equal(hasActiveReportEntitlement({
+    paidAt,
+    selectedPlan: "trial_report",
+    paymentStatus: "trial",
+    entitlementType: null,
+  }), false);
+  assert.equal(hasActiveReportEntitlement({
+    paidAt: null,
+    selectedPlan: "trial_report",
+    paymentStatus: "trial",
+    entitlementType: "promo:SOLARTRIAL",
+  }), false);
+  assert.equal(hasActiveReportEntitlement({
+    paidAt: null,
+    selectedPlan: "homeowner_report",
+    paymentStatus: "failed",
+    entitlementType: null,
+  }), false);
+});
+
+await run("checkout accepts only the matching project access token", () => {
+  assert.equal(hasProjectAccessToken({ accessToken: "project-secret" }, "project-secret"), true);
+  assert.equal(hasProjectAccessToken({ accessToken: "project-secret" }, "wrong-token"), false);
+  assert.equal(hasProjectAccessToken({ accessToken: "project-secret" }, ""), false);
+  assert.equal(hasProjectAccessToken({ accessToken: null }, "project-secret"), false);
+});
+
 await run("failed payments cannot revoke an existing paid entitlement", () => {
   assert.equal(canMarkProjectPaymentFailed({ paidAt: null, paymentStatus: "pending" }), true);
   assert.equal(canMarkProjectPaymentFailed({ paidAt: null, paymentStatus: "canceled" }), true);
@@ -221,13 +265,17 @@ await run("report email includes secure report links, support, and disclaimer", 
   assert.match(payload.subject, /QA Project/);
   assert.match(payload.text, /accessToken=secure-token/);
   assert.match(payload.text, /support@offgridsolarbuilder\.com/);
-  assert.match(payload.text, /licensed solar and electrical professional/);
+  assert.match(payload.text, /not a final engineering design/);
+  assert.match(payload.text, /proper licensed professionals, utility, and\/or authority having jurisdiction/);
 });
 await run("paid report PDF and printable HTML include project details and disclaimer", async () => {
   const report = buildPaidReport({ ...project, paidAt: new Date() } as any);
   assert.ok(report);
 
   const pdf = await renderReportPdfBuffer(report);
+  if (process.env.REPORT_QA_PDF) {
+    await writeFile(process.env.REPORT_QA_PDF, pdf);
+  }
   assert.match(pdf.subarray(0, 7).toString(), /^%PDF-1\./);
   assert.ok(pdf.length > 10_000);
   assert.match(pdf.toString("latin1"), /\/Count\s+[2-9][0-9]*/);
@@ -235,6 +283,6 @@ await run("paid report PDF and printable HTML include project details and discla
   const html = renderReportPdfHtml(report);
   assert.match(html, /QA Project/);
   assert.match(html, /8\.20 kW DC/);
-  assert.match(html, /Preliminary planning estimate only/);
-  assert.match(html, /not a permit-ready engineering plan/);
+  assert.match(html, /preliminary solar estimate only/i);
+  assert.match(html, /not a final engineering design/);
 });

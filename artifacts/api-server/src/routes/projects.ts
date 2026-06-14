@@ -17,7 +17,7 @@ import { getFrontendOrigin } from "../config/frontendOrigin";
 import { getUncachableStripeClient } from "../services/payments/stripeClient";
 import { buildPaidReport, renderReportPdfBuffer, renderReportPdfHtml } from "../services/reports/reportService";
 import { getCheckoutPlan, parseCheckoutPlan } from "../services/payments/plans";
-import { hasActivePaidEntitlement } from "../services/payments/entitlements";
+import { hasActiveReportEntitlement, hasProjectAccessToken } from "../services/payments/entitlements";
 import {
   requireAdminToken,
   extractAccessToken,
@@ -48,8 +48,11 @@ async function createCheckoutSession(req: Request, res: Response, input: {
     return;
   }
 
-  const project = await resolveProjectByToken(req, input.projectId);
-  if (!project || project.accessToken !== input.accessToken) {
+  const [project] = await db
+    .select()
+    .from(projectsTable)
+    .where(eq(projectsTable.id, input.projectId));
+  if (!project || !hasProjectAccessToken(project, input.accessToken)) {
     res.status(404).json({ error: "Project not found" });
     return;
   }
@@ -60,7 +63,7 @@ async function createCheckoutSession(req: Request, res: Response, input: {
     return;
   }
   const plan = getCheckoutPlan(planId);
-  if (hasActivePaidEntitlement(project) && plan.id === "homeowner_report") {
+  if (hasActiveReportEntitlement(project) && plan.id === "homeowner_report") {
     res.status(400).json({ error: "Project is already unlocked" });
     return;
   }
@@ -96,7 +99,7 @@ async function createCheckoutSession(req: Request, res: Response, input: {
     metadata,
   });
 
-  if (!hasActivePaidEntitlement(project)) {
+  if (!hasActiveReportEntitlement(project)) {
     await db
       .update(projectsTable)
       .set({
@@ -162,20 +165,6 @@ router.post("/projects", async (req, res): Promise<void> => {
       lat: input.lat,
       lon: input.lon,
       locationAccuracy: "manual_coordinates",
-    };
-  } else if (
-    input.locationAccuracy === "exact_address" &&
-    input.lat != null &&
-    input.lon != null &&
-    input.lat >= -90 &&
-    input.lat <= 90 &&
-    input.lon >= -180 &&
-    input.lon <= 180
-  ) {
-    location = {
-      lat: input.lat,
-      lon: input.lon,
-      locationAccuracy: "exact_address",
     };
   } else {
     try {
@@ -282,7 +271,7 @@ router.get("/projects/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!hasActivePaidEntitlement(project)) {
+  if (!hasActiveReportEntitlement(project)) {
     res.json(previewProject(project));
     return;
   }
@@ -303,6 +292,15 @@ router.patch("/projects/:id", async (req, res): Promise<void> => {
   const existingProject = await resolveProjectByToken(req, params.data.id);
   if (!existingProject) {
     res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (
+    existingProject.paymentStatus === "trial" &&
+    existingProject.selectedPlan === "trial_report"
+  ) {
+    res.status(403).json({
+      error: "Trial reports are limited to one completed project and cannot be revised after redemption.",
+    });
     return;
   }
 
@@ -527,7 +525,7 @@ router.post("/projects/:id/calculate", async (req, res): Promise<void> => {
     .set({ calculationResult: finalResult })
     .where(eq(projectsTable.id, params.data.id));
 
-  if (!hasActivePaidEntitlement(project)) {
+  if (!hasActiveReportEntitlement(project)) {
     const calc = finalResult as Record<string, unknown>;
     res.json({
       preview: true,
@@ -560,7 +558,7 @@ router.get("/projects/:id/report", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!hasActivePaidEntitlement(project)) {
+  if (!hasActiveReportEntitlement(project)) {
     res.status(402).json({
       error: "Payment required",
       message: "Purchase the full report to access system design, BOM, and cost analysis.",
@@ -587,7 +585,7 @@ router.get("/projects/:id/report.pdf", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Project not found" });
     return;
   }
-  if (!hasActivePaidEntitlement(project)) {
+  if (!hasActiveReportEntitlement(project)) {
     res.status(402).json({ error: "Payment required", message: "Purchase the full report to download the PDF." });
     return;
   }
@@ -610,7 +608,7 @@ router.get("/projects/:id/report.html", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Project not found" });
     return;
   }
-  if (!hasActivePaidEntitlement(project)) {
+  if (!hasActiveReportEntitlement(project)) {
     res.status(402).json({ error: "Payment required", message: "Purchase the full report to view printable report HTML." });
     return;
   }
@@ -646,7 +644,7 @@ router.post("/projects/:id/checkout-canceled", async (req, res): Promise<void> =
     res.status(404).json({ error: "Project not found" });
     return;
   }
-  if (hasActivePaidEntitlement(project)) {
+  if (hasActiveReportEntitlement(project)) {
     res.json({ paymentStatus: project.paymentStatus });
     return;
   }

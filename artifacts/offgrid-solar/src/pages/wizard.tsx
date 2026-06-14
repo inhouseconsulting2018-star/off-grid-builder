@@ -551,7 +551,16 @@ export default function Wizard() {
                         )} />
                       ) : (
                         <FormField control={form.control} name="monthlyKwh" render={({ field }) => (
-                          <FormItem><FormLabel>Average Monthly Usage (kWh)</FormLabel><FormControl><Input type="number" min="0" value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? null : Number(event.target.value))} /></FormControl><FormDescription className="text-xs">Annual total: {Math.round((field.value ?? 0) * 12).toLocaleString()} kWh</FormDescription><FormMessage /></FormItem>
+                          <FormItem>
+                            <FormLabel>Average Monthly Usage (kWh)</FormLabel>
+                            <FormControl><Input type="number" min="0" value={field.value ?? ""} onChange={(event) => field.onChange(event.target.value === "" ? null : Number(event.target.value))} /></FormControl>
+                            <FormDescription className="text-xs">
+                              {typeof field.value === "number" && field.value > 0
+                                ? `Annual total: ${Math.round(field.value * 12).toLocaleString()} kWh`
+                                : "Enter a positive monthly kWh value."}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
                         )} />
                       )}
                       <FormField control={form.control} name="monthlyBill" render={({ field }) => (

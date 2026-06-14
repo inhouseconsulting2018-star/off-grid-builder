@@ -34,6 +34,30 @@ export function hasActivePaidEntitlement(project: {
     || project.paymentStatus === "trialing";
 }
 
+export function hasActiveReportEntitlement(project: {
+  paidAt?: Date | null;
+  selectedPlan?: string | null;
+  paymentStatus?: string | null;
+  entitlementType?: string | null;
+}): boolean {
+  if (
+    project.paidAt &&
+    project.paymentStatus === "trial" &&
+    project.selectedPlan === "trial_report" &&
+    project.entitlementType?.startsWith("promo:")
+  ) {
+    return true;
+  }
+  return hasActivePaidEntitlement(project);
+}
+
+export function hasProjectAccessToken(
+  project: { accessToken?: string | null },
+  providedToken: string | null | undefined,
+): boolean {
+  return Boolean(providedToken && project.accessToken && project.accessToken === providedToken);
+}
+
 export function buildEntitlementUpdate(session: StripeCheckoutSessionLike, plan: CheckoutPlan) {
   const subscriptionId = typeof session.subscription === "string"
     ? session.subscription

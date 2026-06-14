@@ -82,8 +82,14 @@ export function AppLayout({ children }: AppLayoutProps) {
             <nav className="flex flex-col gap-1 p-3">
               <NavLinks onNavigate={() => setSheetOpen(false)} />
             </nav>
-            <div className="absolute bottom-0 left-0 right-0 p-4 border-t text-xs text-muted-foreground">
-              &copy; {new Date().getFullYear()} OffGrid Solar Builder
+            <div className="absolute bottom-0 left-0 right-0 p-4 border-t text-xs text-muted-foreground space-y-2">
+              <div>&copy; {new Date().getFullYear()} OffGrid Solar Builder</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                <Link href="/terms" onClick={() => setSheetOpen(false)}>Terms</Link>
+                <Link href="/privacy" onClick={() => setSheetOpen(false)}>Privacy</Link>
+                <Link href="/refund-policy" onClick={() => setSheetOpen(false)}>Refunds</Link>
+                <Link href="/report-disclaimer" onClick={() => setSheetOpen(false)}>Disclaimer</Link>
+              </div>
             </div>
           </SheetContent>
         </Sheet>
@@ -102,8 +108,14 @@ export function AppLayout({ children }: AppLayoutProps) {
         <nav className="flex-1 p-3 flex flex-col gap-1 overflow-y-auto">
           <NavLinks />
         </nav>
-        <div className="p-4 border-t text-xs text-muted-foreground">
-          &copy; {new Date().getFullYear()} OffGrid Solar Builder
+        <div className="p-4 border-t text-xs text-muted-foreground space-y-2">
+          <div>&copy; {new Date().getFullYear()} OffGrid Solar Builder</div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <Link href="/terms">Terms</Link>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/refund-policy">Refunds</Link>
+            <Link href="/report-disclaimer">Disclaimer</Link>
+          </div>
         </div>
       </aside>
 
