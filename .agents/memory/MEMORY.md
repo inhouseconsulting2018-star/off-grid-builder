@@ -15,3 +15,4 @@
 - [PVWatts dev network](pvwatts-dev-network.md) — dev sandbox can't resolve developer.nrel.gov, so pvwattsSource is always "fallback" in dev despite a valid key; not a bug
 - [Calc engine: rule-of-thumb](offgrid-spec-vs-engine.md) — hard-launch switched to exact rule-of-thumb: flat 0.78 derate, 440W default, PSH=API-else-state-fallback(CA 5.5); off-grid winter advisory only. Supersedes old PVWatts/granular/CA-5.8/400W
 - [OffGrid dev CORS](offgrid-dev-cors.md) — dev must allow *.replit.dev preview origins (proxy forwards them); strict prod allowlist unchanged; "Blocked CORS origin" in dev is this, not a product bug
+- [OffGrid prod schema deploy](offgrid-prod-schema-deploy.md) — prod schema applied ONLY by Replit Publish (dev→prod diff); lib/db/migrations/*.sql are legacy/not auto-applied; data backfills (e.g. panel_wattage 400→440) need a manual post-publish admin action
